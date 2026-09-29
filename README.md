@@ -14,7 +14,7 @@ The final application will integrate four modules:
 ## Team workflow
 
 - Keep `main` stable and do not develop directly on it.
-- Create a branch for each task, such as `feature/dashboard` or `feature/oos-model`.
+- Create a branch for each task on Trello, such as `team-member-name/trello-task-name`.
 - Open a pull request when the work is ready for review.
 - Ask at least one teammate to review the pull request before merging.
 - Use GitHub Issues to describe tasks, owners, acceptance criteria, and progress.

@@ -1,0 +1,222 @@
+store_id,store_name,channel,region,state,segment_tier,city
+STR-0001,Syracuse SuperCenter,Modern Trade,Northeast,NY,Tier 3,Syracuse
+STR-0002,PrimeMart #2,Modern Trade,Northeast,NY,Tier 3,Albany
+STR-0003,NY Local Shop #3,Traditional Trade,Northeast,NY,Tier 1,Syracuse
+STR-0004,NY SuperSave #4,Modern Trade,Northeast,NY,Tier 3,Buffalo
+STR-0005,Central Supply Albany,Distributor,Northeast,NY,Tier 2,Albany
+STR-0006,NY Local Shop #6,Traditional Trade,Northeast,NY,Tier 1,New York City
+STR-0007,Daily Needs Syracuse,Traditional Trade,Northeast,NY,Tier 3,Syracuse
+STR-0008,Buffalo Depot #8,Distributor,Northeast,NY,Tier 3,Buffalo
+STR-0009,ValueMart Pittsburgh #9,Modern Trade,Northeast,PA,Tier 1,Pittsburgh
+STR-0010,PrimeMart #10,Modern Trade,Northeast,PA,Tier 2,Allentown
+STR-0011,Pittsburgh Distribution Co. #11,Distributor,Northeast,PA,Tier 2,Pittsburgh
+STR-0012,Family Market Allentown,Traditional Trade,Northeast,PA,Tier 1,Allentown
+STR-0013,Family Market Philadelphia,Traditional Trade,Northeast,PA,Tier 3,Philadelphia
+STR-0014,PA SuperSave #14,Modern Trade,Northeast,PA,Tier 2,Philadelphia
+STR-0015,PA SuperSave #15,Modern Trade,Northeast,PA,Tier 2,Allentown
+STR-0016,Allentown MegaStore,Modern Trade,Northeast,PA,Tier 2,Allentown
+STR-0017,FreshMart Allentown,Modern Trade,Northeast,PA,Tier 1,Allentown
+STR-0018,Daily Needs Allentown,Traditional Trade,Northeast,PA,Tier 3,Allentown
+STR-0019,QuickStop Pittsburgh #19,Traditional Trade,Northeast,PA,Tier 2,Pittsburgh
+STR-0020,Philadelphia SuperCenter,Modern Trade,Northeast,PA,Tier 2,Philadelphia
+STR-0021,Allentown Mini Mart #21,Traditional Trade,Northeast,PA,Tier 3,Allentown
+STR-0022,MA Local Shop #22,Traditional Trade,Northeast,MA,Tier 2,Worcester
+STR-0023,BigBasket Boston,Modern Trade,Northeast,MA,Tier 1,Boston
+STR-0024,Boston SuperCenter,Modern Trade,Northeast,MA,Tier 3,Boston
+STR-0025,BigBasket Boston,Modern Trade,Northeast,MA,Tier 1,Boston
+STR-0026,Boston Mini Mart #26,Traditional Trade,Northeast,MA,Tier 2,Boston
+STR-0027,QuickStop Springfield #27,Traditional Trade,Northeast,MA,Tier 2,Springfield
+STR-0028,Springfield SuperCenter,Modern Trade,Northeast,MA,Tier 1,Springfield
+STR-0029,Daily Needs Boston,Traditional Trade,Northeast,MA,Tier 2,Boston
+STR-0030,QuickStop Boston #30,Traditional Trade,Northeast,MA,Tier 1,Boston
+STR-0031,FreshMart Springfield,Modern Trade,Northeast,MA,Tier 1,Springfield
+STR-0032,Boston Express #32,Traditional Trade,Northeast,MA,Tier 2,Boston
+STR-0033,Boston MegaStore,Modern Trade,Northeast,MA,Tier 3,Boston
+STR-0034,Jersey City Neighborhood Grocery #34,Traditional Trade,Northeast,NJ,Tier 3,Jersey City
+STR-0035,Daily Needs Newark,Traditional Trade,Northeast,NJ,Tier 2,Newark
+STR-0036,Newark SuperCenter,Modern Trade,Northeast,NJ,Tier 3,Newark
+STR-0037,Family Market Trenton,Traditional Trade,Northeast,NJ,Tier 2,Trenton
+STR-0038,Family Market Jersey City,Traditional Trade,Northeast,NJ,Tier 3,Jersey City
+STR-0039,Daily Needs Jersey City,Traditional Trade,Northeast,NJ,Tier 2,Jersey City
+STR-0040,Newark Mini Mart #40,Traditional Trade,Northeast,NJ,Tier 2,Newark
+STR-0041,ValueMart Trenton #41,Modern Trade,Northeast,NJ,Tier 1,Trenton
+STR-0042,Newark Neighborhood Grocery #42,Traditional Trade,Northeast,NJ,Tier 1,Newark
+STR-0043,Newark Grocery Hub,Modern Trade,Northeast,NJ,Tier 1,Newark
+STR-0044,Northeast Wholesale #44,Distributor,Northeast,NJ,Tier 1,Trenton
+STR-0045,Newark Corner Store #45,Traditional Trade,Northeast,NJ,Tier 3,Newark
+STR-0046,NJ Local Shop #46,Traditional Trade,Northeast,NJ,Tier 1,Jersey City
+STR-0047,QuickStop Trenton #47,Traditional Trade,Northeast,NJ,Tier 3,Trenton
+STR-0048,Hartford Express #48,Traditional Trade,Northeast,CT,Tier 2,Hartford
+STR-0049,Bridgeport Neighborhood Grocery #49,Traditional Trade,Northeast,CT,Tier 2,Bridgeport
+STR-0050,Northeast Wholesale #50,Distributor,Northeast,CT,Tier 3,Bridgeport
+STR-0051,Daily Needs Bridgeport,Traditional Trade,Northeast,CT,Tier 1,Bridgeport
+STR-0052,PrimeMart #52,Modern Trade,Northeast,CT,Tier 2,New Haven
+STR-0053,New Haven Mini Mart #53,Traditional Trade,Northeast,CT,Tier 1,New Haven
+STR-0054,FreshMart New Haven,Modern Trade,Northeast,CT,Tier 1,New Haven
+STR-0055,ValueMart Hartford #55,Modern Trade,Northeast,CT,Tier 2,Hartford
+STR-0056,PrimeMart #56,Modern Trade,Northeast,CT,Tier 3,New Haven
+STR-0057,Jacksonville Neighborhood Grocery #57,Traditional Trade,Southeast,FL,Tier 3,Jacksonville
+STR-0058,Tampa SuperCenter,Modern Trade,Southeast,FL,Tier 1,Tampa
+STR-0059,FL Bulk Supply #59,Distributor,Southeast,FL,Tier 2,Miami
+STR-0060,FL Bulk Supply #60,Distributor,Southeast,FL,Tier 2,Miami
+STR-0061,FL SuperSave #61,Modern Trade,Southeast,FL,Tier 2,Miami
+STR-0062,Jacksonville SuperCenter,Modern Trade,Southeast,FL,Tier 2,Jacksonville
+STR-0063,BigBasket Miami,Modern Trade,Southeast,FL,Tier 1,Miami
+STR-0064,FL SuperSave #64,Modern Trade,Southeast,FL,Tier 1,Miami
+STR-0065,Orlando Grocery Hub,Modern Trade,Southeast,FL,Tier 3,Orlando
+STR-0066,Orlando MegaStore,Modern Trade,Southeast,FL,Tier 2,Orlando
+STR-0067,Augusta Express #67,Traditional Trade,Southeast,GA,Tier 1,Augusta
+STR-0068,Atlanta SuperCenter,Modern Trade,Southeast,GA,Tier 1,Atlanta
+STR-0069,BigBasket Augusta,Modern Trade,Southeast,GA,Tier 2,Augusta
+STR-0070,GA Local Shop #70,Traditional Trade,Southeast,GA,Tier 1,Augusta
+STR-0071,GA Local Shop #71,Traditional Trade,Southeast,GA,Tier 3,Augusta
+STR-0072,Atlanta SuperCenter,Modern Trade,Southeast,GA,Tier 3,Atlanta
+STR-0073,Savannah Grocery Hub,Modern Trade,Southeast,GA,Tier 1,Savannah
+STR-0074,GA Bulk Supply #74,Distributor,Southeast,GA,Tier 1,Savannah
+STR-0075,FreshMart Augusta,Modern Trade,Southeast,GA,Tier 2,Augusta
+STR-0076,PrimeMart #76,Modern Trade,Southeast,GA,Tier 1,Savannah
+STR-0077,Southeast Wholesale #77,Distributor,Southeast,NC,Tier 3,Charlotte
+STR-0078,QuickStop Raleigh #78,Traditional Trade,Southeast,NC,Tier 3,Raleigh
+STR-0079,Raleigh SuperCenter,Modern Trade,Southeast,NC,Tier 2,Raleigh
+STR-0080,Family Market Raleigh,Traditional Trade,Southeast,NC,Tier 2,Raleigh
+STR-0081,NC Local Shop #81,Traditional Trade,Southeast,NC,Tier 2,Greensboro
+STR-0082,Charlotte Neighborhood Grocery #82,Traditional Trade,Southeast,NC,Tier 2,Charlotte
+STR-0083,NC Local Shop #83,Traditional Trade,Southeast,NC,Tier 2,Greensboro
+STR-0084,FreshMart Charlotte,Modern Trade,Southeast,NC,Tier 2,Charlotte
+STR-0085,Greensboro Corner Store #85,Traditional Trade,Southeast,NC,Tier 1,Greensboro
+STR-0086,Family Market Raleigh,Traditional Trade,Southeast,NC,Tier 3,Raleigh
+STR-0087,Nashville Grocery Hub,Modern Trade,Southeast,TN,Tier 3,Nashville
+STR-0088,ValueMart Nashville #88,Modern Trade,Southeast,TN,Tier 1,Nashville
+STR-0089,FreshMart Nashville,Modern Trade,Southeast,TN,Tier 1,Nashville
+STR-0090,Nashville Grocery Hub,Modern Trade,Southeast,TN,Tier 2,Nashville
+STR-0091,BigBasket Knoxville,Modern Trade,Southeast,TN,Tier 1,Knoxville
+STR-0092,Southeast Wholesale #92,Distributor,Southeast,TN,Tier 3,Memphis
+STR-0093,FreshMart Nashville,Modern Trade,Southeast,TN,Tier 1,Nashville
+STR-0094,Nashville Neighborhood Grocery #94,Traditional Trade,Southeast,TN,Tier 2,Nashville
+STR-0095,BigBasket Nashville,Modern Trade,Southeast,TN,Tier 2,Nashville
+STR-0096,Central Supply Nashville,Distributor,Southeast,TN,Tier 1,Nashville
+STR-0097,VA SuperSave #97,Modern Trade,Southeast,VA,Tier 3,Arlington
+STR-0098,Virginia Beach Depot #98,Distributor,Southeast,VA,Tier 3,Virginia Beach
+STR-0099,VA Local Shop #99,Traditional Trade,Southeast,VA,Tier 1,Richmond
+STR-0100,Virginia Beach Mini Mart #100,Traditional Trade,Southeast,VA,Tier 3,Virginia Beach
+STR-0101,QuickStop Arlington #101,Traditional Trade,Southeast,VA,Tier 2,Arlington
+STR-0102,FreshMart Virginia Beach,Modern Trade,Southeast,VA,Tier 1,Virginia Beach
+STR-0103,Family Market Richmond,Traditional Trade,Southeast,VA,Tier 2,Richmond
+STR-0104,Arlington MegaStore,Modern Trade,Southeast,VA,Tier 1,Arlington
+STR-0105,Virginia Beach Neighborhood Grocery #105,Traditional Trade,Southeast,VA,Tier 3,Virginia Beach
+STR-0106,Central Supply Arlington,Distributor,Southeast,VA,Tier 1,Arlington
+STR-0107,VA Local Shop #107,Traditional Trade,Southeast,VA,Tier 3,Arlington
+STR-0108,Richmond Mini Mart #108,Traditional Trade,Southeast,VA,Tier 2,Richmond
+STR-0109,PrimeMart #109,Modern Trade,Southeast,VA,Tier 1,Virginia Beach
+STR-0110,VA Local Shop #110,Traditional Trade,Southeast,VA,Tier 1,Richmond
+STR-0111,Aurora Grocery Hub,Modern Trade,Midwest,IL,Tier 2,Aurora
+STR-0112,IL Bulk Supply #112,Distributor,Midwest,IL,Tier 1,Chicago
+STR-0113,Central Supply Rockford,Distributor,Midwest,IL,Tier 2,Rockford
+STR-0114,Rockford Corner Store #114,Traditional Trade,Midwest,IL,Tier 3,Rockford
+STR-0115,Chicago Mini Mart #115,Traditional Trade,Midwest,IL,Tier 1,Chicago
+STR-0116,Aurora SuperCenter,Modern Trade,Midwest,IL,Tier 2,Aurora
+STR-0117,Daily Needs Aurora,Traditional Trade,Midwest,IL,Tier 2,Aurora
+STR-0118,Family Market Rockford,Traditional Trade,Midwest,IL,Tier 2,Rockford
+STR-0119,Aurora Depot #119,Distributor,Midwest,IL,Tier 1,Aurora
+STR-0120,PrimeMart #120,Modern Trade,Midwest,IL,Tier 2,Chicago
+STR-0121,Daily Needs Aurora,Traditional Trade,Midwest,IL,Tier 3,Aurora
+STR-0122,Midwest Wholesale #122,Distributor,Midwest,IL,Tier 3,Aurora
+STR-0123,Chicago MegaStore,Modern Trade,Midwest,IL,Tier 1,Chicago
+STR-0124,Chicago Grocery Hub,Modern Trade,Midwest,IL,Tier 3,Chicago
+STR-0125,PrimeMart #125,Modern Trade,Midwest,OH,Tier 2,Columbus
+STR-0126,Cleveland Depot #126,Distributor,Midwest,OH,Tier 2,Cleveland
+STR-0127,BigBasket Cleveland,Modern Trade,Midwest,OH,Tier 2,Cleveland
+STR-0128,OH Regional Dist. #128,Distributor,Midwest,OH,Tier 3,Cleveland
+STR-0129,Columbus Corner Store #129,Traditional Trade,Midwest,OH,Tier 2,Columbus
+STR-0130,Cleveland Corner Store #130,Traditional Trade,Midwest,OH,Tier 2,Cleveland
+STR-0131,Cleveland Distribution Co. #131,Distributor,Midwest,OH,Tier 2,Cleveland
+STR-0132,Columbus Neighborhood Grocery #132,Traditional Trade,Midwest,OH,Tier 3,Columbus
+STR-0133,Cleveland Corner Store #133,Traditional Trade,Midwest,OH,Tier 3,Cleveland
+STR-0134,Cincinnati Distribution Co. #134,Distributor,Midwest,OH,Tier 3,Cincinnati
+STR-0135,BigBasket Cleveland,Modern Trade,Midwest,OH,Tier 2,Cleveland
+STR-0136,MI SuperSave #136,Modern Trade,Midwest,MI,Tier 3,Grand Rapids
+STR-0137,MI SuperSave #137,Modern Trade,Midwest,MI,Tier 1,Detroit
+STR-0138,Lansing MegaStore,Modern Trade,Midwest,MI,Tier 3,Lansing
+STR-0139,FreshMart Grand Rapids,Modern Trade,Midwest,MI,Tier 1,Grand Rapids
+STR-0140,Detroit Express #140,Traditional Trade,Midwest,MI,Tier 3,Detroit
+STR-0141,Detroit Depot #141,Distributor,Midwest,MI,Tier 1,Detroit
+STR-0142,MI Bulk Supply #142,Distributor,Midwest,MI,Tier 3,Lansing
+STR-0143,Central Supply Lansing,Distributor,Midwest,MI,Tier 1,Lansing
+STR-0144,Duluth Grocery Hub,Modern Trade,Midwest,MN,Tier 2,Duluth
+STR-0145,MN Local Shop #145,Traditional Trade,Midwest,MN,Tier 1,Minneapolis
+STR-0146,Family Market Minneapolis,Traditional Trade,Midwest,MN,Tier 2,Minneapolis
+STR-0147,Saint Paul Express #147,Traditional Trade,Midwest,MN,Tier 2,Saint Paul
+STR-0148,Minneapolis Grocery Hub,Modern Trade,Midwest,MN,Tier 1,Minneapolis
+STR-0149,Saint Paul Depot #149,Distributor,Midwest,MN,Tier 1,Saint Paul
+STR-0150,FreshMart Duluth,Modern Trade,Midwest,MN,Tier 3,Duluth
+STR-0151,MN Local Shop #151,Traditional Trade,Midwest,MN,Tier 2,Saint Paul
+STR-0152,Family Market Saint Paul,Traditional Trade,Midwest,MN,Tier 3,Saint Paul
+STR-0153,Milwaukee Neighborhood Grocery #153,Traditional Trade,Midwest,WI,Tier 3,Milwaukee
+STR-0154,Central Supply Madison,Distributor,Midwest,WI,Tier 1,Madison
+STR-0155,FreshMart Madison,Modern Trade,Midwest,WI,Tier 1,Madison
+STR-0156,Milwaukee SuperCenter,Modern Trade,Midwest,WI,Tier 1,Milwaukee
+STR-0157,QuickStop Milwaukee #157,Traditional Trade,Midwest,WI,Tier 2,Milwaukee
+STR-0158,WI SuperSave #158,Modern Trade,Midwest,WI,Tier 1,Madison
+STR-0159,Milwaukee Express #159,Traditional Trade,Midwest,WI,Tier 2,Milwaukee
+STR-0160,FreshMart Milwaukee,Modern Trade,Midwest,WI,Tier 1,Milwaukee
+STR-0161,Milwaukee Mini Mart #161,Traditional Trade,Midwest,WI,Tier 2,Milwaukee
+STR-0162,Green Bay Mini Mart #162,Traditional Trade,Midwest,WI,Tier 3,Green Bay
+STR-0163,Family Market Milwaukee,Traditional Trade,Midwest,WI,Tier 2,Milwaukee
+STR-0164,San Diego Neighborhood Grocery #164,Traditional Trade,West,CA,Tier 2,San Diego
+STR-0165,San Diego Express #165,Traditional Trade,West,CA,Tier 3,San Diego
+STR-0166,San Diego Mini Mart #166,Traditional Trade,West,CA,Tier 3,San Diego
+STR-0167,CA SuperSave #167,Modern Trade,West,CA,Tier 1,San Diego
+STR-0168,Los Angeles SuperCenter,Modern Trade,West,CA,Tier 2,Los Angeles
+STR-0169,Los Angeles MegaStore,Modern Trade,West,CA,Tier 1,Los Angeles
+STR-0170,San Diego MegaStore,Modern Trade,West,CA,Tier 2,San Diego
+STR-0171,CA SuperSave #171,Modern Trade,West,CA,Tier 3,San Francisco
+STR-0172,FreshMart San Diego,Modern Trade,West,CA,Tier 2,San Diego
+STR-0173,San Diego MegaStore,Modern Trade,West,CA,Tier 3,San Diego
+STR-0174,San Francisco Depot #174,Distributor,West,CA,Tier 1,San Francisco
+STR-0175,Austin Express #175,Traditional Trade,West,TX,Tier 2,Austin
+STR-0176,TX SuperSave #176,Modern Trade,West,TX,Tier 1,Austin
+STR-0177,ValueMart Austin #177,Modern Trade,West,TX,Tier 1,Austin
+STR-0178,San Antonio Distribution Co. #178,Distributor,West,TX,Tier 2,San Antonio
+STR-0179,West Wholesale #179,Distributor,West,TX,Tier 1,San Antonio
+STR-0180,TX SuperSave #180,Modern Trade,West,TX,Tier 1,Dallas
+STR-0181,BigBasket San Antonio,Modern Trade,West,TX,Tier 1,San Antonio
+STR-0182,BigBasket Houston,Modern Trade,West,TX,Tier 3,Houston
+STR-0183,FreshMart Houston,Modern Trade,West,TX,Tier 1,Houston
+STR-0184,Dallas Corner Store #184,Traditional Trade,West,TX,Tier 2,Dallas
+STR-0185,TX SuperSave #185,Modern Trade,West,TX,Tier 2,Houston
+STR-0186,TX Local Shop #186,Traditional Trade,West,TX,Tier 3,Austin
+STR-0187,PrimeMart #187,Modern Trade,West,TX,Tier 1,San Antonio
+STR-0188,WA SuperSave #188,Modern Trade,West,WA,Tier 1,Tacoma
+STR-0189,WA Local Shop #189,Traditional Trade,West,WA,Tier 2,Tacoma
+STR-0190,West Wholesale #190,Distributor,West,WA,Tier 3,Seattle
+STR-0191,ValueMart Spokane #191,Modern Trade,West,WA,Tier 2,Spokane
+STR-0192,ValueMart Seattle #192,Modern Trade,West,WA,Tier 3,Seattle
+STR-0193,Family Market Spokane,Traditional Trade,West,WA,Tier 2,Spokane
+STR-0194,Seattle SuperCenter,Modern Trade,West,WA,Tier 3,Seattle
+STR-0195,Spokane MegaStore,Modern Trade,West,WA,Tier 2,Spokane
+STR-0196,Spokane MegaStore,Modern Trade,West,WA,Tier 2,Spokane
+STR-0197,Tacoma Express #197,Traditional Trade,West,WA,Tier 2,Tacoma
+STR-0198,WA SuperSave #198,Modern Trade,West,WA,Tier 3,Tacoma
+STR-0199,Central Supply Mesa,Distributor,West,AZ,Tier 3,Mesa
+STR-0200,AZ SuperSave #200,Modern Trade,West,AZ,Tier 2,Mesa
+STR-0201,QuickStop Tucson #201,Traditional Trade,West,AZ,Tier 3,Tucson
+STR-0202,Mesa Depot #202,Distributor,West,AZ,Tier 1,Mesa
+STR-0203,Mesa Corner Store #203,Traditional Trade,West,AZ,Tier 2,Mesa
+STR-0204,BigBasket Phoenix,Modern Trade,West,AZ,Tier 2,Phoenix
+STR-0205,Tucson Distribution Co. #205,Distributor,West,AZ,Tier 2,Tucson
+STR-0206,PrimeMart #206,Modern Trade,West,AZ,Tier 2,Mesa
+STR-0207,Phoenix Neighborhood Grocery #207,Traditional Trade,West,AZ,Tier 3,Phoenix
+STR-0208,AZ Regional Dist. #208,Distributor,West,AZ,Tier 1,Mesa
+STR-0209,BigBasket Tucson,Modern Trade,West,AZ,Tier 1,Tucson
+STR-0210,CO Local Shop #210,Traditional Trade,West,CO,Tier 3,Colorado Springs
+STR-0211,CO Local Shop #211,Traditional Trade,West,CO,Tier 1,Colorado Springs
+STR-0212,Denver Grocery Hub,Modern Trade,West,CO,Tier 3,Denver
+STR-0213,Aurora Grocery Hub,Modern Trade,West,CO,Tier 2,Aurora
+STR-0214,ValueMart Aurora #214,Modern Trade,West,CO,Tier 3,Aurora
+STR-0215,Family Market Denver,Traditional Trade,West,CO,Tier 3,Denver
+STR-0216,CO SuperSave #216,Modern Trade,West,CO,Tier 1,Aurora
+STR-0217,QuickStop Colorado Springs #217,Traditional Trade,West,CO,Tier 2,Colorado Springs
+STR-0218,Aurora Distribution Co. #218,Distributor,West,CO,Tier 1,Aurora
+STR-0219,PrimeMart #219,Modern Trade,West,CO,Tier 2,Colorado Springs
+STR-0220,Colorado Springs Distribution Co. #220,Distributor,West,CO,Tier 2,Colorado Springs
+STR-0221,Denver Grocery Hub,Modern Trade,West,CO,Tier 3,Denver

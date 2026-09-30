@@ -12,8 +12,7 @@ The final application will integrate four modules:
 4. Conversational assistant with Text-to-SQL and retrieval-augmented generation
 
 ## Module 1 (Commercial Execution Analytics Dashboard)
-## Docker Quick Start Guide
-
+### Docker Quick Start Guide
 Ensure you have **Docker** and **Docker Compose** installed on your system:
 
 ```bash

@@ -52,7 +52,7 @@ Below is the verification checklist mapping all required KPIs and technical requ
 
 ## Docker Quick Start Guide
 
-### Prerequisites
+
 
 Ensure you have **Docker** and **Docker Compose** installed on your system:
 
@@ -60,12 +60,6 @@ Ensure you have **Docker** and **Docker Compose** installed on your system:
 docker --version
 docker compose version
 ```
-
----
-
-### Method 1: Using Docker Compose (Recommended)
-
-Docker Compose automatically builds the image, binds port `8000`, and mounts the required `marvel_data/` directory.
 
 1. **Navigate to the `module_1` directory:**
    ```bash

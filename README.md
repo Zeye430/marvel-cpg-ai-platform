@@ -24,6 +24,19 @@ The final application will integrate four modules:
 
 The supplied Marvel CPG data and challenge brief are for academic use only. Do not add the raw client files to this repository unless the instructor explicitly approves it. The team should document how authorized members can obtain and place the data locally.
 
+## Development environment
+
+The project uses Python 3.13 and `uv` for Python and dependency management.
+
+After cloning the repository and installing [`uv`](https://docs.astral.sh/uv/getting-started/installation/), run:
+
+```bash
+uv sync
+uv run jupyter lab
+```
+
+Run Python commands through `uv run` so they use the project environment. Commit `pyproject.toml`, `uv.lock`, and `.python-version`, but do not commit `.venv/`.
+
 ## Status
 
 Repository initialized. Technical implementation and team responsibilities will be added after the team confirms the architecture and development plan.

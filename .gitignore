@@ -1,0 +1,18 @@
+# Client data kept locally
+data/raw/
+
+# Local environment and secrets
+.env
+.venv/
+
+# Python and notebook temporary files
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local working files
+work/
+outputs/
+
+# macOS
+.DS_Store

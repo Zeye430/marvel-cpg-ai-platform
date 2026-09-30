@@ -35,18 +35,13 @@ Below is the verification checklist mapping all required KPIs and technical requ
   - **Dynamic Session Switcher**: Sticky executive navbar displaying active user profile, territory scope, and a 1-click **"Sign Out / Switch Role"** button.
   - **Clean Sidebar**: The old account radio section under `<h6> VIEW </h6>` was completely removed, giving full focus to commercial filters.
 
-- [x] **Distinct Visualization Types (6 Implemented — Exceeds Minimum of 4)**:
+- [x] **Distinct Visualization Types:
   1. **Dual Flow Area Chart (Time Series Trend)**: Weekly Sell-in vs. Sell-out units with shaded channel stock accumulation area.
   2. **Multi-Series Line Trend**: Weekly channel-specific OOS rate trend with an annotated 5% target threshold dotted line.
   3. **Interactive Matrix Heatmap**: SKU-level OOS intensity matrix with a dynamic toggle between **By Channel** and **By Region** views (safeguarded with zero-fill against missing data).
   4. **Horizontal Ranking Bar Chart**: Top 10 high-risk SKUs by OOS rate, color-coded by product category.
   5. **Grouped Categorical Bar Chart**: Average Shelf Share % categorized by product line and retail channel.
   6. **Interactive Priority Data Grid**: Store execution priority table sorting highest OOS stores first, detailing store name, channel, region, tier, sell-in gap, planogram compliance, and OOS rate.
-
-- [x] **Luxury Professional Brand Aesthetics**:
-  - Light & silvery Apple Pro aesthetic (`#F5F5F7` canvas, pure `#FFFFFF` liquid glass cards, hairline borders).
-  - High-contrast sidebar typography (`#1D1D1F`) explicitly styled for `#bslib_sidebar_1e20f2`.
-  - Slot-machine number shuffling and cascading deceleration animations on load for all 5 KPI metrics.
 
 ---
 

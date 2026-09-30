@@ -11,11 +11,6 @@ The final application will integrate four modules:
 3. Commercial negotiation and price scenario simulator
 4. Conversational assistant with Text-to-SQL and retrieval-augmented generation
 
-## Data and confidentiality
-
-The supplied Marvel CPG data and challenge brief are for academic use only. Do not add the raw client files to this repository unless the instructor explicitly approves it. The team should document how authorized members can obtain and place the data locally.
-
-
 ## Module 1 (Commercial Execution Analytics Dashboard): Docker Quick Start Guide
 
 Ensure you have **Docker** and **Docker Compose** installed on your system:

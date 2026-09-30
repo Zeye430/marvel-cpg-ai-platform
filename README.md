@@ -1,10 +1,8 @@
 # Marvel CPG AI Commercial Execution Platform
 
-Course project for CDA650. The team will design and build an AI-powered commercial execution platform for the fictional company Marvel CPG.
+Marvel CPG's commercial operations face complex decision making problems everyday from sales, inventory, to execution data. They need a system for the field representative and the regional manager to turn these datas into intelligent, proactive, and measurable decision insights.
 
-## Project scope
-
-The final application will integrate four modules:
+The system integrates 4 modules:
 
 1. Commercial execution analytics dashboard
 2. Seven-day out-of-stock risk prediction and store visit prioritization

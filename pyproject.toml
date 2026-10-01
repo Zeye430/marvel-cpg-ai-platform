@@ -1,0 +1,18 @@
+[project]
+name = "marvel-cpg-ai-platform"
+version = "0.1.0"
+description = "AI-powered commercial execution platform for the Marvel CPG course project."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "matplotlib==3.10.9",
+    "numpy==2.3.5",
+    "pandas==2.3.3",
+    "seaborn==0.13.2",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel==7.3.0",
+    "jupyterlab==4.6.4",
+]

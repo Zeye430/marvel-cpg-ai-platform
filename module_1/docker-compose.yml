@@ -1,0 +1,15 @@
+services:
+  dashboard:
+    build: .
+    image: marvel-cpg-dashboard
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../marvel_data:/app/marvel_data:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3

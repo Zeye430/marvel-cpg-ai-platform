@@ -1,0 +1,6 @@
+shiny>=1.0
+shinywidgets
+anywidget
+plotly>=5.20
+pandas
+numpy

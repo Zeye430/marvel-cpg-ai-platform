@@ -2,7 +2,7 @@
 
 Course project for CDA650. The team will design and build an AI-powered commercial execution platform for the fictional company Marvel CPG.
 
-## Project scope
+## Project Scope
 
 The final application will integrate four modules:
 
@@ -11,20 +11,42 @@ The final application will integrate four modules:
 3. Commercial negotiation and price scenario simulator
 4. Conversational assistant with Text-to-SQL and retrieval-augmented generation
 
-## Team workflow
+## Module 1: Commercial Execution Analytics Dashboard
 
-- Keep `main` stable and do not develop directly on it.
-- Create a branch for each task on Trello, such as `team-member-name/trello-task-name`.
-- Open a pull request when the work is ready for review.
-- Ask at least one teammate to review the pull request before merging.
-- Use GitHub Issues to describe tasks, owners, acceptance criteria, and progress.
-- Do not commit API keys, passwords, local environment files, or other secrets.
+### Docker Quick Start Guide
 
-## Data and confidentiality
+Ensure Docker and Docker Compose are installed:
 
-The supplied Marvel CPG data and challenge brief are for academic use only. Do not add the raw client files to this repository unless the instructor explicitly approves it. The team should document how authorized members can obtain and place the data locally.
+```bash
+docker --version
+docker compose version
+```
 
-## Development environment
+Navigate to the Module 1 directory:
+
+```bash
+cd module_1
+```
+
+Build and start the container:
+
+```bash
+docker compose up --build
+```
+
+Open the dashboard in a browser:
+
+```text
+http://localhost:8000
+```
+
+Stop the container:
+
+```bash
+docker compose down
+```
+
+## Development Environment
 
 The project uses Python 3.13 and `uv` for Python and dependency management.
 
@@ -37,6 +59,18 @@ uv run jupyter lab
 
 Run Python commands through `uv run` so they use the project environment. Commit `pyproject.toml`, `uv.lock`, and `.python-version`, but do not commit `.venv/`.
 
+## Team Workflow
+
+- Keep `main` stable and do not develop directly on it.
+- Create a branch for each assigned task.
+- Open a pull request when the work is ready for review.
+- Ask at least one teammate to review the pull request before merging.
+- Do not commit API keys, passwords, local environment files, or other secrets.
+
+## Data and Confidentiality
+
+The supplied Marvel CPG data and challenge brief are for academic use only. Do not add the raw client files to this repository unless the instructor explicitly approves it. Document how authorized team members can obtain and place the data locally.
+
 ## Status
 
-Repository initialized. Technical implementation and team responsibilities will be added after the team confirms the architecture and development plan.
+The initial Module 1 implementation and project environment configuration are available. The remaining modules are under development.

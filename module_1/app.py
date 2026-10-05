@@ -33,6 +33,7 @@ if DATA_DIR is None:
 # 1. Dimension Tables
 prods = pd.read_csv(DATA_DIR / "dim_products.csv")
 stores = pd.read_csv(DATA_DIR / "dim_stores.csv")
+guardrails = pd.read_csv(DATA_DIR / "dim_guardrails.csv")
 
 # 2. Assign Rep Profiles deterministically to stores
 REPS = [f"Rep {c}" for c in "ABCDEF"]
@@ -108,8 +109,8 @@ si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, u
 au_raw["date"] = pd.to_datetime(au_raw["date"])
 
 # Merge metadata
-store_meta = ["store_id", "store_name", "channel", "region", "segment_tier", "rep_id"]
-prod_meta = ["sku_id", "product_name", "category", "is_msl"]
+store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
+prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
 
 so = so_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
 si = si_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
@@ -694,6 +695,56 @@ aside.sidebar,
   margin-top: 6px;
 }
 
+/* ================= DOMAIN TABS (APPLE LUXURY PILLS) ================= */
+.nav-pills {
+  background: #EDEDF0 !important;
+  padding: 6px !important;
+  border-radius: 980px !important;
+  display: inline-flex !important;
+  gap: 6px !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  margin-bottom: 16px !important;
+}
+
+.nav-pills .nav-link {
+  color: #6E6E73 !important;
+  font-weight: 600 !important;
+  font-size: 0.82rem !important;
+  border-radius: 980px !important;
+  padding: 8px 18px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.nav-pills .nav-link:hover {
+  color: #1D1D1F !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+}
+
+.nav-pills .nav-link.active {
+  background: #FFFFFF !important;
+  color: #1D1D1F !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Category Section Badges */
+.section-badge {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 980px;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.badge-oos { background: rgba(255, 59, 48, 0.1); color: #D70015; border: 1px solid rgba(255, 59, 48, 0.2); }
+.badge-shelf { background: rgba(0, 113, 227, 0.1); color: #0071E3; border: 1px solid rgba(0, 113, 227, 0.2); }
+.badge-trade { background: rgba(255, 149, 0, 0.1); color: #C97200; border: 1px solid rgba(255, 149, 0, 0.2); }
+.badge-geo { background: rgba(52, 199, 89, 0.1); color: #1B873F; border: 1px solid rgba(52, 199, 89, 0.2); }
+
 /* Tables */
 .table, .dataframe, .shiny-data-grid {
   color: var(--text-primary) !important;
@@ -1053,58 +1104,215 @@ def dashboard_ui():
                 ui.output_ui("ctx"),
                 ui.output_ui("kpi_row"),
                 ui.div(style="height:12px;"),
-                ui.layout_columns(
-                    ui.card(
-                        ui.card_header("Sell-In vs Sell-Out Velocity (Weekly Units) — Shaded area indicates channel stock buildup"),
-                        output_widget("flow"),
-                        full_screen=True,
-                        height="350px"
-                    ),
-                    ui.card(
-                        ui.card_header("Out-of-Stock (OOS) Rate Trend by Channel (Dotted line = 5% Target)"),
-                        output_widget("oos_trend"),
-                        full_screen=True,
-                        height="350px"
-                    ),
-                    col_widths=(6, 6)
-                ),
-                ui.div(style="height:12px;"),
-                ui.layout_columns(
-                    ui.card(
-                        ui.card_header(
+                ui.navset_card_pill(
+                    # Tab 1: Out-of-Stock (OOS) & Supply Chain Insights
+                    ui.nav_panel(
+                        "📦  1. OOS & Supply Chain Insights",
+                        ui.div(
                             ui.div(
-                                ui.span("Out-of-Stock Heatmap by SKU", class_="me-auto"),
-                                ui.input_radio_buttons("hm_col", None, {"channel": "By Channel", "region": "By Region"}, inline=True),
-                                class_="d-flex align-items-center justify-content-between"
-                            )
-                        ),
-                        output_widget("heat"),
-                        full_screen=True,
-                        height="410px"
+                                ui.span("OUT-OF-STOCK (OOS) & SUPPLY CHAIN INSIGHTS", class_="section-badge badge-oos"),
+                                ui.h5("Real-Time Store Inventory Radar & Lost Sales Mitigation", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                                ui.p("Target Users: Field Sales Representative & Regional Operations · Tracks mandatory MSL items, highlights impending stockouts, and quantifies commercial loss.", class_="small text-muted mb-3"),
+                                class_="px-2 pt-2"
+                            ),
+                            ui.card(
+                                ui.card_header(
+                                    ui.div(
+                                        ui.span("Chart 1: Stock Level & OOS Hazard Heatmap (Mandatory MSL Items · Red = Active OOS · Amber = Impending Stockout Hazard)", class_="fw-bold"),
+                                        ui.span("Target: Field Sales Rep Pre-Visit Radar", class_="badge bg-light text-secondary border"),
+                                        class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                    )
+                                ),
+                                output_widget("chart1_oos_hazard"),
+                                full_screen=True,
+                                height="490px"
+                            ),
+                            ui.div(style="height:14px;"),
+                            ui.layout_columns(
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 2: Estimated Lost Sales Trend & Cumulative Loss (Stacked Area)", class_="fw-bold"),
+                                                ui.div("Quantifies financial impact of the 8–12% lost sales problem over time", class_="small text-muted")
+                                            ),
+                                            ui.input_radio_buttons("c2_group", None, {"region": "By Region", "category": "By Category"}, selected="region", inline=True),
+                                            class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                        )
+                                    ),
+                                    output_widget("chart2_lost_sales"),
+                                    full_screen=True,
+                                    height="380px"
+                                ),
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 3: OOS Duration Distribution (Boxplot)", class_="fw-bold"),
+                                                ui.div("Evaluates replenishment agility: structural delay vs point spikes", class_="small text-muted")
+                                            ),
+                                            ui.input_radio_buttons("c3_group", None, {"channel": "By Channel", "segment_tier": "By Tier"}, selected="channel", inline=True),
+                                            class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                        )
+                                    ),
+                                    output_widget("chart3_oos_duration"),
+                                    full_screen=True,
+                                    height="380px"
+                                ),
+                                col_widths=(6, 6)
+                            ),
+                            class_="p-2"
+                        )
                     ),
-                    ui.card(
-                        ui.card_header("Top 10 High-Risk Out-of-Stock SKUs"),
-                        output_widget("rank"),
-                        full_screen=True,
-                        height="410px"
+
+                    # Tab 2: Shelf Execution & Compliance Optimization
+                    ui.nav_panel(
+                        "📐  2. Shelf Execution & Compliance",
+                        ui.div(
+                            ui.div(
+                                ui.span("SHELF EXECUTION & COMPLIANCE OPTIMIZATION", class_="section-badge badge-shelf"),
+                                ui.h5("Planogram, MSL Availability & Shelf Real Estate Health", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                                ui.p("Target Users: Field Sales Rep & Regional Manager · Converts store audit compliance into revenue-generating shelf real estate.", class_="small text-muted mb-3"),
+                                class_="px-2 pt-2"
+                            ),
+                            ui.card(
+                                ui.card_header(
+                                    ui.div(
+                                        ui.span("Chart 4: Planogram & MSL Compliance Gauge Matrix (Target Benchmark ≥ 85% vs Historical Baseline 62%)", class_="fw-bold"),
+                                        ui.span("Actionable Store-Fix Checklist", class_="badge bg-light text-secondary border"),
+                                        class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                    )
+                                ),
+                                output_widget("chart4_compliance_gauge"),
+                                full_screen=True,
+                                height="400px"
+                            ),
+                            ui.div(style="height:14px;"),
+                            ui.layout_columns(
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 5: Actual Shelf Share vs. Target Bubble Plot", class_="fw-bold"),
+                                                ui.div("High-vis shelf share correlation to revenue conversion (Size = Store Tier)", class_="small text-muted")
+                                            ),
+                                            class_="d-flex align-items-center justify-content-between"
+                                        )
+                                    ),
+                                    output_widget("chart5_shelf_bubble"),
+                                    full_screen=True,
+                                    height="400px"
+                                ),
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 6: Multi-Dimensional Execution Scorecard (Radar)", class_="fw-bold"),
+                                                ui.div("5-Axis Execution Health: Planogram, MSL, Secondary Display, Shelf Share, In-Stock", class_="small text-muted")
+                                            ),
+                                            ui.input_radio_buttons("c6_group", None, {"region": "By Region", "segment_tier": "By Tier", "channel": "By Channel"}, selected="region", inline=True),
+                                            class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                        )
+                                    ),
+                                    output_widget("chart6_radar_scorecard"),
+                                    full_screen=True,
+                                    height="400px"
+                                ),
+                                col_widths=(6, 6)
+                            ),
+                            class_="p-2"
+                        )
                     ),
-                    col_widths=(7, 5)
-                ),
-                ui.div(style="height:12px;"),
-                ui.layout_columns(
-                    ui.card(
-                        ui.card_header("Shelf Share % by Category & Channel"),
-                        output_widget("shelf"),
-                        full_screen=True,
-                        height="390px"
+
+                    # Tab 3: Trade Terms, Guardrail Compliance & Negotiations
+                    ui.nav_panel(
+                        "⚖️  3. Trade Terms & Negotiations",
+                        ui.div(
+                            ui.div(
+                                ui.span("TRADE TERMS & COMMERCIAL GUARDRAILS", class_="section-badge badge-trade"),
+                                ui.h5("Real-Time Negotiation Boundaries & Concession Enforcement", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                                ui.p("Target Users: Field Sales Rep & Regional Manager · Eliminates data-free negotiations, flags policy-breaching discounts, and verifies execution concessions.", class_="small text-muted mb-3"),
+                                class_="px-2 pt-2"
+                            ),
+                            ui.layout_columns(
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 7: Effective Discount vs Margin Realization Scatter", class_="fw-bold"),
+                                                ui.div("Red Zone: Exceeds discount cap or breaches min margin (Requires Approval)", class_="small text-muted")
+                                            ),
+                                            class_="d-flex align-items-center justify-content-between"
+                                        )
+                                    ),
+                                    output_widget("chart7_discount_margin"),
+                                    full_screen=True,
+                                    height="430px"
+                                ),
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 8: Trade-off Execution Commitment Compliance", class_="fw-bold"),
+                                                ui.div("Delivered vs unfulfilled retailer concessions from store audits", class_="small text-muted")
+                                            ),
+                                            class_="d-flex align-items-center justify-content-between"
+                                        )
+                                    ),
+                                    output_widget("chart8_tradeoff_compliance"),
+                                    full_screen=True,
+                                    height="430px"
+                                ),
+                                col_widths=(6, 6)
+                            ),
+                            class_="p-2"
+                        )
                     ),
-                    ui.card(
-                        ui.card_header("Store Execution Priority Matrix (Highest OOS & Compliance Issues First)"),
-                        ui.output_data_frame("stores_tbl"),
-                        full_screen=True,
-                        height="390px"
+
+                    # Tab 4: Commercial Strategy & Geospatial Execution
+                    ui.nav_panel(
+                        "🌐  4. Commercial Strategy & Geospatial",
+                        ui.div(
+                            ui.div(
+                                ui.span("COMMERCIAL STRATEGY & GEOSPATIAL EXECUTION", class_="section-badge badge-geo"),
+                                ui.h5("Geospatial Territory Health & Multi-Stage Inventory Velocity", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                                ui.p("Target Users: Regional Manager & Commercial Operations · Allocates field rep routes and synchronizes channel Sell-In with store Sell-Out.", class_="small text-muted mb-3"),
+                                class_="px-2 pt-2"
+                            ),
+                            ui.layout_columns(
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.div(
+                                                ui.span("Chart 9: Regional Execution vs Revenue Map (Choropleth)", class_="fw-bold"),
+                                                ui.div("Spot territory clusters and execution gaps across 20 US States", class_="small text-muted")
+                                            ),
+                                            ui.input_radio_buttons("c9_metric", None, {"health_score": "Health Score", "net_sales": "Net Sales ($)"}, selected="health_score", inline=True),
+                                            class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
+                                        )
+                                    ),
+                                    output_widget("chart9_geo_map"),
+                                    full_screen=True,
+                                    height="440px"
+                                ),
+                                ui.card(
+                                    ui.card_header(
+                                        ui.div(
+                                            ui.span("Chart 10: Sell-In vs Sell-Out Inventory Velocity (Sankey)", class_="fw-bold"),
+                                            ui.div("Category → Channel Sell-In → Consumer Offtake vs Holding Buffer", class_="small text-muted"),
+                                            class_="d-flex flex-column"
+                                        )
+                                    ),
+                                    output_widget("chart10_sankey_velocity"),
+                                    full_screen=True,
+                                    height="440px"
+                                ),
+                                col_widths=(6, 6)
+                            ),
+                            class_="p-2"
+                        )
                     ),
-                    col_widths=(5, 7)
+                    id="main_chart_tabs"
                 ),
                 class_="p-2"
             )
@@ -1397,13 +1605,13 @@ def server(input, output, session):
             class_="d-flex align-items-center mb-3"
         )
 
-    def tidy(fig, h=300):
+    def tidy(fig, h=350, is_polar=False, is_geo=False):
         fig.update_layout(
             template="plotly_white",
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             height=h,
-            margin=dict(l=14, r=14, t=14, b=14),
+            margin=dict(l=16, r=16, t=32, b=16),
             legend=dict(
                 orientation="h",
                 y=-0.22,
@@ -1411,16 +1619,6 @@ def server(input, output, session):
                 font=dict(size=11, color="#6E6E73", family="'Plus Jakarta Sans', -apple-system, sans-serif")
             ),
             font=dict(family="'Plus Jakarta Sans', -apple-system, sans-serif", size=12, color="#6E6E73"),
-            xaxis=dict(
-                gridcolor="rgba(0,0,0,0.04)",
-                zerolinecolor="rgba(0,0,0,0.08)",
-                tickfont=dict(color="#6E6E73", size=11)
-            ),
-            yaxis=dict(
-                gridcolor="rgba(0,0,0,0.04)",
-                zerolinecolor="rgba(0,0,0,0.08)",
-                tickfont=dict(color="#6E6E73", size=11)
-            ),
             hoverlabel=dict(
                 bgcolor="#FFFFFF",
                 font_size=12,
@@ -1429,106 +1627,542 @@ def server(input, output, session):
                 bordercolor="rgba(0,0,0,0.12)"
             )
         )
+        if not is_polar and not is_geo:
+            fig.update_layout(
+                xaxis=dict(
+                    gridcolor="rgba(0,0,0,0.04)",
+                    zerolinecolor="rgba(0,0,0,0.08)",
+                    tickfont=dict(color="#6E6E73", size=11)
+                ),
+                yaxis=dict(
+                    gridcolor="rgba(0,0,0,0.04)",
+                    zerolinecolor="rgba(0,0,0,0.08)",
+                    tickfont=dict(color="#6E6E73", size=11)
+                )
+            )
         return fig
 
-    @render_widget
-    def flow():
-        s, i = SO(), SI()
-        req(len(s))
-        a = s.groupby("week").units_sold_daily.sum()
-        b = i.groupby("week").units_sold.sum().reindex(a.index, fill_value=0)
-        f = go.Figure([
-            go.Scatter(
-                x=b.index, y=b.values, name="Sell-In (Replenishment Orders)",
-                line=dict(color="#0071E3", width=3)
-            ),
-            go.Scatter(
-                x=a.index, y=a.values, name="Sell-Out (Consumer Offtake)",
-                line=dict(color="#FF3B30", width=3),
-                fill="tonexty", fillcolor="rgba(0, 113, 227, 0.08)"
-            )
-        ])
-        return tidy(f, 300)
+    # ==================== 1. OOS & SUPPLY CHAIN INSIGHTS ====================
 
     @render_widget
-    def oos_trend():
+    def chart1_oos_hazard():
+        """Chart 1: Stock Level & OOS Hazard Heatmap (Field Sales Rep Radar)."""
         s = SO()
         req(len(s))
-        d = s.groupby(["week", "channel"]).is_out_of_stock.mean().mul(100).reset_index()
-        f = px.line(
-            d, x="week", y="is_out_of_stock", color="channel",
-            color_discrete_map=COL, labels={"is_out_of_stock": "OOS %", "week": ""}
+
+        # Filter for mandatory MSL items
+        msl_df = s[s.is_msl == True]
+        if msl_df.empty:
+            msl_df = s
+
+        latest_date = msl_df["date"].max()
+        latest_so = msl_df[msl_df["date"] == latest_date]
+
+        # Field rep view: scoped to their route stores; Manager view: prioritize top 25 hazard stores
+        if active_role() == "Field Rep":
+            sub = latest_so
+        else:
+            if latest_so["store_name"].nunique() > 25:
+                store_hazard = latest_so.groupby("store_name").agg(
+                    oos_count=("is_out_of_stock", "sum"),
+                    avg_inv=("inventory_level", "mean")
+                ).sort_values(by=["oos_count", "avg_inv"], ascending=[False, True])
+                top_stores = store_hazard.index[:25]
+                sub = latest_so[latest_so["store_name"].isin(top_stores)]
+            else:
+                sub = latest_so
+
+        pivot = sub.pivot_table(
+            index="store_name",
+            columns="product_name",
+            values="inventory_level",
+            aggfunc="mean"
+        ).fillna(0)
+
+        # Shorten product names for crisp visual radar
+        pivot.columns = [col.replace("Marvel ", "") for col in pivot.columns]
+
+        fig = px.imshow(
+            pivot,
+            text_auto=".0f",
+            aspect="auto",
+            color_continuous_scale=[
+                [0.0, "#FF3B30"],    # 0 units: Active OOS (Red Hazard)
+                [0.12, "#FF9500"],   # 1-15 units: Impending stockout buffer warning (Amber)
+                [0.35, "#E5E5EA"],   # Mid buffer (Silver)
+                [1.0, "#0071E3"]     # Healthy buffer (Apple Blue)
+            ],
+            labels=dict(color="On-Hand Units", x="", y="")
         )
-        f.add_hline(
-            y=5, line_dash="dot", line_color="#86868B",
-            annotation_text="5% OOS Target Threshold",
+        fig.update_xaxes(side="top", tickangle=-30)
+        h = max(420, min(650, len(pivot) * 22 + 120))
+        return tidy(fig, h=h)
+
+    @render_widget
+    def chart2_lost_sales():
+        """Chart 2: Estimated Lost Sales Trend & Cumulative Loss Area Chart."""
+        s = SO()
+        req(len(s))
+
+        group_by = input.c2_group() if hasattr(input, "c2_group") and input.c2_group() else "region"
+
+        # Baseline average daily sales per (store_id, sku_id) when in stock
+        in_stock = s[s.is_out_of_stock == 0]
+        if in_stock.empty:
+            in_stock = s
+        base = in_stock.groupby(["store_id", "sku_id"])["units_sold_daily"].mean().rename("baseline_daily")
+        s_calc = s.merge(base, on=["store_id", "sku_id"], how="left")
+        s_calc["baseline_daily"] = s_calc["baseline_daily"].fillna(s_calc["units_sold_daily"]).clip(lower=1)
+
+        # Estimated Lost Revenue = is_out_of_stock * baseline_daily * list_price
+        s_calc["lost_revenue"] = s_calc["is_out_of_stock"] * s_calc["baseline_daily"] * s_calc["list_price"]
+
+        df_loss = s_calc.groupby(["week", group_by])["lost_revenue"].sum().reset_index()
+
+        color_map = {
+            "Northeast": "#0071E3", "Southeast": "#34C759", "Midwest": "#FF9500", "West": "#AF52DE",
+            "Surface Cleaners": "#0071E3", "Dishwashing": "#FF9500", "Laundry": "#AF52DE"
+        }
+
+        fig = px.area(
+            df_loss,
+            x="week",
+            y="lost_revenue",
+            color=group_by,
+            color_discrete_map=color_map,
+            labels={"lost_revenue": "Est. Lost Revenue ($)", "week": "", group_by: group_by.capitalize()}
+        )
+        fig.update_yaxes(tickprefix="$", tickformat=",.0f")
+        return tidy(fig, h=350)
+
+    @render_widget
+    def chart3_oos_duration():
+        """Chart 3: OOS Duration Distribution (Boxplot)."""
+        s = SO()
+        req(len(s))
+
+        group_col = input.c3_group() if hasattr(input, "c3_group") and input.c3_group() else "channel"
+
+        # Sort and detect consecutive OOS spells
+        s_sorted = s.sort_values(["store_id", "sku_id", "date"]).reset_index(drop=True)
+        s_sorted["spell_block"] = (
+            (s_sorted["is_out_of_stock"] != s_sorted.groupby(["store_id", "sku_id"])["is_out_of_stock"].shift()) |
+            (s_sorted["store_id"] != s_sorted["store_id"].shift()) |
+            (s_sorted["sku_id"] != s_sorted["sku_id"].shift())
+        ).cumsum()
+
+        oos_only = s_sorted[s_sorted["is_out_of_stock"] == 1]
+        if oos_only.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="Zero OOS incidents recorded in selected period", showarrow=False)
+            return tidy(fig, h=350)
+
+        incidents = oos_only.groupby(["spell_block", "store_id", "sku_id", group_col]).agg(
+            consecutive_days=("date", "count")
+        ).reset_index()
+
+        fig = px.box(
+            incidents,
+            x=group_col,
+            y="consecutive_days",
+            color=group_col,
+            color_discrete_map=COL if group_col == "channel" else {
+                "Tier 1": "#0071E3", "Tier 2": "#FF9500", "Tier 3": "#8E8E93"
+            },
+            points="outliers",
+            labels={"consecutive_days": "Consecutive Days OOS per Incident", group_col: ""}
+        )
+        return tidy(fig, h=350)
+
+    # ==================== 2. SHELF EXECUTION & COMPLIANCE ====================
+
+    @render_widget
+    def chart4_compliance_gauge():
+        """Chart 4: Planogram & MSL Compliance Gauge / Progress Bar Matrix."""
+        x, s = AU(), SO()
+        req(len(x))
+
+        plano = x.groupby(["category", "brand"])["planogram_compliance"].mean().mul(100).reset_index()
+
+        s_msl = s[s.is_msl == True]
+        if s_msl.empty:
+            s_msl = s
+        msl = s_msl.groupby(["category", "brand"])["is_out_of_stock"].apply(
+            lambda v: (1 - v.mean()) * 100
+        ).reset_index(name="msl_availability")
+
+        merged = plano.merge(msl, on=["category", "brand"], how="left").fillna(0)
+        merged["brand_key"] = merged["category"] + " · " + merged["brand"]
+
+        melted = merged.melt(
+            id_vars=["brand_key", "category", "brand"],
+            value_vars=["planogram_compliance", "msl_availability"],
+            var_name="Metric",
+            value_name="Percentage"
+        )
+        melted["Metric"] = melted["Metric"].map({
+            "planogram_compliance": "Planogram Compliance %",
+            "msl_availability": "MSL Availability %"
+        })
+
+        fig = px.bar(
+            melted,
+            y="brand_key",
+            x="Percentage",
+            color="Metric",
+            barmode="group",
+            orientation="h",
+            text_auto=".1f",
+            color_discrete_map={
+                "Planogram Compliance %": "#0071E3",
+                "MSL Availability %": "#34C759"
+            },
+            labels={"Percentage": "Compliance Rate (%)", "brand_key": ""}
+        )
+
+        fig.add_vline(
+            x=85, line_dash="dash", line_color="#34C759", line_width=2,
+            annotation_text="85% Target Line",
+            annotation_position="top right",
+            annotation_font=dict(size=10, color="#1B873F")
+        )
+        fig.add_vline(
+            x=62, line_dash="dot", line_color="#86868B", line_width=1.5,
+            annotation_text="62% Baseline",
             annotation_position="bottom right",
             annotation_font=dict(size=10, color="#86868B")
         )
-        return tidy(f, 300)
+        fig.update_xaxes(range=[0, 105], ticksuffix="%")
+        return tidy(fig, h=380)
 
     @render_widget
-    def heat():
-        s = SO()
-        req(len(s))
-        p = s.groupby(["product_name", input.hm_col()]).is_out_of_stock.mean().mul(100).unstack().fillna(0)
-        f = px.imshow(
-            p,
-            text_auto=".1f",
-            aspect="auto",
-            color_continuous_scale=[[0, "#F5F5F7"], [0.25, "#E2E8F0"], [0.55, "#FDA4AF"], [0.85, "#F43F5E"], [1.0, "#BE123C"]],
-            labels=dict(color="OOS %", x="", y="")
+    def chart5_shelf_bubble():
+        """Chart 5: Actual Shelf Share vs. Target Bubble Plot."""
+        x, i = AU(), SI()
+        req(len(x))
+
+        shelf_store = x.groupby("store_id")["shelf_share_pct"].mean().reset_index()
+        sales_store = i.groupby("store_id")["net_sales"].sum().reset_index()
+
+        store_attrs = stores[["store_id", "store_name", "channel", "region", "segment_tier"]].drop_duplicates()
+        df_bubble = store_attrs.merge(shelf_store, on="store_id").merge(sales_store, on="store_id")
+
+        tier_sizes = {"Tier 1": 26, "Tier 2": 16, "Tier 3": 10}
+        df_bubble["bubble_size"] = df_bubble["segment_tier"].map(tier_sizes).fillna(12)
+
+        fig = px.scatter(
+            df_bubble,
+            x="shelf_share_pct",
+            y="net_sales",
+            size="bubble_size",
+            color="channel",
+            hover_name="store_name",
+            hover_data={"segment_tier": True, "region": True, "shelf_share_pct": ":.1f%", "net_sales": ":$,.0f", "bubble_size": False},
+            color_discrete_map=COL,
+            labels={"shelf_share_pct": "Average Shelf Share %", "net_sales": "Total Net Sales ($)", "channel": "Channel"}
         )
-        return tidy(f, 350)
+        fig.add_vline(
+            x=30, line_dash="dash", line_color="#FF9500", line_width=1.8,
+            annotation_text="Target Shelf Share (≥30%)",
+            annotation_position="top left",
+            annotation_font=dict(size=10, color="#C97200")
+        )
+        fig.update_xaxes(ticksuffix="%")
+        fig.update_yaxes(tickprefix="$", tickformat=",.0f")
+        return tidy(fig, h=380)
 
     @render_widget
-    def rank():
-        s = SO()
-        req(len(s))
-        d = (s.groupby(["product_name", "category"]).is_out_of_stock.mean().mul(100)
-             .reset_index(name="oos").nlargest(10, "oos").sort_values("oos"))
-        f = px.bar(
-            d, x="oos", y="product_name", color="category", orientation="h", text_auto=".1f",
+    def chart6_radar_scorecard():
+        """Chart 6: Multi-Dimensional Execution Scorecard (Radar Chart)."""
+        x, s = AU(), SO()
+        req(len(x))
+
+        rad_axes = ["Planogram Compliance %", "MSL Availability %", "Secondary Display %", "Shelf Share %", "In-Stock Rate %"]
+        group_col = input.c6_group() if hasattr(input, "c6_group") and input.c6_group() else "region"
+
+        groups = sorted(x[group_col].unique().tolist())
+        palette = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF2D55"]
+
+        fig = go.Figure()
+        for idx, grp in enumerate(groups):
+            sub_x = x[x[group_col] == grp]
+            sub_s = s[s[group_col] == grp]
+            sub_msl = sub_s[sub_s.is_msl == True]
+            if sub_msl.empty:
+                sub_msl = sub_s
+
+            p_val = sub_x["planogram_compliance"].mean() * 100 if not sub_x.empty else 0
+            m_val = (1 - sub_msl["is_out_of_stock"].mean()) * 100 if not sub_msl.empty else 0
+            d_val = sub_x["secondary_display"].mean() * 100 if not sub_x.empty else 0
+            sh_val = sub_x["shelf_share_pct"].mean() if not sub_x.empty else 0
+            i_val = (1 - sub_s["is_out_of_stock"].mean()) * 100 if not sub_s.empty else 0
+
+            vals = [p_val, m_val, d_val, sh_val, i_val]
+            vals.append(vals[0])
+
+            col_accent = palette[idx % len(palette)]
+            fig.add_trace(go.Scatterpolar(
+                r=vals,
+                theta=rad_axes + [rad_axes[0]],
+                fill="toself",
+                name=grp,
+                line=dict(color=col_accent, width=2.5)
+            ))
+
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100],
+                    gridcolor="rgba(0,0,0,0.06)",
+                    tickfont=dict(size=10, color="#86868B")
+                ),
+                angularaxis=dict(
+                    gridcolor="rgba(0,0,0,0.06)",
+                    tickfont=dict(size=11, color="#1D1D1F")
+                )
+            )
+        )
+        return tidy(fig, h=380, is_polar=True)
+
+    # ==================== 3. TRADE TERMS & NEGOTIATIONS ====================
+
+    @render_widget
+    def chart7_discount_margin():
+        """Chart 7: Effective Discount vs Margin Realization Scatter Plot with Guardrails."""
+        i = SI()
+        req(len(i))
+
+        si_g = i.merge(guardrails, on=["channel", "category"], how="left")
+
+        agg = si_g.groupby(["store_id", "store_name", "channel", "region", "category"]).agg(
+            units_sold=("units_sold", "sum"),
+            net_sales=("net_sales", "sum"),
+            gross_sales=("units_sold", lambda u: (u * si_g.loc[u.index, "list_price"]).sum()),
+            cogs=("units_sold", lambda u: (u * si_g.loc[u.index, "unit_cost"]).sum()),
+            max_discount_pct=("max_discount_pct", "first"),
+            min_target_margin=("min_target_margin", "first")
+        ).reset_index()
+
+        agg["effective_discount_pct"] = (1 - (agg["net_sales"] / agg["gross_sales"])).mul(100).clip(lower=0)
+        agg["realized_margin_pct"] = ((agg["net_sales"] - agg["cogs"]) / agg["net_sales"]).mul(100)
+
+        agg["is_breach"] = (agg["effective_discount_pct"] > agg["max_discount_pct"]) | (agg["realized_margin_pct"] < agg["min_target_margin"])
+        agg["zone_status"] = np.where(agg["is_breach"], "Red Zone (Requires Approval)", "Safe Zone (Compliant)")
+
+        fig = px.scatter(
+            agg,
+            x="effective_discount_pct",
+            y="realized_margin_pct",
+            color="zone_status",
             color_discrete_map={
-                "Surface Cleaners": "#0071E3",
-                "Dishwashing": "#FF9500",
-                "Laundry": "#AF52DE"
+                "Red Zone (Requires Approval)": "#FF3B30",
+                "Safe Zone (Compliant)": "#0071E3"
             },
-            labels={"oos": "OOS %", "product_name": ""}
+            hover_name="store_name",
+            hover_data={
+                "channel": True,
+                "category": True,
+                "effective_discount_pct": ":.1f%",
+                "max_discount_pct": ":.1f%",
+                "realized_margin_pct": ":.1f%",
+                "min_target_margin": ":.1f%",
+                "zone_status": True
+            },
+            labels={
+                "effective_discount_pct": "Effective Discount Rate %",
+                "realized_margin_pct": "Realized Margin %",
+                "zone_status": "Policy Status"
+            }
         )
-        return tidy(f, 350)
+
+        avg_max_disc = agg["max_discount_pct"].mean()
+        avg_min_mrg = agg["min_target_margin"].mean()
+        fig.add_vline(
+            x=avg_max_disc, line_dash="dash", line_color="#FF3B30", line_width=1.5,
+            annotation_text=f"Max Discount Cap (~{avg_max_disc:.1f}%)",
+            annotation_position="top right",
+            annotation_font=dict(size=10, color="#D70015")
+        )
+        fig.add_hline(
+            y=avg_min_mrg, line_dash="dash", line_color="#FF9500", line_width=1.5,
+            annotation_text=f"Min Target Margin (~{avg_min_mrg:.1f}%)",
+            annotation_position="bottom right",
+            annotation_font=dict(size=10, color="#C97200")
+        )
+        fig.update_xaxes(ticksuffix="%")
+        fig.update_yaxes(ticksuffix="%")
+        return tidy(fig, h=390)
 
     @render_widget
-    def shelf():
+    def chart8_tradeoff_compliance():
+        """Chart 8: Trade-off Execution Commitment Compliance (Grouped Bar Chart)."""
         x = AU()
         req(len(x))
-        d = x.groupby(["category", "channel"]).shelf_share_pct.mean().reset_index()
-        f = px.bar(
-            d, x="category", y="shelf_share_pct", color="channel", barmode="group", text_auto=".1f",
-            color_discrete_map=COL, labels={"shelf_share_pct": "Avg Shelf Share %", "category": ""}
-        )
-        return tidy(f, 330)
 
-    @render.data_frame
-    def stores_tbl():
-        s, i, x = SO(), SI(), AU()
-        req(len(s))
-        g = s.groupby("store_id").agg(
-            Store=("store_name", "first"),
-            Channel=("channel", "first"),
-            Region=("region", "first"),
-            Tier=("segment_tier", "first"),
-            oos=("is_out_of_stock", "mean"),
-            out=("units_sold_daily", "sum")
-        )
-        si_sum = i.groupby("store_id").units_sold.sum().reindex(g.index, fill_value=0)
-        plano_mean = x.groupby("store_id").planogram_compliance.mean().reindex(g.index, fill_value=0)
+        store_audit = x.groupby("store_id").agg(
+            avg_shelf_share=("shelf_share_pct", "mean"),
+            avg_sec_display=("secondary_display", "mean"),
+            avg_plano=("planogram_compliance", "mean")
+        ).reset_index().merge(stores[["store_id", "channel"]], on="store_id")
 
-        g["Sell-in gap (units)"] = (si_sum - g.out).round().astype("Int64")
-        g["Planogram %"] = (plano_mean * 100).round(1)
-        g["OOS %"] = (g.oos * 100).round(1)
-        g = g.sort_values("OOS %", ascending=False).head(15).drop(columns=["oos", "out"]).reset_index()
-        return render.DataGrid(g.rename(columns={"store_id": "Store ID"}), height="310px")
+        store_trades = store_audit.merge(guardrails[["channel", "required_exec_tradeoff"]].drop_duplicates(), on="channel")
+
+        def eval_tradeoff(row):
+            t = row["required_exec_tradeoff"]
+            if "+10%" in t:
+                return "Met (Delivered)" if (row["avg_shelf_share"] >= 30.0 or row["avg_sec_display"] >= 0.4) else "Unfulfilled (Breach)"
+            elif "+15%" in t:
+                return "Met (Delivered)" if (row["avg_shelf_share"] >= 35.0 or row["avg_sec_display"] >= 0.5) else "Unfulfilled (Breach)"
+            elif "endcap" in t:
+                return "Met (Delivered)" if (row["avg_sec_display"] >= 0.45) else "Unfulfilled (Breach)"
+            elif "100% MSL" in t or "planogram" in t:
+                return "Met (Delivered)" if (row["avg_plano"] >= 0.82) else "Unfulfilled (Breach)"
+            return "Met (Delivered)"
+
+        store_trades["status"] = store_trades.apply(eval_tradeoff, axis=1)
+
+        short_map = {
+            "Secure +10% shelf share or place 1 secondary display": "+10% Shelf Share / Sec. Display",
+            "Commit to featured endcap placement for 4 weeks": "Featured Endcap (4 Weeks)",
+            "Secure +15% shelf share or place 1 secondary display": "+15% Shelf Share / Sec. Display",
+            "Achieve 100% MSL compliance + planogram adherence": "100% MSL & Planogram Adherence"
+        }
+        store_trades["tradeoff_label"] = store_trades["required_exec_tradeoff"].map(short_map).fillna(store_trades["required_exec_tradeoff"])
+
+        counts = store_trades.groupby(["tradeoff_label", "status"]).size().reset_index(name="store_count")
+
+        fig = px.bar(
+            counts,
+            x="tradeoff_label",
+            y="store_count",
+            color="status",
+            barmode="group",
+            text_auto=True,
+            color_discrete_map={
+                "Met (Delivered)": "#34C759",
+                "Unfulfilled (Breach)": "#FF3B30"
+            },
+            labels={"store_count": "Number of Stores / Accounts", "tradeoff_label": "", "status": "Execution Status"}
+        )
+        return tidy(fig, h=390)
+
+    # ==================== 4. COMMERCIAL STRATEGY & GEOSPATIAL ====================
+
+    @render_widget
+    def chart9_geo_map():
+        """Chart 9: Regional Execution vs Revenue Performance Map (Choropleth Map)."""
+        i, x, s = SI(), AU(), SO()
+        req(len(i))
+
+        metric_choice = input.c9_metric() if hasattr(input, "c9_metric") and input.c9_metric() else "health_score"
+
+        st_sales = i.groupby("state")["net_sales"].sum().reset_index()
+        st_plano = x.groupby("state")["planogram_compliance"].mean().mul(100).reset_index()
+        st_stock = s.groupby("state")["is_out_of_stock"].apply(lambda v: (1 - v.mean()) * 100).reset_index(name="in_stock_rate")
+        st_stores = stores.groupby("state")["store_id"].count().reset_index(name="store_count")
+
+        state_df = st_sales.merge(st_plano, on="state").merge(st_stock, on="state").merge(st_stores, on="state")
+        state_df["health_score"] = (state_df["planogram_compliance"] * 0.5 + state_df["in_stock_rate"] * 0.5).round(1)
+
+        fig = px.choropleth(
+            state_df,
+            locations="state",
+            locationmode="USA-states",
+            color=metric_choice,
+            scope="usa",
+            hover_name="state",
+            hover_data={
+                "health_score": ":.1f",
+                "net_sales": ":$,.0f",
+                "planogram_compliance": ":.1f%",
+                "in_stock_rate": ":.1f%",
+                "store_count": True,
+                "state": False
+            },
+            color_continuous_scale="Blues",
+            labels={
+                "health_score": "Execution Health Score",
+                "net_sales": "Net Sales ($)"
+            }
+        )
+        fig.update_layout(
+            geo=dict(
+                bgcolor="rgba(0,0,0,0)",
+                lakecolor="rgba(245,245,247,0.5)",
+                showlakes=True,
+                landcolor="#F5F5F7",
+                subunitcolor="rgba(0,0,0,0.12)"
+            )
+        )
+        return tidy(fig, h=400, is_geo=True)
+
+    @render_widget
+    def chart10_sankey_velocity():
+        """Chart 10: Sell-In vs Sell-Out Inventory Velocity (Sankey Flow Diagram)."""
+        i, s = SI(), SO()
+        req(len(i))
+
+        # Stage 1: Category -> Channel (Sell-In Volume)
+        cat_chan = i.groupby(["category", "channel"])["units_sold"].sum().reset_index()
+
+        # Stage 2: Channel -> Consumer Offtake vs Holding Buffer
+        chan_so = s.groupby("channel")["units_sold_daily"].sum().reset_index(name="sell_out_units")
+        chan_si = i.groupby("channel")["units_sold"].sum().reset_index(name="sell_in_units")
+        chan_flow = chan_si.merge(chan_so, on="channel")
+        chan_flow["buffer_units"] = (chan_flow["sell_in_units"] - chan_flow["sell_out_units"]).clip(lower=0)
+
+        categories = sorted(i["category"].unique().tolist())
+        channels = sorted(i["channel"].unique().tolist())
+        destinations = ["Consumer Offtake (Sell-Out)", "Channel Stock Buffer (Holding)"]
+
+        all_nodes = categories + channels + destinations
+        node_idx = {name: idx for idx, name in enumerate(all_nodes)}
+
+        node_colors = [
+            "#0071E3", "#34C759", "#AF52DE",  # Categories
+            "#FF9500", "#5856D6", "#FF2D55",  # Channels
+            "#1B873F", "#8E8E93"              # Destinations
+        ]
+
+        sources, targets, values, link_colors = [], [], [], []
+
+        for _, row in cat_chan.iterrows():
+            if row["units_sold"] > 0:
+                sources.append(node_idx[row["category"]])
+                targets.append(node_idx[row["channel"]])
+                values.append(row["units_sold"])
+                link_colors.append("rgba(0, 113, 227, 0.22)")
+
+        for _, row in chan_flow.iterrows():
+            if row["sell_out_units"] > 0:
+                sources.append(node_idx[row["channel"]])
+                targets.append(node_idx["Consumer Offtake (Sell-Out)"])
+                values.append(row["sell_out_units"])
+                link_colors.append("rgba(52, 199, 89, 0.28)")
+
+            if row["buffer_units"] > 0:
+                sources.append(node_idx[row["channel"]])
+                targets.append(node_idx["Channel Stock Buffer (Holding)"])
+                values.append(row["buffer_units"])
+                link_colors.append("rgba(255, 149, 0, 0.28)")
+
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=18,
+                thickness=20,
+                line=dict(color="rgba(0,0,0,0.15)", width=0.8),
+                label=all_nodes,
+                color=node_colors[:len(all_nodes)]
+            ),
+            link=dict(
+                source=sources,
+                target=targets,
+                value=values,
+                color=link_colors
+            )
+        )])
+        return tidy(fig, h=400)
 
 
 app = App(app_ui, server)

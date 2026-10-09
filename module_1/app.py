@@ -595,57 +595,233 @@ aside.sidebar,
   border-radius: 20px !important;
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02) !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-  overflow: hidden;
+  overflow: visible !important;
 }
 
 .card:hover {
   box-shadow: 0 10px 30px -4px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.03) !important;
 }
 
-.card-header {
-  background: #ffffff !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
-  font-size: 0.82rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.01em !important;
-  color: var(--text-primary) !important;
-  padding: 14px 20px !important;
+.card .card-body {
+  padding: 22px 24px !important;
+  overflow: visible !important;
+}
+
+.chart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.chart-card-title {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: #1d1d1f;
+  letter-spacing: -0.01em;
 }
 
 /* KPI Metric Tiles */
 .kpi-tile {
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 18px;
-  padding: 18px 20px;
+  border-radius: 16px;
+  padding: 14px 14px;
   box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .kpi-tile:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.03);
+  z-index: 999;
+}
+
+.kpi-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  position: relative;
 }
 
 .kpi-title {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  margin-bottom: 6px;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpi-info-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  color: #86868b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  outline: none;
+  border: none;
+}
+
+.kpi-info-symbol {
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kpi-info-trigger:hover,
+.kpi-info-trigger:focus-within,
+.kpi-tile:hover .kpi-info-trigger {
+  background: #0071e3;
+  color: #ffffff;
+}
+
+.kpi-hover-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 330px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 18px 40px -8px rgba(0, 0, 0, 0.18), 0 4px 14px rgba(0, 0, 0, 0.06);
+  z-index: 10000;
+  text-align: left;
+  animation: kpiPopFade 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.kpi-hover-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 6px;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border-left: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  transform: rotate(45deg);
+}
+
+.kpi-tile:nth-last-child(-n+2) .kpi-hover-popover {
+  left: auto;
+  right: -6px;
+}
+
+.kpi-tile:nth-last-child(-n+2) .kpi-hover-popover::before {
+  left: auto;
+  right: 12px;
+}
+
+.kpi-info-trigger:hover .kpi-hover-popover,
+.kpi-info-trigger:focus-within .kpi-hover-popover {
+  display: block;
+}
+
+@keyframes kpiPopFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.kpi-pop-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin-bottom: 2px;
+}
+
+.kpi-pop-desc {
+  font-size: 0.72rem;
+  color: #6e6e73;
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.kpi-pop-sec {
+  margin-bottom: 7px;
+}
+
+.kpi-pop-sec:last-child {
+  margin-bottom: 0;
+}
+
+.kpi-pop-lbl {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #86868b;
+  margin-bottom: 2px;
+  display: block;
+}
+
+.kpi-pop-badge {
+  display: inline-block;
+  background: #f0f4f8;
+  color: #0071e3;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border: 1px solid rgba(0, 113, 227, 0.15);
+}
+
+.kpi-pop-formula {
+  background: #f8f9fa;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.66rem;
+  color: #1d1d1f;
+  word-break: break-word;
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+.kpi-pop-text {
+  font-size: 0.7rem;
+  color: #3a3a3c;
+  line-height: 1.35;
 }
 
 .kpi-value {
-  font-size: 2.1rem;
+  font-size: 1.65rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', sans-serif;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-value.text-success {
@@ -661,10 +837,10 @@ aside.sidebar,
 }
 
 .kpi-delta-pill {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   border-radius: 980px;
-  padding: 3px 9px;
+  padding: 2px 8px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -690,9 +866,47 @@ aside.sidebar,
 }
 
 .kpi-target-foot {
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   color: var(--text-tertiary);
   margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Horizontal 5-Metric Row Grid */
+.kpi-horizontal-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin-bottom: 22px !important;
+}
+
+@media (max-width: 1024px) {
+  .kpi-horizontal-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  }
+}
+
+/* Vertically Stacked Analytical Sections */
+.dashboard-section {
+  margin-bottom: 38px;
+  width: 100%;
+}
+
+.section-header-block {
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.chart-logic-desc {
+  font-size: 0.76rem;
+  color: #6e6e73;
+  margin-top: 5px;
+  font-weight: 400;
+  line-height: 1.45;
 }
 
 /* ================= DOMAIN TABS (APPLE LUXURY PILLS) ================= */
@@ -1164,14 +1378,39 @@ def dashboard_ui():
                 ui.hr(),
                 ui.accordion(
                     ui.accordion_panel(
-                        "KPI Definitions & Targets",
+                        "KPI Definitions & Formulas",
                         ui.tags.small(
                             ui.tags.ul(
-                                ui.tags.li(ui.tags.b("MSL: "), "% store-days with mandatory SKUs in stock (Target ≥ 90%)"),
-                                ui.tags.li(ui.tags.b("OOS: "), "% store-SKU-days out of stock (Target ≤ 5%)"),
-                                ui.tags.li(ui.tags.b("Sell-in Gap: "), "Sell-in minus sell-out units (Target within ±5%)"),
-                                ui.tags.li(ui.tags.b("Shelf Share: "), "Average category shelf share held by Marvel (Target ≥ 30%)"),
-                                ui.tags.li(ui.tags.b("Planogram: "), "% of audited SKUs aligned with planogram (Target ≥ 80%)"),
+                                ui.tags.li(
+                                    ui.tags.b("MSL Compliance %: "),
+                                    "COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100",
+                                    ui.tags.br(),
+                                    ui.tags.span("Source: fact_sell_out (or fact_inventory), dim_products · Target ≥ 90%", class_="text-muted", style="font-size:0.68rem;")
+                                ),
+                                ui.tags.li(
+                                    ui.tags.b("OOS Rate %: "),
+                                    "SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
+                                    ui.tags.br(),
+                                    ui.tags.span("Source: fact_sell_out (or fact_inventory) · Target ≤ 5%", class_="text-muted", style="font-size:0.68rem;")
+                                ),
+                                ui.tags.li(
+                                    ui.tags.b("Sell-in vs Sell-out Gap %: "),
+                                    "(SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100",
+                                    ui.tags.br(),
+                                    ui.tags.span("Source: fact_sell_in, fact_sell_out · Target within ±5%", class_="text-muted", style="font-size:0.68rem;")
+                                ),
+                                ui.tags.li(
+                                    ui.tags.b("Shelf Share %: "),
+                                    "AVG(shelf_share_pct) grouped by category, channel, and region",
+                                    ui.tags.br(),
+                                    ui.tags.span("Source: fact_execution_audits · Target ≥ 30%", class_="text-muted", style="font-size:0.68rem;")
+                                ),
+                                ui.tags.li(
+                                    ui.tags.b("Planogram Compliance %: "),
+                                    "SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
+                                    ui.tags.br(),
+                                    ui.tags.span("Source: fact_execution_audits · Target ≥ 80%", class_="text-muted", style="font-size:0.68rem;")
+                                ),
                                 style="padding-left:14px;margin-bottom:0;"
                             )
                         )
@@ -1193,327 +1432,320 @@ def dashboard_ui():
             ui.div(
                 ui.output_ui("ctx"),
                 ui.output_ui("kpi_row"),
-                ui.div(style="height:12px;"),
-                ui.navset_card_pill(
-                    # Tab 1: Out-of-Stock (OOS) & Supply Chain Insights
-                    ui.nav_panel(
-                        "📦  1. OOS & Supply Chain Insights",
-                        ui.div(
-                            ui.div(
-                                ui.span("OUT-OF-STOCK (OOS) & SUPPLY CHAIN INSIGHTS", class_="section-badge badge-oos"),
-                                ui.h5("Real-Time Store Inventory Radar & Lost Sales Mitigation", class_="fw-bold mb-1", style="color:#1d1d1f;"),
-                                ui.p("Target Users: Field Sales Representative & Regional Operations · Tracks mandatory MSL items, highlights impending stockouts, and quantifies commercial loss.", class_="small text-muted mb-3"),
-                                class_="px-2 pt-2"
-                            ),
-                            ui.card(
-                                ui.card_header(
-                                    ui.div(
-                                        ui.span("Chart 1: Stock Level & OOS Hazard Heatmap (Mandatory MSL Items · Red = Active OOS · Amber = Impending Stockout Hazard)", class_="fw-bold"),
-                                        ui.span("Target: Field Sales Rep Pre-Visit Radar", class_="badge bg-light text-secondary border"),
-                                        class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                    )
-                                ),
-                                output_widget("chart1_oos_hazard"),
-                                full_screen=True,
-                                height="490px"
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'manager'",
-                                ui.div(
-                                    ui.div(style="height:14px;"),
-                                    ui.layout_columns(
-                                        ui.card(
-                                            ui.card_header(
-                                                ui.div(
-                                                    ui.div(
-                                                        ui.span("Chart 2: Estimated Lost Sales Trend & Cumulative Loss (Stacked Area)", class_="fw-bold"),
-                                                        ui.div("Quantifies financial impact of the 8–12% lost sales problem over time", class_="small text-muted")
-                                                    ),
-                                                    ui.input_radio_buttons("c2_group", None, {"region": "By Region", "category": "By Category"}, selected="region", inline=True),
-                                                    class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                                )
-                                            ),
-                                            output_widget("chart2_lost_sales"),
-                                            full_screen=True,
-                                            height="380px"
-                                        ),
-                                        ui.card(
-                                            ui.card_header(
-                                                ui.div(
-                                                    ui.div(
-                                                        ui.span("Chart 3: OOS Duration Distribution (Boxplot)", class_="fw-bold"),
-                                                        ui.div("Evaluates replenishment agility: structural delay vs point spikes", class_="small text-muted")
-                                                    ),
-                                                    ui.input_radio_buttons("c3_group", None, {"channel": "By Channel", "segment_tier": "By Tier"}, selected="channel", inline=True),
-                                                    class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                                )
-                                            ),
-                                            output_widget("chart3_oos_duration"),
-                                            full_screen=True,
-                                            height="380px"
-                                        ),
-                                        col_widths=(6, 6)
-                                    )
-                                )
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'rep'",
-                                ui.div(
-                                    ui.div(
-                                        ui.HTML("""
-                                        <div class="d-flex align-items-center gap-2 mb-1">
-                                            <span style="font-size:0.95rem;">🔒</span>
-                                            <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Macro Financial & Replenishment Analytics Restricted</span>
-                                        </div>
-                                        """),
-                                        ui.div(
-                                            "Charts 2 & 3 (Estimated Lost Sales Trend & OOS Duration Distribution) are restricted to Regional Management & Operations oversight. Field Sales Representatives have operational access to the store-level Stock Level & OOS Hazard Radar above.",
-                                            class_="small text-muted"
-                                        ),
-                                        class_="card p-3 rounded-4 border-0",
-                                        style="background:#fbfbfd;border:1px solid rgba(0,0,0,0.06) !important;"
-                                    ),
-                                    class_="mt-3"
-                                )
-                            ),
-                            class_="p-2"
-                        )
-                    ),
+                ui.div(style="height:16px;"),
 
-                    # Tab 2: Shelf Execution & Compliance Optimization
-                    ui.nav_panel(
-                        "📐  2. Shelf Execution & Compliance",
-                        ui.div(
-                            ui.div(
-                                ui.span("SHELF EXECUTION & COMPLIANCE OPTIMIZATION", class_="section-badge badge-shelf"),
-                                ui.h5("Planogram, MSL Availability & Shelf Real Estate Health", class_="fw-bold mb-1", style="color:#1d1d1f;"),
-                                ui.p("Target Users: Field Sales Rep & Regional Manager · Converts store audit compliance into revenue-generating shelf real estate.", class_="small text-muted mb-3"),
-                                class_="px-2 pt-2"
-                            ),
-                            ui.card(
-                                ui.card_header(
-                                    ui.div(
-                                        ui.span("Chart 4: Planogram & MSL Compliance Gauge Matrix (Target Benchmark ≥ 85% vs Historical Baseline 62%)", class_="fw-bold"),
-                                        ui.span("Actionable Store-Fix Checklist", class_="badge bg-light text-secondary border"),
-                                        class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                    )
-                                ),
-                                output_widget("chart4_compliance_gauge"),
-                                full_screen=True,
-                                height="400px"
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'manager'",
-                                ui.div(
-                                    ui.div(style="height:14px;"),
-                                    ui.layout_columns(
-                                        ui.card(
-                                            ui.card_header(
-                                                ui.div(
-                                                    ui.div(
-                                                        ui.span("Chart 5: Actual Shelf Share vs. Target Bubble Plot", class_="fw-bold"),
-                                                        ui.div("High-vis shelf share correlation to revenue conversion (Size = Store Tier)", class_="small text-muted")
-                                                    ),
-                                                    class_="d-flex align-items-center justify-content-between"
-                                                )
-                                            ),
-                                            output_widget("chart5_shelf_bubble"),
-                                            full_screen=True,
-                                            height="400px"
-                                        ),
-                                        ui.card(
-                                            ui.card_header(
-                                                ui.div(
-                                                    ui.div(
-                                                        ui.span("Chart 6: Multi-Dimensional Execution Scorecard (Radar)", class_="fw-bold"),
-                                                        ui.div("5-Axis Execution Health: Planogram, MSL, Secondary Display, Shelf Share, In-Stock", class_="small text-muted")
-                                                    ),
-                                                    ui.input_radio_buttons("c6_group", None, {"region": "By Region", "segment_tier": "By Tier", "channel": "By Channel"}, selected="region", inline=True),
-                                                    class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                                )
-                                            ),
-                                            output_widget("chart6_radar_scorecard"),
-                                            full_screen=True,
-                                            height="400px"
-                                        ),
-                                        col_widths=(6, 6)
-                                    )
-                                )
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'rep'",
-                                ui.div(
-                                    ui.div(
-                                        ui.HTML("""
-                                        <div class="d-flex align-items-center gap-2 mb-1">
-                                            <span style="font-size:0.95rem;">🔒</span>
-                                            <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Territory-Wide Shelf Share & Multi-KPI Scorecard Restricted</span>
-                                        </div>
-                                        """),
-                                        ui.div(
-                                            "Charts 5 & 6 (Actual Shelf Share vs. Target Bubble Plot & Multi-Dimensional Radar Scorecard) are restricted to Regional Management oversight. Field Sales Representatives have store audit access via the Planogram & MSL Compliance Checklist above.",
-                                            class_="small text-muted"
-                                        ),
-                                        class_="card p-3 rounded-4 border-0",
-                                        style="background:#fbfbfd;border:1px solid rgba(0,0,0,0.06) !important;"
-                                    ),
-                                    class_="mt-3"
-                                )
-                            ),
-                            class_="p-2"
-                        )
+                # ==================== 4. COMMERCIAL STRATEGY & GEOSPATIAL ====================
+                ui.div(
+                    ui.div(
+                        ui.span("4. COMMERCIAL STRATEGY & GEOSPATIAL EXECUTION", class_="section-badge badge-geo"),
+                        ui.h5("Geospatial Territory Health & Multi-Stage Inventory Velocity", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                        ui.p("Target Users: Regional Manager & Commercial Operations · Allocates field rep routes and synchronizes channel Sell-In with store Sell-Out.", class_="small text-muted mb-0"),
+                        class_="section-header-block"
                     ),
-
-                    # Tab 3: Trade Terms, Guardrail Compliance & Negotiations
-                    ui.nav_panel(
-                        "⚖️  3. Trade Terms & Negotiations",
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
                         ui.div(
-                            ui.div(
-                                ui.span("TRADE TERMS & COMMERCIAL GUARDRAILS", class_="section-badge badge-trade"),
-                                ui.h5("Real-Time Negotiation Boundaries & Concession Enforcement", class_="fw-bold mb-1", style="color:#1d1d1f;"),
-                                ui.p("Target Users: Field Sales Rep & Regional Manager · Eliminates data-free negotiations, flags policy-breaching discounts, and verifies execution concessions.", class_="small text-muted mb-3"),
-                                class_="px-2 pt-2"
-                            ),
-                            ui.layout_columns(
-                                ui.card(
-                                    ui.card_header(
+                            # Chart 9: Full-width
+                            ui.card(
+                                ui.div(
+                                    ui.div(
+                                        ui.span("Chart 9: Regional Execution vs Revenue Performance Map (Choropleth)", class_="chart-card-title"),
                                         ui.div(
-                                            ui.div(
-                                                ui.span("Chart 7: Effective Discount vs Margin Realization Scatter", class_="fw-bold"),
-                                                ui.div("Red Zone: Exceeds discount cap or breaches min margin (Requires Approval)", class_="small text-muted")
-                                            ),
-                                            class_="d-flex align-items-center justify-content-between"
+                                            ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                            "Combines state-level invoiced sales from fact_sell_in, planogram adherence from fact_execution_audits, and store in-stock rates from fact_sell_out into a composite commercial health score across US territory states.",
+                                            class_="chart-logic-desc"
                                         )
                                     ),
-                                    output_widget("chart7_discount_margin"),
-                                    full_screen=True,
-                                    height="430px"
+                                    ui.input_radio_buttons("c9_metric", None, {"health_score": "Health Score", "net_sales": "Net Sales ($)"}, selected="health_score", inline=True),
+                                    class_="chart-header-row"
                                 ),
-                                ui.panel_conditional(
-                                    "input.user_role_state == 'manager'",
-                                    ui.card(
-                                        ui.card_header(
-                                            ui.div(
-                                                ui.div(
-                                                    ui.span("Chart 8: Trade-off Execution Commitment Compliance", class_="fw-bold"),
-                                                    ui.div("Delivered vs unfulfilled retailer concessions from store audits", class_="small text-muted")
-                                                ),
-                                                class_="d-flex align-items-center justify-content-between"
-                                            )
-                                        ),
-                                        output_widget("chart8_tradeoff_compliance"),
-                                        full_screen=True,
-                                        height="430px"
-                                    )
-                                ),
-                                ui.panel_conditional(
-                                    "input.user_role_state == 'rep'",
-                                    ui.card(
-                                        ui.card_header(
-                                            ui.div(
-                                                ui.span("Chart 8: Trade-off Commitment Compliance", class_="fw-bold text-muted"),
-                                                ui.span("Regional Manager Only", class_="badge bg-light text-danger border border-danger border-opacity-25"),
-                                                class_="d-flex align-items-center justify-content-between"
-                                            )
-                                        ),
-                                        ui.div(
-                                            ui.HTML("""
-                                            <div style="width:48px;height:48px;border-radius:14px;background:rgba(255,59,48,0.08);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;border:1px solid rgba(255,59,48,0.2);">
-                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                                </svg>
-                                            </div>
-                                            """),
-                                            ui.h6("Executive Oversight Restricted", class_="fw-bold mb-1", style="color:#1d1d1f;"),
-                                            ui.p(
-                                                "Chart 8 evaluates contractual concessions and required trade-offs across regional accounts and is restricted to Regional Management. Field Sales Reps have real-time negotiation boundary guidance via Chart 7.",
-                                                class_="small text-muted mb-0",
-                                                style="max-width:380px;margin:0 auto;line-height:1.4;"
-                                            ),
-                                            class_="d-flex flex-column align-items-center justify-content-center text-center p-4",
-                                            style="height:350px;"
-                                        ),
-                                        height="430px"
-                                    )
-                                ),
-                                col_widths=(6, 6)
+                                output_widget("chart9_geo_map"),
+                                full_screen=True,
+                                class_="w-100 mb-4"
                             ),
-                            class_="p-2"
-                        )
-                    ),
-
-                    # Tab 4: Commercial Strategy & Geospatial Execution
-                    ui.nav_panel(
-                        "🌐  4. Commercial Strategy & Geospatial",
-                        ui.div(
-                            ui.div(
-                                ui.span("COMMERCIAL STRATEGY & GEOSPATIAL EXECUTION", class_="section-badge badge-geo"),
-                                ui.h5("Geospatial Territory Health & Multi-Stage Inventory Velocity", class_="fw-bold mb-1", style="color:#1d1d1f;"),
-                                ui.p("Target Users: Regional Manager & Commercial Operations · Allocates field rep routes and synchronizes channel Sell-In with store Sell-Out.", class_="small text-muted mb-3"),
-                                class_="px-2 pt-2"
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'manager'",
-                                ui.layout_columns(
-                                    ui.card(
-                                        ui.card_header(
-                                            ui.div(
-                                                ui.div(
-                                                    ui.span("Chart 9: Regional Execution vs Revenue Map (Choropleth)", class_="fw-bold"),
-                                                    ui.div("Spot territory clusters and execution gaps across 20 US States", class_="small text-muted")
-                                                ),
-                                                ui.input_radio_buttons("c9_metric", None, {"health_score": "Health Score", "net_sales": "Net Sales ($)"}, selected="health_score", inline=True),
-                                                class_="d-flex align-items-center justify-content-between flex-wrap gap-2"
-                                            )
-                                        ),
-                                        output_widget("chart9_geo_map"),
-                                        full_screen=True,
-                                        height="440px"
-                                    ),
-                                    ui.card(
-                                        ui.card_header(
-                                            ui.div(
-                                                ui.span("Chart 10: Sell-In vs Sell-Out Inventory Velocity (Sankey)", class_="fw-bold"),
-                                                ui.div("Category → Channel Sell-In → Consumer Offtake vs Holding Buffer", class_="small text-muted"),
-                                                class_="d-flex flex-column"
-                                            )
-                                        ),
-                                        output_widget("chart10_sankey_velocity"),
-                                        full_screen=True,
-                                        height="440px"
-                                    ),
-                                    col_widths=(6, 6)
-                                )
-                            ),
-                            ui.panel_conditional(
-                                "input.user_role_state == 'rep'",
+                            # Chart 10: Full-width
+                            ui.card(
                                 ui.div(
                                     ui.div(
-                                        ui.HTML("""
-                                        <div style="width:52px;height:52px;border-radius:16px;background:rgba(255,59,48,0.08);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;border:1px solid rgba(255,59,48,0.2);">
-                                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                            </svg>
-                                        </div>
-                                        """),
-                                        ui.h5("Regional Manager Access Required", class_="fw-bold mb-2", style="color:#1d1d1f;"),
+                                        ui.span("Chart 10: Sell-In vs Sell-Out Inventory Velocity (Sankey Flow Diagram)", class_="chart-card-title"),
                                         ui.div(
-                                            "Section 4 (Regional Execution Choropleth Map & Multi-Stage Inventory Velocity Sankey) is restricted to Regional Commercial Directors and Supply Chain Operations. Field Sales Representatives have route access scoped to their assigned territory.",
-                                            class_="text-muted small mb-3",
-                                            style="max-width:540px;margin:0 auto;line-height:1.5;"
+                                            ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                            "Visualizes multi-echelon supply flow from product category to trade channels using fact_sell_in invoiced volume and tracks throughput into consumer offtake versus channel holding buffer using fact_sell_out daily units.",
+                                            class_="chart-logic-desc"
                                         ),
-                                        ui.span("Active Account Role: Field Sales Representative", class_="badge bg-light text-secondary border px-3 py-2 rounded-pill"),
-                                        class_="text-center p-5 card rounded-4 border-0 my-3",
-                                        style="background:#ffffff;border:1px solid rgba(0,0,0,0.06) !important;box-shadow:0 4px 20px -2px rgba(0,0,0,0.03);"
-                                    )
-                                )
-                            ),
-                            class_="p-2"
+                                        class_="d-flex flex-column"
+                                    ),
+                                    class_="chart-header-row"
+                                ),
+                                output_widget("chart10_sankey_velocity"),
+                                full_screen=True,
+                                class_="w-100 mb-4"
+                            )
                         )
                     ),
-                    id="main_chart_tabs"
+                    ui.panel_conditional(
+                        "input.user_role_state == 'rep'",
+                        ui.div(
+                            ui.HTML("""
+                            <div style="width:52px;height:52px;border-radius:16px;background:rgba(255,59,48,0.08);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;border:1px solid rgba(255,59,48,0.2);">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                </svg>
+                            </div>
+                            """),
+                            ui.h5("Regional Manager Access Required", class_="fw-bold mb-2", style="color:#1d1d1f;"),
+                            ui.div(
+                                "Section 4 (Regional Execution Choropleth Map & Multi-Stage Inventory Velocity Sankey) is restricted to Regional Commercial Directors and Supply Chain Operations. Field Sales Representatives have route access scoped to their assigned territory.",
+                                class_="text-muted small mb-3",
+                                style="max-width:540px;margin:0 auto;line-height:1.5;"
+                            ),
+                            ui.span("Active Account Role: Field Sales Representative", class_="badge bg-light text-secondary border px-3 py-2 rounded-pill"),
+                            class_="text-center p-5 card rounded-4 border-0 my-3",
+                            style="background:#ffffff;border:1px solid rgba(0,0,0,0.06) !important;box-shadow:0 4px 20px -2px rgba(0,0,0,0.03);"
+                        )
+                    ),
+                    class_="dashboard-section"
+                ),
+
+                # ==================== 1. OOS & SUPPLY CHAIN INSIGHTS ====================
+                ui.div(
+                    ui.div(
+                        ui.span("1. OUT-OF-STOCK (OOS) & SUPPLY CHAIN INSIGHTS", class_="section-badge badge-oos"),
+                        ui.h5("Real-Time Store Inventory Radar & Lost Sales Mitigation", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                        ui.p("Target Users: Field Sales Representative & Regional Operations · Tracks mandatory MSL items, highlights impending stockouts, and quantifies commercial loss.", class_="small text-muted mb-0"),
+                        class_="section-header-block"
+                    ),
+                    # Chart 1: Full-width
+                    ui.card(
+                        ui.div(
+                            ui.div(
+                                ui.span("Chart 1: Stock Level & OOS Hazard Heatmap (Mandatory MSL Items · Red = Active OOS · Amber = Impending Stockout Hazard)", class_="chart-card-title"),
+                                ui.div(
+                                    ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                    "Built from fact_sell_out daily on-hand store inventory levels across mandatory MSL items from dim_products, mapping zero inventory units to high-priority red out-of-stock hazard alerts and low buffers (1–15 units) to amber warnings on the latest date.",
+                                    class_="chart-logic-desc"
+                                )
+                            ),
+                            ui.span("Target: Field Sales Rep Pre-Visit Radar", class_="badge bg-light text-secondary border"),
+                            class_="chart-header-row"
+                        ),
+                        output_widget("chart1_oos_hazard"),
+                        full_screen=True,
+                        class_="w-100 mb-4"
+                    ),
+                    # Chart 2: Full-width
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
+                        ui.card(
+                            ui.div(
+                                ui.div(
+                                    ui.span("Chart 2: Estimated Lost Sales Trend & Cumulative Loss (Stacked Area Chart)", class_="chart-card-title"),
+                                    ui.div(
+                                        ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                        "Created by joining fact_sell_out and dim_products, aggregating weekly lost revenue by multiplying active out-of-stock store-SKU days by their in-stock average daily unit baseline and list price.",
+                                        class_="chart-logic-desc"
+                                    )
+                                ),
+                                ui.input_radio_buttons("c2_group", None, {"region": "By Region", "category": "By Category"}, selected="region", inline=True),
+                                class_="chart-header-row"
+                            ),
+                            output_widget("chart2_lost_sales"),
+                            full_screen=True,
+                            class_="w-100 mb-4"
+                        )
+                    ),
+                    # Chart 3: Full-width
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
+                        ui.card(
+                            ui.div(
+                                ui.div(
+                                    ui.span("Chart 3: OOS Duration Distribution (Boxplot)", class_="chart-card-title"),
+                                    ui.div(
+                                        ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                        "Calculated from chronological store-SKU-date observations in fact_sell_out, measuring consecutive days in out-of-stock state to distinguish transient single-day spikes from persistent replenishment delays across channels and tiers.",
+                                        class_="chart-logic-desc"
+                                    )
+                                ),
+                                ui.input_radio_buttons("c3_group", None, {"channel": "By Channel", "segment_tier": "By Tier"}, selected="channel", inline=True),
+                                class_="chart-header-row"
+                            ),
+                            output_widget("chart3_oos_duration"),
+                            full_screen=True,
+                            class_="w-100 mb-4"
+                        )
+                    ),
+                    ui.panel_conditional(
+                        "input.user_role_state == 'rep'",
+                        ui.div(
+                            ui.HTML("""
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span style="font-size:0.95rem;">🔒</span>
+                                <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Macro Financial & Replenishment Analytics Restricted</span>
+                            </div>
+                            """),
+                            ui.div(
+                                "Charts 2 & 3 (Estimated Lost Sales Trend & OOS Duration Distribution) are restricted to Regional Management & Operations oversight. Field Sales Representatives have operational access to the store-level Stock Level & OOS Hazard Radar above.",
+                                class_="small text-muted"
+                            ),
+                            class_="card p-3 rounded-4 border-0 mb-3",
+                            style="background:#fbfbfd;border:1px solid rgba(0,0,0,0.06) !important;"
+                        )
+                    ),
+                    class_="dashboard-section"
+                ),
+
+                # ==================== 2. SHELF EXECUTION & COMPLIANCE ====================
+                ui.div(
+                    ui.div(
+                        ui.span("2. SHELF EXECUTION & COMPLIANCE OPTIMIZATION", class_="section-badge badge-shelf"),
+                        ui.h5("Planogram, MSL Availability & Shelf Real Estate Health", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                        ui.p("Target Users: Field Sales Rep & Regional Manager · Converts store audit compliance into revenue-generating shelf real estate.", class_="small text-muted mb-0"),
+                        class_="section-header-block"
+                    ),
+                    # Chart 4: Full-width
+                    ui.card(
+                        ui.div(
+                            ui.div(
+                                ui.span("Chart 4: Planogram & MSL Compliance Gauge Matrix (Target Benchmark ≥ 85% vs Historical Baseline 62%)", class_="chart-card-title"),
+                                ui.div(
+                                    ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                    "Combines planogram compliance adherence rates from fact_execution_audits with in-stock MSL product availability from fact_sell_out, grouped by product category and brand against the 85% target benchmark.",
+                                    class_="chart-logic-desc"
+                                )
+                            ),
+                            ui.span("Actionable Store-Fix Checklist", class_="badge bg-light text-secondary border"),
+                            class_="chart-header-row"
+                        ),
+                        output_widget("chart4_compliance_gauge"),
+                        full_screen=True,
+                        class_="w-100 mb-4"
+                    ),
+                    # Chart 5: Full-width
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
+                        ui.card(
+                            ui.div(
+                                ui.div(
+                                    ui.span("Chart 5: Actual Shelf Share vs. Target Bubble Plot", class_="chart-card-title"),
+                                    ui.div(
+                                        ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                        "Plots store-level average category shelf share from fact_execution_audits against total invoiced net sales from fact_sell_in, sizing bubbles by commercial segment tier from dim_stores to highlight revenue conversion vs. the 30% shelf target.",
+                                        class_="chart-logic-desc"
+                                    )
+                                ),
+                                class_="chart-header-row"
+                            ),
+                            output_widget("chart5_shelf_bubble"),
+                            full_screen=True,
+                            class_="w-100 mb-4"
+                        )
+                    ),
+                    # Chart 6: Full-width
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
+                        ui.card(
+                            ui.div(
+                                ui.div(
+                                    ui.span("Chart 6: Multi-Dimensional Execution Scorecard (Radar Chart)", class_="chart-card-title"),
+                                    ui.div(
+                                        ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                        "Synthesizes 5 key execution dimensions across fact_execution_audits and fact_sell_out (planogram adherence, MSL availability, secondary displays, shelf share %, and general in-stock rate) grouped by territory region or channel.",
+                                        class_="chart-logic-desc"
+                                    )
+                                ),
+                                ui.input_radio_buttons("c6_group", None, {"region": "By Region", "segment_tier": "By Tier", "channel": "By Channel"}, selected="region", inline=True),
+                                class_="chart-header-row"
+                            ),
+                            output_widget("chart6_radar_scorecard"),
+                            full_screen=True,
+                            class_="w-100 mb-4"
+                        )
+                    ),
+                    ui.panel_conditional(
+                        "input.user_role_state == 'rep'",
+                        ui.div(
+                            ui.HTML("""
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span style="font-size:0.95rem;">🔒</span>
+                                <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Territory-Wide Shelf Share & Multi-KPI Scorecard Restricted</span>
+                            </div>
+                            """),
+                            ui.div(
+                                "Charts 5 & 6 (Actual Shelf Share vs. Target Bubble Plot & Multi-Dimensional Radar Scorecard) are restricted to Regional Management oversight. Field Sales Representatives have store audit access via the Planogram & MSL Compliance Checklist above.",
+                                class_="small text-muted"
+                            ),
+                            class_="card p-3 rounded-4 border-0 mb-3",
+                            style="background:#fbfbfd;border:1px solid rgba(0,0,0,0.06) !important;"
+                        )
+                    ),
+                    class_="dashboard-section"
+                ),
+
+                # ==================== 3. TRADE TERMS & NEGOTIATIONS ====================
+                ui.div(
+                    ui.div(
+                        ui.span("3. TRADE TERMS & COMMERCIAL GUARDRAILS", class_="section-badge badge-trade"),
+                        ui.h5("Real-Time Negotiation Boundaries & Concession Enforcement", class_="fw-bold mb-1", style="color:#1d1d1f;"),
+                        ui.p("Target Users: Field Sales Rep & Regional Manager · Eliminates data-free negotiations, flags policy-breaching discounts, and verifies execution concessions.", class_="small text-muted mb-0"),
+                        class_="section-header-block"
+                    ),
+                    # Chart 7: Full-width
+                    ui.card(
+                        ui.div(
+                            ui.div(
+                                ui.span("Chart 7: Effective Discount vs Margin Realization Scatter Plot with Guardrails", class_="chart-card-title"),
+                                ui.div(
+                                    ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                    "Integrates weekly transaction revenue and cost from fact_sell_in with dim_guardrails commercial caps, comparing effective invoice discount percentage against gross margin to flag policy-breaching transactions requiring managerial override.",
+                                    class_="chart-logic-desc"
+                                )
+                            ),
+                            class_="chart-header-row"
+                        ),
+                        output_widget("chart7_discount_margin"),
+                        full_screen=True,
+                        class_="w-100 mb-4"
+                    ),
+                    # Chart 8: Full-width
+                    ui.panel_conditional(
+                        "input.user_role_state == 'manager'",
+                        ui.card(
+                            ui.div(
+                                ui.div(
+                                    ui.span("Chart 8: Trade-off Execution Commitment Compliance (Grouped Bar Chart)", class_="chart-card-title"),
+                                    ui.div(
+                                        ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
+                                        "Evaluates customer concession fulfillment by comparing audit observations in fact_execution_audits (shelf share %, secondary displays, planogram rates) against required retailer trade-off commitments defined in dim_guardrails.",
+                                        class_="chart-logic-desc"
+                                    )
+                                ),
+                                class_="chart-header-row"
+                            ),
+                            output_widget("chart8_tradeoff_compliance"),
+                            full_screen=True,
+                            class_="w-100 mb-4"
+                        )
+                    ),
+                    ui.panel_conditional(
+                        "input.user_role_state == 'rep'",
+                        ui.div(
+                            ui.HTML("""
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span style="font-size:0.95rem;">🔒</span>
+                                <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Contractual Concession Oversight Restricted</span>
+                            </div>
+                            """),
+                            ui.div(
+                                "Chart 8 evaluates contractual concessions and required trade-offs across regional accounts and is restricted to Regional Management. Field Sales Reps have real-time negotiation boundary guidance via Chart 7.",
+                                class_="small text-muted"
+                            ),
+                            class_="card p-3 rounded-4 border-0 mb-3",
+                            style="background:#fbfbfd;border:1px solid rgba(0,0,0,0.06) !important;"
+                        )
+                    ),
+                    class_="dashboard-section"
                 ),
                 class_="p-2"
             )
@@ -1703,21 +1935,93 @@ def server(input, output, session):
     def AU():
         return scope(au, "date", *span())
 
+    KPI_SPECS = {
+        "msl": {
+            "title": "MSL Compliance %",
+            "desc": "Percentage of stores with mandatory SKUs available on shelf.",
+            "source": "fact_inventory (or fact_sell_out), dim_products (or dim_store_assortment)",
+            "columns": "store_id, sku_id, is_msl, inventory_level",
+            "formula": "COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100",
+            "logic": "For each store, flag non_compliant_stores = SUM(CASE WHEN is_msl = TRUE AND (inventory_level <= 0 OR inventory_level IS NULL) THEN 1 ELSE 0 END)."
+        },
+        "oos": {
+            "title": "OOS Rate %",
+            "desc": "Out-of-stock rate by SKU, channel, and region.",
+            "source": "fact_inventory (or fact_sell_out)",
+            "columns": "sku_id, store_id, date (or calendar_day), is_out_of_stock",
+            "formula": "SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
+            "logic": "Proportion of observed store-SKU-day observations flagged as out-of-stock."
+        },
+        "gap": {
+            "title": "Sell-in vs. Sell-out Gap %",
+            "desc": "Difference between what Marvel invoices to the distributor and what the end consumer buys.",
+            "source": "fact_sell_in, fact_sell_out",
+            "columns": "fact_sell_in.units_sell_in (units_sold), fact_sell_out.units_sold_daily",
+            "formula": "(SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100",
+            "logic": "Volume disparity between upstream sell-in invoice units and downstream sell-out sales units."
+        },
+        "shelf": {
+            "title": "Shelf Share %",
+            "desc": "Average shelf share by category and channel.",
+            "source": "fact_execution_audits",
+            "columns": "shelf_share_pct, category, channel, region",
+            "formula": "AVG(shelf_share_pct) grouped by category, channel, and region",
+            "logic": "Arithmetic mean of observed percentage shelf frontage dedicated to Marvel products."
+        },
+        "plano": {
+            "title": "Planogram Compliance %",
+            "desc": "Compliance with the display planogram.",
+            "source": "fact_execution_audits",
+            "columns": "planogram_compliance",
+            "formula": "SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
+            "logic": "Proportion of audited store-SKU placements compliant with the designated planogram."
+        }
+    }
+
     def kpis(a, b):
         s, i, x = scope(so, "date", a, b), scope(si, "week", a, b), scope(au, "date", a, b)
         if s.empty:
             return dict(msl=np.nan, oos=np.nan, gap=0, gap_pct=np.nan, shelf=np.nan, plano=np.nan)
-        m = s[s.is_msl]
-        msl = 100 * (1 - m.groupby(["date", "store_id"]).is_out_of_stock.max().mean()) if not m.empty else np.nan
-        oos = 100 * s.is_out_of_stock.mean()
-        out = s.units_sold_daily.sum()
-        gap = i.units_sold.sum() - out
-        gap_pct = 100 * gap / out if out else np.nan
-        shelf = x.shelf_share_pct.mean() if not x.empty else np.nan
-        plano = 100 * x.planogram_compliance.mean() if not x.empty else np.nan
+
+        # 1. MSL Compliance %
+        # Formula: COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100
+        # Logic: For each store, flag non_compliant_stores = SUM(CASE WHEN is_msl = TRUE AND (inventory_level <= 0 OR inventory_level IS NULL) THEN 1 ELSE 0 END)
+        is_non_comp = (s["is_msl"] == True) & ((s["inventory_level"] <= 0) | s["inventory_level"].isna())
+        if s["date"].nunique() <= 1:
+            store_non_comp = is_non_comp.groupby(s["store_id"]).sum()
+            total_stores = s["store_id"].nunique()
+            msl = ((store_non_comp == 0).sum() / total_stores * 100) if total_stores > 0 else np.nan
+        else:
+            store_day_non_comp = is_non_comp.groupby([s["date"], s["store_id"]]).sum()
+            msl = ((store_day_non_comp == 0).sum() / len(store_day_non_comp) * 100) if len(store_day_non_comp) > 0 else np.nan
+
+        # 2. OOS Rate %
+        # Formula: SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100
+        oos_count = (s["is_out_of_stock"] == True).sum()
+        oos = (oos_count / len(s) * 100) if len(s) > 0 else np.nan
+
+        # 3. Sell-in vs. Sell-out Gap %
+        # Formula: (SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100
+        units_sell_in = i["units_sold"].sum() if not i.empty else 0
+        units_sold_daily = s["units_sold_daily"].sum() if not s.empty else 0
+        gap = units_sell_in - units_sold_daily
+        gap_pct = (gap / units_sold_daily * 100) if units_sold_daily > 0 else np.nan
+
+        # 4. Shelf Share %
+        # Formula: AVG(shelf_share_pct) grouped by category, channel, and region
+        shelf = x["shelf_share_pct"].mean() if not x.empty else np.nan
+
+        # 5. Planogram Compliance %
+        # Formula: SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100
+        if not x.empty and len(x) > 0:
+            plano_count = (x["planogram_compliance"] == True).sum()
+            plano = (plano_count / len(x)) * 100
+        else:
+            plano = np.nan
+
         return dict(msl=msl, oos=oos, gap=gap, gap_pct=gap_pct, shelf=shelf, plano=plano)
 
-    def luxury_tile(title, cur, prv, ok, better_up, txt, foot, prefix="", suffix="", decimals=1, foot_units=None, foot_target=None):
+    def luxury_tile(title, cur, prv, ok, better_up, txt, foot, prefix="", suffix="", decimals=1, foot_units=None, foot_target=None, spec=None):
         na = pd.isna(cur)
         d = None if na or pd.isna(prv) else cur - prv
         if d is not None:
@@ -1744,8 +2048,61 @@ def server(input, output, session):
         else:
             foot_elem = ui.div(foot, class_="kpi-target-foot")
 
-        return ui.div(
+        tooltip_attr = ""
+        info_icon_elem = None
+        if spec:
+            tooltip_attr = (
+                f"{spec['title']}\n"
+                f"• Source: {spec['source']}\n"
+                f"• Columns: {spec['columns']}\n"
+                f"• Formula: {spec['formula']}\n"
+                f"• Logic: {spec.get('logic', '')}"
+            )
+            popover_children = [
+                ui.div(spec["title"], class_="kpi-pop-title"),
+                ui.div(spec.get("desc", ""), class_="kpi-pop-desc"),
+                ui.div(
+                    ui.span("Source CSV / Table", class_="kpi-pop-lbl"),
+                    ui.span(spec["source"], class_="kpi-pop-badge"),
+                    class_="kpi-pop-sec"
+                ),
+                ui.div(
+                    ui.span("Required Columns", class_="kpi-pop-lbl"),
+                    ui.div(spec["columns"], class_="kpi-pop-text"),
+                    class_="kpi-pop-sec"
+                ),
+                ui.div(
+                    ui.span("Aggregation / SQL Formula", class_="kpi-pop-lbl"),
+                    ui.div(spec["formula"], class_="kpi-pop-formula"),
+                    class_="kpi-pop-sec"
+                ),
+            ]
+            if "logic" in spec and spec["logic"]:
+                popover_children.append(
+                    ui.div(
+                        ui.span("Calculation Logic", class_="kpi-pop-lbl"),
+                        ui.div(spec["logic"], class_="kpi-pop-text"),
+                        class_="kpi-pop-sec"
+                    )
+                )
+
+            info_icon_elem = ui.div(
+                ui.span("ⓘ", class_="kpi-info-symbol"),
+                ui.div(*popover_children, class_="kpi-hover-popover"),
+                class_="kpi-info-trigger",
+                tabindex="0",
+                role="tooltip",
+                title=f"Calculation details for {spec['title']}"
+            )
+
+        header_elem = ui.div(
             ui.div(title, class_="kpi-title"),
+            info_icon_elem,
+            class_="kpi-header-row"
+        )
+
+        return ui.div(
+            header_elem,
             ui.div(
                 "–" if na else txt,
                 class_=f"kpi-value {val_color} shuffle-number",
@@ -1756,7 +2113,8 @@ def server(input, output, session):
             ),
             delta_tag,
             foot_elem,
-            class_="kpi-tile flex-fill"
+            class_="kpi-tile",
+            title=tooltip_attr if tooltip_attr else None
         )
 
     @render.ui
@@ -1770,13 +2128,13 @@ def server(input, output, session):
                 "MSL Compliance", c["msl"], p["msl"],
                 c["msl"] >= 90 if not pd.isna(c["msl"]) else False, True,
                 f"{c['msl']:.1f}%" if not pd.isna(c["msl"]) else "–", "Target ≥ 90%",
-                suffix="%", decimals=1
+                suffix="%", decimals=1, spec=KPI_SPECS["msl"]
             ),
             luxury_tile(
                 "OOS Rate", c["oos"], p["oos"],
                 c["oos"] <= 5 if not pd.isna(c["oos"]) else False, False,
                 f"{c['oos']:.1f}%" if not pd.isna(c["oos"]) else "–", "Target ≤ 5%",
-                suffix="%", decimals=1
+                suffix="%", decimals=1, spec=KPI_SPECS["oos"]
             ),
             luxury_tile(
                 "Sell-In vs Sell-Out Gap", c["gap_pct"], p["gap_pct"],
@@ -1785,22 +2143,22 @@ def server(input, output, session):
                 f"{c['gap']:+,.0f} units · target within ±5%",
                 prefix="", suffix="%", decimals=1,
                 foot_units=c["gap"] if not pd.isna(c["gap"]) else None,
-                foot_target=" units · target within ±5%"
+                foot_target=" units · target within ±5%",
+                spec=KPI_SPECS["gap"]
             ),
             luxury_tile(
                 "Shelf Share", c["shelf"], p["shelf"],
                 c["shelf"] >= 30 if not pd.isna(c["shelf"]) else False, True,
                 f"{c['shelf']:.1f}%" if not pd.isna(c["shelf"]) else "–", "Target ≥ 30%",
-                suffix="%", decimals=1
+                suffix="%", decimals=1, spec=KPI_SPECS["shelf"]
             ),
             luxury_tile(
                 "Planogram Compliance", c["plano"], p["plano"],
                 c["plano"] >= 80 if not pd.isna(c["plano"]) else False, True,
                 f"{c['plano']:.1f}%" if not pd.isna(c["plano"]) else "–", "Target ≥ 80%",
-                suffix="%", decimals=1
+                suffix="%", decimals=1, spec=KPI_SPECS["plano"]
             ),
-            class_="d-flex flex-wrap gap-3",
-            style="margin-bottom:6px;"
+            class_="kpi-horizontal-grid"
         )
 
     @render.ui
@@ -1868,7 +2226,7 @@ def server(input, output, session):
         )
         fig.update_xaxes(visible=False)
         fig.update_yaxes(visible=False)
-        return tidy(fig, h=350)
+        return tidy(fig, h=420)
 
     # ==================== 1. OOS & SUPPLY CHAIN INSIGHTS ====================
 
@@ -1923,7 +2281,7 @@ def server(input, output, session):
             labels=dict(color="On-Hand Units", x="", y="")
         )
         fig.update_xaxes(side="top", tickangle=-30)
-        h = max(420, min(650, len(pivot) * 22 + 120))
+        h = max(460, min(680, len(pivot) * 24 + 130))
         return tidy(fig, h=h)
 
     @render_widget
@@ -1963,7 +2321,7 @@ def server(input, output, session):
             labels={"lost_revenue": "Est. Lost Revenue ($)", "week": "", group_by: group_by.capitalize()}
         )
         fig.update_yaxes(tickprefix="$", tickformat=",.0f")
-        return tidy(fig, h=350)
+        return tidy(fig, h=460)
 
     @render_widget
     def chart3_oos_duration():
@@ -1987,7 +2345,7 @@ def server(input, output, session):
         if oos_only.empty:
             fig = go.Figure()
             fig.add_annotation(text="Zero OOS incidents recorded in selected period", showarrow=False)
-            return tidy(fig, h=350)
+            return tidy(fig, h=450)
 
         incidents = oos_only.groupby(["spell_block", "store_id", "sku_id", group_col]).agg(
             consecutive_days=("date", "count")
@@ -2004,7 +2362,7 @@ def server(input, output, session):
             points="outliers",
             labels={"consecutive_days": "Consecutive Days OOS per Incident", group_col: ""}
         )
-        return tidy(fig, h=350)
+        return tidy(fig, h=450)
 
     # ==================== 2. SHELF EXECUTION & COMPLIANCE ====================
 
@@ -2065,7 +2423,7 @@ def server(input, output, session):
             annotation_font=dict(size=10, color="#86868B")
         )
         fig.update_xaxes(range=[0, 105], ticksuffix="%")
-        return tidy(fig, h=380)
+        return tidy(fig, h=480)
 
     @render_widget
     def chart5_shelf_bubble():
@@ -2103,7 +2461,7 @@ def server(input, output, session):
         )
         fig.update_xaxes(ticksuffix="%")
         fig.update_yaxes(tickprefix="$", tickformat=",.0f")
-        return tidy(fig, h=380)
+        return tidy(fig, h=480)
 
     @render_widget
     def chart6_radar_scorecard():
@@ -2159,7 +2517,7 @@ def server(input, output, session):
                 )
             )
         )
-        return tidy(fig, h=380, is_polar=True)
+        return tidy(fig, h=480, is_polar=True)
 
     # ==================== 3. TRADE TERMS & NEGOTIATIONS ====================
 
@@ -2228,7 +2586,7 @@ def server(input, output, session):
         )
         fig.update_xaxes(ticksuffix="%")
         fig.update_yaxes(ticksuffix="%")
-        return tidy(fig, h=390)
+        return tidy(fig, h=480)
 
     @render_widget
     def chart8_tradeoff_compliance():
@@ -2283,7 +2641,7 @@ def server(input, output, session):
             },
             labels={"store_count": "Number of Stores / Accounts", "tradeoff_label": "", "status": "Execution Status"}
         )
-        return tidy(fig, h=390)
+        return tidy(fig, h=460)
 
     # ==================== 4. COMMERCIAL STRATEGY & GEOSPATIAL ====================
 
@@ -2335,7 +2693,7 @@ def server(input, output, session):
                 subunitcolor="rgba(0,0,0,0.12)"
             )
         )
-        return tidy(fig, h=400, is_geo=True)
+        return tidy(fig, h=520, is_geo=True)
 
     @render_widget
     def chart10_sankey_velocity():
@@ -2404,7 +2762,7 @@ def server(input, output, session):
                 color=link_colors
             )
         )])
-        return tidy(fig, h=400)
+        return tidy(fig, h=480)
 
 
 app = App(app_ui, server)

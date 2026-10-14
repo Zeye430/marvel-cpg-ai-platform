@@ -6,9 +6,17 @@ See `v1-freeze.md` for the frozen scope and tagging procedure.
 
 ## Notebooks
 
+- `initial_data_review_sanika.ipynb`
 - `notebooks/exploratory/initial_data_review_william.ipynb`
 - `notebooks/exploratory/marvel_deep_eda_product_insights.ipynb`
 - `notebooks/modeling/missing_and_oos_pipeline.ipynb`
+
+## Exported EDA figures and dashboard
+
+- `eda_figures_sanika/` contains 30 figures generated from Sanika's V1 notebook.
+- `module_1/` contains the latest V1 dashboard implementation and reads `marvel_data/`.
+
+Both require V2 revalidation before any result or metric is reused.
 
 ## Local-only modeling references
 

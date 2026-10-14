@@ -18,11 +18,19 @@ The six tracked CSV files under `marvel_data/` are the authoritative v1 inputs. 
 
 ### Analysis notebooks
 
+- `initial_data_review_sanika.ipynb`
 - `notebooks/exploratory/initial_data_review_william.ipynb`
 - `notebooks/exploratory/marvel_deep_eda_product_insights.ipynb`
 - `notebooks/modeling/missing_and_oos_pipeline.ipynb`
 
-The deep EDA reads `marvel_data/`. The modeling notebook is also pinned to `marvel_data/` so that a future rerun cannot silently use the active v2 files in `data/raw/`.
+All archived notebooks use the original `marvel_data/` snapshot. The William notebooks are pinned to that directory so that a future rerun cannot silently use the active v2 files in `data/raw/`. Sanika's Colab workflow requires the original `marvel_data.zip`.
+
+### V1 application and exported figures
+
+- `module_1/` contains the latest dashboard implementation that reads the original `marvel_data/` snapshot.
+- `eda_figures_sanika/` contains the 30 figures exported from Sanika's V1 EDA.
+
+These assets are historical V1 references. Their metrics and charts must be regenerated before use in the active v2 product.
 
 ### Stable project documentation
 
@@ -40,7 +48,7 @@ The existing requirements, workflow, data-model, KPI, and bottleneck documents r
 
 ## Freeze rule
 
-After this baseline is approved and merged, tag the reviewed Main commit as `v1-data-baseline`. Do not edit the tag. All new data-dependent work should identify itself as v2 and use a separate development branch.
+The original analytical freeze is tagged `v1-data-baseline`. The complete repository archive, including teammate assets merged later, is tagged `v1-repository-final`. Do not move either tag. All new data-dependent work should identify itself as v2 and use a separate development branch.
 
 ## Excluded local work
 

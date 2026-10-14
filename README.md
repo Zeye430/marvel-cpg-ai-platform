@@ -13,6 +13,8 @@ The final application will integrate four modules:
 
 ## Module 1: Commercial Execution Analytics Dashboard
 
+> **V2 migration status:** Module 1 is retained for its assigned owner to migrate. The current implementation still references the archived V1 data layout and must be updated and revalidated before the Docker quick start is treated as V2-ready. Use the `v1-repository-final` tag for the complete runnable V1 state.
+
 ### Docker Quick Start Guide
 
 Ensure Docker and Docker Compose are installed:
@@ -58,6 +60,14 @@ uv run jupyter lab
 ```
 
 Run Python commands through `uv run` so they use the project environment. Commit `pyproject.toml`, `uv.lock`, and `.python-version`, but do not commit `.venv/`.
+
+## Active Data Version
+
+Active development uses the updated eight-table client dataset, identified as **v2**. Authorized team members should obtain the files through the team's approved private file-sharing location and place them in `data/raw/`.
+
+The raw files are intentionally excluded from Git. See `data/README.md` and `data/manifests/v2.md` for the required files and version checks. New data-dependent analysis belongs under `notebooks/v2/`.
+
+The original dataset and its analyses are preserved on the `archive/v1-old-data` branch. Use the `v1-repository-final` tag for the complete historical V1 repository state.
 
 ## Team Workflow
 

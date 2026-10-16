@@ -5,6 +5,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./app.py:/app/app.py
+      - ./www:/app/www
       - ../new_marvel_data:/app/new_marvel_data:ro
     restart: unless-stopped
     healthcheck:

@@ -1,0 +1,103 @@
+erDiagram
+    dim_stores ||--o{ fact_sell_in : "receives"
+    dim_products ||--o{ fact_sell_in : "sold as"
+    dim_promotions |o--o{ fact_sell_in : "applied to"
+    fact_sell_in ||--|| fact_deliveries : "fulfilled by"
+    dim_stores ||--o{ fact_deliveries : "delivered to"
+    dim_products ||--o{ fact_deliveries : "delivers"
+    dim_stores ||--o{ fact_execution_audits : "audited at"
+    dim_products ||--o{ fact_execution_audits : "audited for"
+    dim_stores ||--o{ fact_sell_out : "daily snapshot"
+    dim_products ||--o{ fact_sell_out : "daily snapshot"
+    dim_promotions |o--o{ fact_sell_out : "active promo"
+    dim_guardrails ||--o{ dim_promotions : "governs (channel + category)"
+
+    dim_stores {
+        string store_id PK
+        string store_name
+        string channel
+        string region
+        string state
+        string segment_tier
+        string city
+    }
+
+    dim_products {
+        string sku_id PK
+        string product_name
+        string category
+        string brand
+        boolean is_msl
+        decimal unit_cost
+        decimal list_price
+        decimal consumer_price
+    }
+
+    dim_promotions {
+        string promo_id PK
+        string promo_name
+        string promo_type
+        string category FK "with channel -> dim_guardrails"
+        string channel FK "with category -> dim_guardrails"
+        date start_date
+        date end_date
+        decimal discount_pct
+        int min_volume_units
+    }
+
+    dim_guardrails {
+        string channel PK
+        string category PK
+        decimal max_discount_pct
+        decimal min_target_margin
+        string required_exec_tradeoff
+    }
+
+    fact_sell_in {
+        string transaction_id PK
+        date date
+        string store_id FK
+        string sku_id FK
+        int units_sold
+        decimal gross_sales
+        decimal discount_pct
+        decimal net_sales
+        string promo_id FK "nullable"
+    }
+
+    fact_deliveries {
+        string delivery_id PK
+        string transaction_id FK "unique, 1:1 with sell_in"
+        string store_id FK
+        string sku_id FK
+        date invoice_date
+        date scheduled_delivery
+        date actual_delivery
+        int delay_days
+        string delivery_status
+        int units_ordered
+        int units_delivered
+        decimal fill_rate_pct
+    }
+
+    fact_execution_audits {
+        string audit_id PK
+        date date
+        string store_id FK
+        string sku_id FK
+        boolean planogram_compliance
+        decimal shelf_share_pct
+        boolean secondary_display
+    }
+
+    fact_sell_out {
+        date date PK
+        string store_id PK, FK
+        string sku_id PK, FK
+        int units_sold_daily
+        int inventory_level
+        boolean is_out_of_stock
+        decimal consumer_price_actual
+        string promo_id FK "nullable"
+        decimal promo_discount_pct
+    }

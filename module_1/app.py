@@ -12,9 +12,14 @@ from shiny import App, reactive, render, req, ui
 from shinywidgets import output_widget, render_widget
 
 # ============================ DATA INGESTION & SETUP ============================
-# Resolve path to marvel_data directory reliably across local, package, and container runtimes
+# Resolve path to new_marvel_data directory reliably across local, package, and container runtimes
 BASE_DIR = Path(__file__).resolve().parent
 CANDIDATE_DIRS = [
+    BASE_DIR / "new_marvel_data",
+    BASE_DIR.parent / "new_marvel_data",
+    Path("new_marvel_data").resolve(),
+    Path("/new_marvel_data"),
+    Path("/app/new_marvel_data"),
     BASE_DIR / "marvel_data",
     BASE_DIR.parent / "marvel_data",
     Path("marvel_data").resolve(),
@@ -28,7 +33,7 @@ for d in CANDIDATE_DIRS:
         break
 
 if DATA_DIR is None:
-    raise FileNotFoundError(f"Could not locate marvel_data in candidate directories: {CANDIDATE_DIRS}.")
+    raise FileNotFoundError(f"Could not locate new_marvel_data or marvel_data in candidate directories: {CANDIDATE_DIRS}.")
 
 # 1. Dimension Tables
 prods = pd.read_csv(DATA_DIR / "dim_products.csv")

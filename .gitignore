@@ -3,6 +3,7 @@ data/raw/
 
 # Local environment and secrets
 .env
+.env.example
 .venv/
 
 # Python and notebook temporary files

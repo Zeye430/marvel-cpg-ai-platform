@@ -1,0 +1,27 @@
+# Git and VCS
+.git
+.gitignore
+.gitattributes
+
+# Environment and secrets
+.env
+.env.*
+
+# Python and virtual environments
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary and local development files
+.DS_Store
+*.ipynb
+.ipynb_checkpoints/
+notebooks/
+old_marvel_data/
+eda_figures_sanika/
+ETL/
+docs/
+work/
+outputs/
+uv.lock

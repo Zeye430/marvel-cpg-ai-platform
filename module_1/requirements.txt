@@ -4,3 +4,6 @@ anywidget
 plotly>=5.20
 pandas
 numpy
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.0
+python-dotenv>=1.0.0

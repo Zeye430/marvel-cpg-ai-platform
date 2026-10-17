@@ -86,7 +86,7 @@ def load_dataset(reps):
                         marvel_url = urllib.parse.urlunsplit(p._replace(path="/marvel_cpg"))
                         conn = psycopg2.connect(marvel_url)
 
-            print("[AIVEN] Connected to Aiven PostgreSQL. Loading tables into memory...")
+            print("[AIVEN] Connected to Aiven PostgreSQL. Loading tables into memory...", flush=True)
             prods = pd.read_sql("SELECT sku_id, product_name, category, brand, is_msl, unit_cost, list_price, consumer_price FROM dim_products;", conn)
             for col in ["unit_cost", "list_price", "consumer_price"]:
                 prods[col] = prods[col].astype(float)
@@ -102,6 +102,7 @@ def load_dataset(reps):
             guardrails = pd.read_sql("SELECT channel, category, max_discount_pct, min_target_margin, required_exec_tradeoff FROM dim_guardrails;", conn)
             guardrails["max_discount_pct"] = guardrails["max_discount_pct"].astype(float)
             guardrails["min_target_margin"] = guardrails["min_target_margin"].astype(float)
+            print("[AIVEN] Dimension tables loaded: dim_products, dim_stores, dim_guardrails.", flush=True)
 
             # Fact Sell In
             si_raw = pd.read_sql("SELECT date, store_id, sku_id, units_sold, gross_sales, discount_pct, net_sales FROM fact_sell_in;", conn)
@@ -119,6 +120,7 @@ def load_dataset(reps):
             au_raw["shelf_share_pct"] = au_raw["shelf_share_pct"].astype("float32")
             au_raw["store_id"] = au_raw["store_id"].astype("category")
             au_raw["sku_id"] = au_raw["sku_id"].astype("category")
+            print("[AIVEN] Fact tables loaded: fact_sell_in (281k rows), fact_execution_audits (207k rows).", flush=True)
 
             # Fact Sell Out (stream via server-side cursor and preallocated arrays for <160MB peak RAM)
             store_categories = stores["store_id"].unique().tolist()
@@ -138,6 +140,7 @@ def load_dataset(reps):
             oos = np.empty(total_rows, dtype=bool)
             price = np.empty(total_rows, dtype=np.float32)
 
+            print(f"[AIVEN] Streaming {total_rows:,} rows of fact_sell_out via server-side cursor...", flush=True)
             named_cur = conn.cursor("server_sell_out_cursor")
             named_cur.itersize = 100000
             named_cur.execute("SELECT date, store_id, sku_id, units_sold_daily, inventory_level, is_out_of_stock, consumer_price_actual FROM fact_sell_out;")
@@ -159,6 +162,8 @@ def load_dataset(reps):
                 oos[offset:end] = r_oos
                 price[offset:end] = r_price
                 offset = end
+                if offset % 500000 == 0 or offset == total_rows:
+                    print(f"[AIVEN] ... streamed {offset:,}/{total_rows:,} rows ({offset/total_rows*100:.0f}%)", flush=True)
 
             named_cur.close()
             conn.close()
@@ -179,6 +184,7 @@ def load_dataset(reps):
             del dates, units, inv, oos, price, store_cat, sku_cat
             so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
             gc.collect()
+            print(f"[AIVEN] All tables loaded into memory ({len(so_raw):,} sell-out rows). Initializing dashboard...", flush=True)
 
         except Exception as e:
             warnings.warn(f"[AIVEN] Database connection/query failed: {e}. Attempting local CSV fallback...")

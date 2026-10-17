@@ -26,8 +26,9 @@ COPY module_1/app.py /app/app.py
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose default port (overridden dynamically by Render via $PORT)
+# Expose default local port (8000) and Render default port (10000)
 EXPOSE 8000
+EXPOSE 10000
 
 # Start Shiny application binding to 0.0.0.0 and dynamically expanding $PORT
-CMD ["sh", "-c", "shiny run --host 0.0.0.0 --port ${PORT:-8000} app.py"]
+CMD ["sh", "-c", "echo \"[STARTUP] Starting Shiny on 0.0.0.0:${PORT:-8000}\"; exec shiny run --host 0.0.0.0 --port ${PORT:-8000} app.py"]

@@ -104,34 +104,81 @@ def load_dataset(reps):
             guardrails["min_target_margin"] = guardrails["min_target_margin"].astype(float)
 
             # Fact Sell In
-            si_raw = pd.read_sql("SELECT transaction_id, date, store_id, sku_id, units_sold, gross_sales, discount_pct, net_sales, promo_id FROM fact_sell_in;", conn)
+            si_raw = pd.read_sql("SELECT date, store_id, sku_id, units_sold, gross_sales, discount_pct, net_sales FROM fact_sell_in;", conn)
             si_raw["date"] = pd.to_datetime(si_raw["date"])
             si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, unit="D")
             for col in ["gross_sales", "discount_pct", "net_sales"]:
                 si_raw[col] = si_raw[col].astype("float32")
             si_raw["units_sold"] = si_raw["units_sold"].astype("int32")
+            si_raw["store_id"] = si_raw["store_id"].astype("category")
+            si_raw["sku_id"] = si_raw["sku_id"].astype("category")
 
             # Fact Execution Audits
-            au_raw = pd.read_sql("SELECT audit_id, date, store_id, sku_id, planogram_compliance, shelf_share_pct, secondary_display FROM fact_execution_audits;", conn)
+            au_raw = pd.read_sql("SELECT date, store_id, sku_id, planogram_compliance, shelf_share_pct, secondary_display FROM fact_execution_audits;", conn)
             au_raw["date"] = pd.to_datetime(au_raw["date"])
             au_raw["shelf_share_pct"] = au_raw["shelf_share_pct"].astype("float32")
+            au_raw["store_id"] = au_raw["store_id"].astype("category")
+            au_raw["sku_id"] = au_raw["sku_id"].astype("category")
 
-            # Fact Sell Out (read in 500k chunks to preserve peak memory)
-            chunks = []
-            query = "SELECT date, store_id, sku_id, units_sold_daily, inventory_level, is_out_of_stock, consumer_price_actual, promo_id, promo_discount_pct FROM fact_sell_out;"
-            for chunk in pd.read_sql(query, conn, chunksize=500000):
-                chunk["units_sold_daily"] = chunk["units_sold_daily"].astype("int16")
-                chunk["inventory_level"] = chunk["inventory_level"].astype("int16")
-                chunk["is_out_of_stock"] = chunk["is_out_of_stock"].astype("bool")
-                chunk["consumer_price_actual"] = chunk["consumer_price_actual"].astype("float32")
-                chunk["promo_discount_pct"] = chunk["promo_discount_pct"].astype("float32")
-                chunk["date"] = pd.to_datetime(chunk["date"])
-                chunks.append(chunk)
+            # Fact Sell Out (stream via server-side cursor and preallocated arrays for <160MB peak RAM)
+            store_categories = stores["store_id"].unique().tolist()
+            sku_categories = prods["sku_id"].unique().tolist()
+            store_to_code = {s: i for i, s in enumerate(store_categories)}
+            sku_to_code = {s: i for i, s in enumerate(sku_categories)}
 
-            so_raw = pd.concat(chunks, ignore_index=True)
-            del chunks
-            so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM fact_sell_out;")
+                total_rows = cur.fetchone()[0]
+
+            dates = np.empty(total_rows, dtype="datetime64[D]")
+            store_codes = np.empty(total_rows, dtype=np.uint8)
+            sku_codes = np.empty(total_rows, dtype=np.uint8)
+            units = np.empty(total_rows, dtype=np.int16)
+            inv = np.empty(total_rows, dtype=np.int16)
+            oos = np.empty(total_rows, dtype=bool)
+            price = np.empty(total_rows, dtype=np.float32)
+
+            named_cur = conn.cursor("server_sell_out_cursor")
+            named_cur.itersize = 100000
+            named_cur.execute("SELECT date, store_id, sku_id, units_sold_daily, inventory_level, is_out_of_stock, consumer_price_actual FROM fact_sell_out;")
+
+            offset = 0
+            batch_size = 100000
+            while True:
+                rows = named_cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                n = len(rows)
+                end = offset + n
+                r_date, r_store, r_sku, r_units, r_inv, r_oos, r_price = zip(*rows)
+                dates[offset:end] = np.array(r_date, dtype="datetime64[D]")
+                store_codes[offset:end] = [store_to_code.get(s, 0) for s in r_store]
+                sku_codes[offset:end] = [sku_to_code.get(s, 0) for s in r_sku]
+                units[offset:end] = r_units
+                inv[offset:end] = r_inv
+                oos[offset:end] = r_oos
+                price[offset:end] = r_price
+                offset = end
+
+            named_cur.close()
             conn.close()
+
+            store_cat = pd.Categorical.from_codes(store_codes, categories=store_categories)
+            sku_cat = pd.Categorical.from_codes(sku_codes, categories=sku_categories)
+            del store_codes, sku_codes
+
+            so_raw = pd.DataFrame({
+                "date": pd.to_datetime(dates),
+                "store_id": store_cat,
+                "sku_id": sku_cat,
+                "units_sold_daily": units,
+                "inventory_level": inv,
+                "is_out_of_stock": oos,
+                "consumer_price_actual": price,
+            })
+            del dates, units, inv, oos, price, store_cat, sku_cat
+            so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
+            gc.collect()
 
         except Exception as e:
             warnings.warn(f"[AIVEN] Database connection/query failed: {e}. Attempting local CSV fallback...")
@@ -148,31 +195,45 @@ def load_dataset(reps):
         stores = pd.read_csv(DATA_DIR / "dim_stores.csv")
         guardrails = pd.read_csv(DATA_DIR / "dim_guardrails.csv")
 
+        for col in ["unit_cost", "list_price", "consumer_price"]:
+            prods[col] = prods[col].astype(float)
+        prods["category"] = prods["category"].astype("category")
+        prods["brand"] = prods["brand"].astype("category")
+
         rng = np.random.default_rng(42)
         stores["rep_id"] = rng.choice(reps, len(stores))
+        for col in ["channel", "region", "state", "segment_tier", "city", "rep_id"]:
+            stores[col] = stores[col].astype("category")
+
+        guardrails["max_discount_pct"] = guardrails["max_discount_pct"].astype(float)
+        guardrails["min_target_margin"] = guardrails["min_target_margin"].astype(float)
 
         au_raw = pd.read_csv(DATA_DIR / "fact_execution_audits.csv")
-        si_raw = pd.read_csv(DATA_DIR / "fact_sell_in.csv")
-        so_raw = pd.read_csv(DATA_DIR / "fact_sell_out.csv", low_memory=False)
+        au_raw["date"] = pd.to_datetime(au_raw["date"])
+        au_raw["shelf_share_pct"] = au_raw["shelf_share_pct"].astype("float32")
+        au_raw["store_id"] = au_raw["store_id"].astype("category")
+        au_raw["sku_id"] = au_raw["sku_id"].astype("category")
 
-        so_raw["date"] = pd.to_datetime(so_raw["date"])
-        so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
+        si_raw = pd.read_csv(DATA_DIR / "fact_sell_in.csv")
         si_raw["date"] = pd.to_datetime(si_raw["date"])
         si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, unit="D")
-        au_raw["date"] = pd.to_datetime(au_raw["date"])
+        for col in ["gross_sales", "discount_pct", "net_sales"]:
+            si_raw[col] = si_raw[col].astype("float32")
+        si_raw["units_sold"] = si_raw["units_sold"].astype("int32")
+        si_raw["store_id"] = si_raw["store_id"].astype("category")
+        si_raw["sku_id"] = si_raw["sku_id"].astype("category")
 
-    # Merge metadata
-    store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
-    prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
+        so_raw = pd.read_csv(DATA_DIR / "fact_sell_out.csv", low_memory=False)
+        so_raw["units_sold_daily"] = so_raw["units_sold_daily"].astype("int16")
+        so_raw["inventory_level"] = so_raw["inventory_level"].astype("int16")
+        so_raw["is_out_of_stock"] = so_raw["is_out_of_stock"].astype("bool")
+        so_raw["consumer_price_actual"] = so_raw["consumer_price_actual"].astype("float32")
+        so_raw["date"] = pd.to_datetime(so_raw["date"])
+        so_raw["store_id"] = so_raw["store_id"].astype("category")
+        so_raw["sku_id"] = so_raw["sku_id"].astype("category")
+        so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
 
-    so = so_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-    si = si_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-    au = au_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-
-    del so_raw, si_raw, au_raw
-    gc.collect()
-
-    return prods, stores, guardrails, so, si, au
+    return prods, stores, guardrails, so_raw, si_raw, au_raw
 
 
 # 2. Assign Rep Profiles deterministically to stores
@@ -231,7 +292,7 @@ MANAGER_PROFILE = {
 }
 
 # Load datasets (via Aiven PostgreSQL or local CSV fallback)
-prods, stores, guardrails, so, si, au = load_dataset(REPS)
+prods, stores, guardrails, so_raw, si_raw, au_raw = load_dataset(REPS)
 
 # Global reference lists
 CH = sorted(stores["channel"].unique().tolist())
@@ -249,8 +310,8 @@ COL = {
     "Distributor": "#AF52DE",        # Apple Royal Purple
 }
 
-MIN_DATE = str(so["date"].min().date())
-MAX_DATE = str(so["date"].max().date())
+MIN_DATE = str(so_raw["date"].min().date())
+MAX_DATE = str(so_raw["date"].max().date())
 DEFAULT_START = "2026-04-01"
 DEFAULT_END = "2026-06-30"
 
@@ -2530,16 +2591,26 @@ def server(input, output, session):
         )
 
     # ---------- REACTIVE FILTERING & SCOPE ----------
-    def scope(df, col, a, b):
+    def scope(df_raw, col, a, b):
         channels = input.channel() if input.channel() else CH
         regions = input.region() if input.region() else REG
         skus = input.sku() if input.sku() is not None else list(prods.sku_id)
 
-        m = (df[col].between(a, b) & df.channel.isin(channels)
-             & df.region.isin(regions) & df.sku_id.isin(skus))
+        m_stores = stores["channel"].isin(channels) & stores["region"].isin(regions)
         if active_role() == "Field Rep" and active_rep():
-            m &= (df.rep_id == active_rep())
-        return df[m]
+            m_stores &= (stores["rep_id"] == active_rep())
+        valid_store_ids = set(stores.loc[m_stores, "store_id"])
+
+        m = (
+            df_raw[col].between(a, b)
+            & df_raw["store_id"].isin(valid_store_ids)
+            & df_raw["sku_id"].isin(skus)
+        )
+        sub = df_raw[m]
+
+        store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
+        prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
+        return sub.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
 
     @reactive.calc
     def span():
@@ -2552,15 +2623,15 @@ def server(input, output, session):
 
     @reactive.calc
     def SO():
-        return scope(so, "date", *span())
+        return scope(so_raw, "date", *span())
 
     @reactive.calc
     def SI():
-        return scope(si, "week", *span())
+        return scope(si_raw, "week", *span())
 
     @reactive.calc
     def AU():
-        return scope(au, "date", *span())
+        return scope(au_raw, "date", *span())
 
     KPI_SPECS = {
         "msl": {
@@ -2606,7 +2677,7 @@ def server(input, output, session):
     }
 
     def kpis(a, b):
-        s, i, x = scope(so, "date", a, b), scope(si, "week", a, b), scope(au, "date", a, b)
+        s, i, x = scope(so_raw, "date", a, b), scope(si_raw, "week", a, b), scope(au_raw, "date", a, b)
         if s.empty:
             return dict(msl=np.nan, oos=np.nan, gap=0, gap_pct=np.nan, shelf=np.nan, plano=np.nan)
 
@@ -3067,7 +3138,10 @@ def server(input, output, session):
         df_bubble = store_attrs.merge(shelf_store, on="store_id").merge(sales_store, on="store_id")
 
         tier_sizes = {"Tier 1": 26, "Tier 2": 16, "Tier 3": 10}
-        df_bubble["bubble_size"] = df_bubble["segment_tier"].map(tier_sizes).fillna(12)
+        df_bubble["bubble_size"] = pd.to_numeric(
+            df_bubble["segment_tier"].astype(str).map(tier_sizes).fillna(12),
+            errors="coerce"
+        ).astype(float)
 
         fig = px.scatter(
             df_bubble,

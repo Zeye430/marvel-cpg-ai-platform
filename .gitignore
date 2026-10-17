@@ -1,6 +1,6 @@
 # Client data kept locally
 data/raw/
-
+new_marvel_data/
 # Local environment and secrets
 .env
 .env.example

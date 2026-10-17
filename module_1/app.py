@@ -3,6 +3,10 @@ Light Silvery Luxury Edition (Apple Pro Aesthetic).
 Powered by real Marvel CPG data: dim_products.csv, dim_stores.csv, fact_execution_audits.csv,
 fact_sell_in.csv, and fact_sell_out.csv.
 """
+import gc
+import os
+import urllib.parse
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -11,9 +15,32 @@ import plotly.graph_objects as go
 from shiny import App, reactive, render, req, ui
 from shinywidgets import output_widget, render_widget
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
+warnings.filterwarnings("ignore", message=".*pandas only supports SQLAlchemy.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
+
 # ============================ DATA INGESTION & SETUP ============================
-# Resolve path to new_marvel_data directory reliably across local, package, and container runtimes
 BASE_DIR = Path(__file__).resolve().parent
+
+# Attempt to load .env from standard locations
+if load_dotenv:
+    for env_candidate in [BASE_DIR / ".env", BASE_DIR.parent / ".env", Path(".env").resolve()]:
+        if env_candidate.is_file():
+            load_dotenv(env_candidate)
+            break
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Resolve candidate local CSV directories as fallback
 CANDIDATE_DIRS = [
     BASE_DIR / "new_marvel_data",
     BASE_DIR.parent / "new_marvel_data",
@@ -32,13 +59,121 @@ for d in CANDIDATE_DIRS:
         DATA_DIR = d
         break
 
-if DATA_DIR is None:
-    raise FileNotFoundError(f"Could not locate new_marvel_data or marvel_data in candidate directories: {CANDIDATE_DIRS}.")
 
-# 1. Dimension Tables
-prods = pd.read_csv(DATA_DIR / "dim_products.csv")
-stores = pd.read_csv(DATA_DIR / "dim_stores.csv")
-guardrails = pd.read_csv(DATA_DIR / "dim_guardrails.csv")
+def load_dataset(reps):
+    """
+    Loads Marvel CPG dataset:
+    1. Primary: Fast-streams from Aiven PostgreSQL (via DATABASE_URL or .env).
+    2. Fallback: Reads local CSV files from DATA_DIR if DATABASE_URL is not set.
+    Includes memory optimizations (downcasting & garbage collection) for 512MB RAM environments.
+    """
+    db_url = DATABASE_URL
+    so_raw = None
+
+    if db_url and psycopg2:
+        try:
+            if db_url.startswith("postgres://"):
+                db_url = "postgresql://" + db_url[len("postgres://") :]
+            conn = psycopg2.connect(db_url)
+            # Check if defaultdb was targeted but marvel_cpg has the new data
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fact_sell_out';")
+                if not cur.fetchone():
+                    cur.execute("SELECT 1 FROM pg_database WHERE datname='marvel_cpg';")
+                    if cur.fetchone():
+                        conn.close()
+                        p = urllib.parse.urlsplit(db_url)
+                        marvel_url = urllib.parse.urlunsplit(p._replace(path="/marvel_cpg"))
+                        conn = psycopg2.connect(marvel_url)
+
+            print("[AIVEN] Connected to Aiven PostgreSQL. Loading tables into memory...")
+            prods = pd.read_sql("SELECT sku_id, product_name, category, brand, is_msl, unit_cost, list_price, consumer_price FROM dim_products;", conn)
+            for col in ["unit_cost", "list_price", "consumer_price"]:
+                prods[col] = prods[col].astype(float)
+            prods["category"] = prods["category"].astype("category")
+            prods["brand"] = prods["brand"].astype("category")
+
+            stores = pd.read_sql("SELECT store_id, store_name, channel, region, state, segment_tier, city FROM dim_stores;", conn)
+            rng = np.random.default_rng(42)
+            stores["rep_id"] = rng.choice(reps, len(stores))
+            for col in ["channel", "region", "state", "segment_tier", "city", "rep_id"]:
+                stores[col] = stores[col].astype("category")
+
+            guardrails = pd.read_sql("SELECT channel, category, max_discount_pct, min_target_margin, required_exec_tradeoff FROM dim_guardrails;", conn)
+            guardrails["max_discount_pct"] = guardrails["max_discount_pct"].astype(float)
+            guardrails["min_target_margin"] = guardrails["min_target_margin"].astype(float)
+
+            # Fact Sell In
+            si_raw = pd.read_sql("SELECT transaction_id, date, store_id, sku_id, units_sold, gross_sales, discount_pct, net_sales, promo_id FROM fact_sell_in;", conn)
+            si_raw["date"] = pd.to_datetime(si_raw["date"])
+            si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, unit="D")
+            for col in ["gross_sales", "discount_pct", "net_sales"]:
+                si_raw[col] = si_raw[col].astype("float32")
+            si_raw["units_sold"] = si_raw["units_sold"].astype("int32")
+
+            # Fact Execution Audits
+            au_raw = pd.read_sql("SELECT audit_id, date, store_id, sku_id, planogram_compliance, shelf_share_pct, secondary_display FROM fact_execution_audits;", conn)
+            au_raw["date"] = pd.to_datetime(au_raw["date"])
+            au_raw["shelf_share_pct"] = au_raw["shelf_share_pct"].astype("float32")
+
+            # Fact Sell Out (read in 500k chunks to preserve peak memory)
+            chunks = []
+            query = "SELECT date, store_id, sku_id, units_sold_daily, inventory_level, is_out_of_stock, consumer_price_actual, promo_id, promo_discount_pct FROM fact_sell_out;"
+            for chunk in pd.read_sql(query, conn, chunksize=500000):
+                chunk["units_sold_daily"] = chunk["units_sold_daily"].astype("int16")
+                chunk["inventory_level"] = chunk["inventory_level"].astype("int16")
+                chunk["is_out_of_stock"] = chunk["is_out_of_stock"].astype("bool")
+                chunk["consumer_price_actual"] = chunk["consumer_price_actual"].astype("float32")
+                chunk["promo_discount_pct"] = chunk["promo_discount_pct"].astype("float32")
+                chunk["date"] = pd.to_datetime(chunk["date"])
+                chunks.append(chunk)
+
+            so_raw = pd.concat(chunks, ignore_index=True)
+            del chunks
+            so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
+            conn.close()
+
+        except Exception as e:
+            warnings.warn(f"[AIVEN] Database connection/query failed: {e}. Attempting local CSV fallback...")
+            so_raw = None
+
+    if so_raw is None:
+        if DATA_DIR is None:
+            raise RuntimeError(
+                "Could not load Marvel CPG data: DATABASE_URL is not configured and local CSV fallback directory was not found.\n"
+                "Please configure DATABASE_URL in your environment or .env."
+            )
+        print(f"[LOCAL] Loading dataset from CSV directory: {DATA_DIR}")
+        prods = pd.read_csv(DATA_DIR / "dim_products.csv")
+        stores = pd.read_csv(DATA_DIR / "dim_stores.csv")
+        guardrails = pd.read_csv(DATA_DIR / "dim_guardrails.csv")
+
+        rng = np.random.default_rng(42)
+        stores["rep_id"] = rng.choice(reps, len(stores))
+
+        au_raw = pd.read_csv(DATA_DIR / "fact_execution_audits.csv")
+        si_raw = pd.read_csv(DATA_DIR / "fact_sell_in.csv")
+        so_raw = pd.read_csv(DATA_DIR / "fact_sell_out.csv", low_memory=False)
+
+        so_raw["date"] = pd.to_datetime(so_raw["date"])
+        so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
+        si_raw["date"] = pd.to_datetime(si_raw["date"])
+        si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, unit="D")
+        au_raw["date"] = pd.to_datetime(au_raw["date"])
+
+    # Merge metadata
+    store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
+    prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
+
+    so = so_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
+    si = si_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
+    au = au_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
+
+    del so_raw, si_raw, au_raw
+    gc.collect()
+
+    return prods, stores, guardrails, so, si, au
+
 
 # 2. Assign Rep Profiles deterministically to stores
 REPS = [f"Rep {c}" for c in "ABCDEF"]
@@ -95,31 +230,8 @@ MANAGER_PROFILE = {
     "scope": "All Commercial Territories (221 Stores · 4 Regions · 23 SKUs)",
 }
 
-# Deterministic rep assignment (seed 42 guarantees stability)
-rng = np.random.default_rng(42)
-stores["rep_id"] = rng.choice(REPS, len(stores))
-
-# 3. Fact Tables
-au_raw = pd.read_csv(DATA_DIR / "fact_execution_audits.csv")
-si_raw = pd.read_csv(DATA_DIR / "fact_sell_in.csv")
-so_raw = pd.read_csv(DATA_DIR / "fact_sell_out.csv")
-
-# Date conversions
-so_raw["date"] = pd.to_datetime(so_raw["date"])
-so_raw["week"] = so_raw["date"] - pd.to_timedelta(so_raw["date"].dt.dayofweek, unit="D")
-
-si_raw["date"] = pd.to_datetime(si_raw["date"])
-si_raw["week"] = si_raw["date"] - pd.to_timedelta(si_raw["date"].dt.dayofweek, unit="D")
-
-au_raw["date"] = pd.to_datetime(au_raw["date"])
-
-# Merge metadata
-store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
-prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
-
-so = so_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-si = si_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-au = au_raw.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
+# Load datasets (via Aiven PostgreSQL or local CSV fallback)
+prods, stores, guardrails, so, si, au = load_dataset(REPS)
 
 # Global reference lists
 CH = sorted(stores["channel"].unique().tolist())

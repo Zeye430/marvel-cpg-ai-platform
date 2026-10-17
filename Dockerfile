@@ -8,18 +8,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for C extensions (e.g. psycopg2) and networking
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first for optimal layer caching
+# Install Python dependencies first for optimal Docker layer caching
 COPY module_1/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy CPG dataset into container
-COPY new_marvel_data/ /app/new_marvel_data/
 
 # Copy application assets and dashboard code
 COPY module_1/www/ /app/www/

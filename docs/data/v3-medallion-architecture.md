@@ -1,6 +1,6 @@
 # V3 Shared Medallion Data Architecture
 
-Design date: 2026-10-18. Implementation status: stages 1-2 are implemented in [data_platform](../../data_platform/README.md). Stage 3 adds a candidate shared daily state and corrected masking diagnostics; operational estimator adoption, remaining Gold marts, model release and application serving remain pending.
+Design date: 2026-10-18. Implementation status: stages 1-2 are implemented in [data_platform](../../data_platform/README.md). Stage 3 adds a candidate daily state/masking diagnostics; stage 4 adds shared KPI marts. Operational estimator adoption, controlled model features, model release and application serving remain pending. See the [Stage 4 validation record](v3-medallion-stage-4-validation.md) for input-version verification and completion evidence.
 
 This is the common analytical foundation for Module 1 (commercial analytics), Module 2 (OOS and visits), Module 3 (negotiation), and Module 4 (SQL and knowledge assistance). Each module consumes governed outputs; source interpretation and KPI formulas are owned by the platform.
 
@@ -266,4 +266,4 @@ Implementation notes for stages 1-2:
 
 Design-approved does not mean source ambiguities are resolved. Guardrail meaning, MSL applicability, audit expiry, campaign precedence/minimum-volume grain, representative assignments, value-at-risk basis and production availability remain recorded policy decisions. Valid marts may be published with explicit Unknown or Requires review states while those decisions are pending.
 
-The stage 3 estimator and experiment are documented in [daily state and masking](v3-daily-state-and-masking.md). Review their candidate diagnostics before operational adoption, then build the shared KPI marts and controlled model feature access. Existing Aiven ETL and the Module 1 app are outside this implementation's initial scope.
+The stage 3 estimator/experiment are documented in [daily state and masking](v3-daily-state-and-masking.md), and stage 4 in [shared KPI marts](v3-shared-kpi-marts.md). Review candidate estimates before operational adoption, then implement controlled historical features and Gold-only serving. This branch delivers the shared data layer; model experiments, scoring/ranking logic and module applications belong to subsequent module branches. Existing Aiven ETL and the Module 1 app are outside this implementation's initial scope.

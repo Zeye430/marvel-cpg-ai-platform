@@ -7,6 +7,7 @@ import unittest
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import duckdb
 
@@ -177,6 +178,16 @@ class PlatformTests(unittest.TestCase):
             build(self.config, publish_silver=True)
         manifest = json.loads((self.config.output_root / "published/silver.json").read_text())
         self.assertEqual(manifest["build_id"], first["build_id"])
+
+    def test_interrupted_build_retains_terminal_run_status(self):
+        with patch('data_platform.pipeline.shared_relations',side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                build(self.config,publish_silver=True)
+        report=json.loads(next((self.config.output_root/'builds').glob('*/run.json')).read_text())
+        self.assertEqual(report['status'],'Interrupted')
+        connection=self.open_build(report)
+        self.assertEqual(connection.execute('SELECT status FROM meta.build_runs').fetchone()[0],'Interrupted')
+        self.assertFalse((self.config.output_root/'published/silver.json').exists())
 
 
 if __name__ == "__main__":

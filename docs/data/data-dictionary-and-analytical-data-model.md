@@ -1,4 +1,6 @@
-# Data Dictionary and Analytical Data Model
+# Historical Data Dictionary and Analytical Data Model (V1)
+
+> Superseded for active development as of 2026-10-18. This document describes the earlier six-table dataset. Use the [V3 shared Medallion architecture and table catalog](v3-medallion-architecture.md), the [V3 source contract](../../data_platform/contracts/v3/sources.json), and the [V3 KPI specification](../solution-specifications/kpi-and-missing-store-day-handling.md) for current implementation. The counts, fields, invoice timing, receipt inference, and label policy below are historical and must not drive V3 code.
 
 ## Document Purpose
 

@@ -1,4 +1,4 @@
-"""Stage 1-2 snapshot builds with quality gates and atomic Silver publication."""
+"""Versioned source builds, optional shared Gold candidates and Silver publication."""
 
 import fcntl
 import json
@@ -15,6 +15,7 @@ import duckdb
 
 from .ingestion import digest, json_hash, load_bronze, load_contract, snapshot_inputs
 from .estimation import EstimatorConfig, build_daily_state
+from .marts import build_kpi_marts
 from .quality import Quality
 from .silver import shared_relations, source_business_checks, typed_sources
 
@@ -33,6 +34,8 @@ class BuildConfig:
     memory_limit: str = "1GB"
     threads: int = 2
     include_daily_state: bool = False
+    include_kpi_marts: bool = False
+    invoice_extract_complete: bool = False
 
     def validate(self, contract):
         if self.as_of > date.fromisoformat(contract["development_cutoff"]):
@@ -41,6 +44,8 @@ class BuildConfig:
             raise ValueError("calendar_start must be on or before as_of")
         if self.threads < 1:
             raise ValueError("threads must be positive")
+        if self.invoice_extract_complete and not self.include_kpi_marts:
+            raise ValueError("Invoice completeness assumption requires --include-kpi-marts")
         for path in (self.output_root, self.snapshot_root):
             if path.resolve() == self.source_dir.resolve():
                 raise ValueError("Generated artifacts must not replace the source directory")
@@ -119,8 +124,10 @@ def _build(config, contract, publish_silver):
         "calendar_start": str(config.calendar_start), "duckdb_version": duckdb.__version__,
         "transform_version": "silver.v1", "assortment_policy": "static_simulation_with_first_seen_flag_v1",
         "availability_policy": "explicit_same_day_simulation_assumptions_v1",
-        "include_daily_state": config.include_daily_state,
-        "estimator_version": EstimatorConfig().version if config.include_daily_state else None,
+        "include_daily_state": config.include_daily_state or config.include_kpi_marts,
+        "estimator_version": EstimatorConfig().version if config.include_daily_state or config.include_kpi_marts else None,
+        "include_kpi_marts": config.include_kpi_marts,
+        "invoice_extract_complete": config.invoice_extract_complete,
     }
     config_hash = json_hash(configuration)
     connection.execute("INSERT INTO meta.build_runs VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, 'Running', NULL)",
@@ -144,11 +151,17 @@ def _build(config, contract, publish_silver):
         load_bronze(connection, config, contract, quality, run_id, dataset_hash, snapshot, hashes)
         connection.execute("UPDATE meta.ingestion_runs SET status = 'Accepted', finished_at = ? WHERE ingestion_run_id = ?",
                            [now(), run_id])
+        # Bronze ordinals are now fixed. Analytical results are sets with explicit
+        # keys/window ordering, so later operators need not preserve insertion order.
+        connection.execute("SET preserve_insertion_order = false")
         typed_sources(connection, config, contract, quality, build_id)
         source_business_checks(connection, contract, quality)
         shared_relations(connection, config, contract, quality, build_id)
-        if config.include_daily_state:
+        if config.include_daily_state or config.include_kpi_marts:
             result["daily_state"] = build_daily_state(connection, build_id, config.as_of, quality)
+        if config.include_kpi_marts:
+            result["kpi_marts"] = build_kpi_marts(connection, quality,
+                                                  invoice_extract_complete=config.invoice_extract_complete)
         rules = connection.execute("SELECT DISTINCT rule_version FROM silver.dim_guardrails").fetchall()
         for (rule_version,) in rules:
             connection.execute("INSERT INTO meta.policy_registry VALUES ('trade_guardrails', ?, 'Requires review', NULL, NULL, ?, ?)",
@@ -178,12 +191,13 @@ def _build(config, contract, publish_silver):
                                [publication_id, build_id, result["previous_publication_id"], now()])
         connection.execute("UPDATE meta.build_runs SET status = 'Accepted', finished_at = ? WHERE build_id = ?", [now(), build_id])
         result["status"] = "Accepted"
-    except Exception as error:
-        result.update(status="Failed", error=f"{type(error).__name__}: {error}")
-        connection.execute("UPDATE meta.build_runs SET status = 'Failed', error = ?, finished_at = ? WHERE build_id = ?",
-                           [result["error"], now(), build_id])
-        connection.execute("UPDATE meta.ingestion_runs SET status = 'Failed', error = ?, finished_at = ? "
-                           "WHERE ingestion_run_id = ? AND status = 'Running'", [result["error"], now(), run_id])
+    except (Exception, KeyboardInterrupt) as error:
+        status = "Interrupted" if isinstance(error, KeyboardInterrupt) else "Failed"
+        result.update(status=status, error=f"{type(error).__name__}: {error}")
+        connection.execute("UPDATE meta.build_runs SET status = ?, error = ?, finished_at = ? WHERE build_id = ?",
+                           [status,result["error"], now(), build_id])
+        connection.execute("UPDATE meta.ingestion_runs SET status = ?, error = ?, finished_at = ? "
+                           "WHERE ingestion_run_id = ? AND status = 'Running'", [status,result["error"], now(), run_id])
         raise
     finally:
         atomic_json(build_dir / "quality.json", quality.report())

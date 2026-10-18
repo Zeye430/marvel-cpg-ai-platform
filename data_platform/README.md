@@ -2,9 +2,9 @@
 
 Implemented: architecture stages 1-2, an immutable input snapshot, text-only Bronze,
 typed Silver sources, receipt reconciliation, common calendar, planned-order
-projection and promotion calendar. This is the common foundation for all four
-modules. Gold estimates, KPIs, models, serving views and incremental scheduling
-are subsequent stages.
+projection and promotion calendar. Stage 3 adds an optional candidate Gold daily
+state and corrected account-day masking diagnostics. Shared KPI marts, models,
+serving views and incremental scheduling remain subsequent stages.
 
 See the [architecture](../docs/data/v3-medallion-architecture.md),
 [source contract](contracts/v3/sources.json) and
@@ -37,6 +37,17 @@ uv run python -m data_platform build --as-of 2026-04-30
 `--source-dir`, `--snapshot-root`, `--output-root`, `--calendar-start`,
 `--memory-limit` and `--threads` are configurable. Paths are local; no cloud or
 legacy Aiven connection is used. The current writer lock uses Unix `flock`.
+
+For the stage 3 candidate and development-only experiment:
+
+```bash
+uv run python -m data_platform build --include-daily-state
+uv run python -m data_platform evaluate-missing --per-length 100
+```
+
+See [historical estimation and corrected masking](../docs/data/v3-daily-state-and-masking.md)
+for the estimator policy, outputs and release limitations. The optional candidate
+does not authorize application use or establish the Module 2 prediction target.
 
 ## Artifacts
 
@@ -78,9 +89,8 @@ The eight typed client sources are accompanied by:
 | `inventory_reconciliation` | Exact balance checks on consecutive observed days only |
 | `promotion_calendar` | Campaign membership by day/channel/category; overlapping campaigns remain separate |
 
-`execution_latest_asof` and representative assignments are not materialized in
-this stage. No fake assignments, estimates, future labels or model predictions
-are generated.
+`execution_latest_asof` is added when `--include-daily-state` is selected.
+Representative assignments and future labels/model predictions are not generated.
 
 The static assortment is derived from Sell-out pairs within the authorized
 cutoff, not from June. Calendar rows before a pair's first report explicitly have
@@ -118,7 +128,7 @@ in its pending directory or build report; missing input files cannot be archived
 ## Verification
 
 ```bash
-uv run python -m unittest discover -s tests -p 'test_data_platform.py' -v
+uv run python -m unittest discover -s tests -v
 ```
 
 Synthetic integration fixtures exercise missing-day receipts, future outcome

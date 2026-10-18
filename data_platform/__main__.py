@@ -21,15 +21,29 @@ def main():
     command.add_argument("--calendar-start", type=date.fromisoformat, default=defaults.calendar_start)
     command.add_argument("--memory-limit", default=defaults.memory_limit)
     command.add_argument("--threads", type=int, default=defaults.threads)
+    command.add_argument("--include-daily-state", action="store_true",
+                         help="Also build the candidate shared Gold state; no model/app release")
     command.add_argument("--publish-silver", action="store_true",
                          help="Promote only the validated Silver handoff, not an app serving database")
+    evaluation = commands.add_parser("evaluate-missing", help="Recompute March/April account-day masking diagnostics")
+    evaluation.add_argument("--source-manifest", type=Path)
+    evaluation.add_argument("--output-root", type=Path)
+    evaluation.add_argument("--start", type=date.fromisoformat, default=date(2026, 3, 1))
+    evaluation.add_argument("--end", type=date.fromisoformat, default=date(2026, 4, 30))
+    evaluation.add_argument("--per-length", type=int, default=100)
+    evaluation.add_argument("--seed", type=int, default=650)
+    evaluation.add_argument("--memory-limit", default="1GB")
     args = vars(parser.parse_args())
-    args.pop("command")
-    publish = args.pop("publish_silver")
+    action = args.pop("command")
     try:
-        result = build(BuildConfig(**args), publish_silver=publish)
+        if action == "evaluate-missing":
+            from .masking import evaluate_missing
+            result = evaluate_missing(**args)
+        else:
+            publish = args.pop("publish_silver")
+            result = build(BuildConfig(**args), publish_silver=publish)
     except Exception as error:
-        print(f"Build failed; prior publication retained. {type(error).__name__}: {error}", file=sys.stderr)
+        print(f"Operation failed; accepted publications unchanged. {type(error).__name__}: {error}", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2, default=str))
     return 0

@@ -2,9 +2,10 @@
 
 Implemented: architecture stages 1-2, an immutable input snapshot, text-only Bronze,
 typed Silver sources, receipt reconciliation, common calendar, planned-order
-projection and promotion calendar. Stage 3 adds an optional candidate Gold daily
-state and corrected account-day masking diagnostics. Shared KPI marts, models,
-serving views and incremental scheduling remain subsequent stages.
+projection and promotion calendar. Stage 3 adds a candidate Gold daily state and
+corrected account-day masking diagnostics. Stage 4 adds shared store, commercial
+and execution KPI marts. Models, serving views and incremental scheduling remain
+subsequent stages.
 
 See the [architecture](../docs/data/v3-medallion-architecture.md),
 [source contract](contracts/v3/sources.json) and
@@ -48,6 +49,18 @@ uv run python -m data_platform evaluate-missing --per-length 100
 See [historical estimation and corrected masking](../docs/data/v3-daily-state-and-masking.md)
 for the estimator policy, outputs and release limitations. The optional candidate
 does not authorize application use or establish the Module 2 prediction target.
+
+For shared KPI marts and data version verification:
+
+```bash
+uv run python -m data_platform audit-data
+uv run python -m data_platform build --include-kpi-marts
+```
+
+See [KPI marts and formulas](../docs/data/v3-shared-kpi-marts.md) and the
+[Stage 4 validation record](../docs/data/v3-medallion-stage-4-validation.md). `data/raw`
+is ignored and is not refreshed by a Git pull. The audit compares actual active
+hashes to V3 and understands Git LFS content identities for the legacy path.
 
 ## Artifacts
 

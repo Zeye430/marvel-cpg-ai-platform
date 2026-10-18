@@ -14,6 +14,7 @@ from pathlib import Path
 import duckdb
 
 from .ingestion import digest, json_hash, load_bronze, load_contract, snapshot_inputs
+from .estimation import EstimatorConfig, build_daily_state
 from .quality import Quality
 from .silver import shared_relations, source_business_checks, typed_sources
 
@@ -31,6 +32,7 @@ class BuildConfig:
     as_of: date = date(2026, 5, 31)
     memory_limit: str = "1GB"
     threads: int = 2
+    include_daily_state: bool = False
 
     def validate(self, contract):
         if self.as_of > date.fromisoformat(contract["development_cutoff"]):
@@ -117,6 +119,8 @@ def _build(config, contract, publish_silver):
         "calendar_start": str(config.calendar_start), "duckdb_version": duckdb.__version__,
         "transform_version": "silver.v1", "assortment_policy": "static_simulation_with_first_seen_flag_v1",
         "availability_policy": "explicit_same_day_simulation_assumptions_v1",
+        "include_daily_state": config.include_daily_state,
+        "estimator_version": EstimatorConfig().version if config.include_daily_state else None,
     }
     config_hash = json_hash(configuration)
     connection.execute("INSERT INTO meta.build_runs VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, 'Running', NULL)",
@@ -143,6 +147,8 @@ def _build(config, contract, publish_silver):
         typed_sources(connection, config, contract, quality, build_id)
         source_business_checks(connection, contract, quality)
         shared_relations(connection, config, contract, quality, build_id)
+        if config.include_daily_state:
+            result["daily_state"] = build_daily_state(connection, build_id, config.as_of, quality)
         rules = connection.execute("SELECT DISTINCT rule_version FROM silver.dim_guardrails").fetchall()
         for (rule_version,) in rules:
             connection.execute("INSERT INTO meta.policy_registry VALUES ('trade_guardrails', ?, 'Requires review', NULL, NULL, ?, ?)",

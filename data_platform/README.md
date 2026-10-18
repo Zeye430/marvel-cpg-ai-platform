@@ -64,6 +64,12 @@ hashes to V3 and understands Git LFS content identities for the legacy path.
 
 ## Artifacts
 
+The next data-layer increment is specified in the
+[OOS feature contract](../docs/data/v3-oos-feature-contract.md). Its first isolated
+state/sales feature slice has synthetic tests; complete enrichment, a safe input
+exporter, pipeline integration, restricted labels and Gold-only serving remain
+pending. Model/ranking development belongs to Module 2.
+
 ```text
 data/raw/_snapshots/v3/<dataset_hash>/       byte-identical copies of all eight CSVs
 outputs/v3/platform/builds/<build_id>/

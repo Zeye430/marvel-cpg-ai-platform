@@ -575,6 +575,8 @@ The existing experiment covers one-, two-, three-, and four-day blocks. Recomput
 
 ## Notebook-to-Data-Layer Handoff
 
+Stage 3 implementation evidence is recorded in [V3 candidate validation](../data/v3-medallion-stage-3-validation.md). Corrected block masking supports the receipt-aware estimator, but natural-gap closure exhibits a distinct mechanical balance pattern, including gaps with receipts. This remains an operational-adoption limitation; the older notebook figures below are not a certified replacement for that review.
+
 The numerical outputs above remain the historical V3 experiment. The following requirements make the next implementation reproducible and prevent those outputs from being treated as an audited production benchmark:
 
 1. **Historical fitting:** replace the notebooks' full-panel channel/category fallback medians with historical-only estimates. Promotion factors used for a training row must also be available by that row's timestamp, or be fitted on a separate earlier warm-up period. Store fitting cutoffs with estimator artifacts.

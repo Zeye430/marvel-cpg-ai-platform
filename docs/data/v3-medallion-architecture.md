@@ -1,6 +1,6 @@
 # V3 Shared Medallion Data Architecture
 
-Design date: 2026-10-18. Implementation status: stages 1-2 are implemented in [data_platform](../../data_platform/README.md). Gold transformations, model release and application serving remain planned.
+Design date: 2026-10-18. Implementation status: stages 1-2 are implemented in [data_platform](../../data_platform/README.md). Stage 3 adds a candidate shared daily state and corrected masking diagnostics; operational estimator adoption, remaining Gold marts, model release and application serving remain pending.
 
 This is the common analytical foundation for Module 1 (commercial analytics), Module 2 (OOS and visits), Module 3 (negotiation), and Module 4 (SQL and knowledge assistance). Each module consumes governed outputs; source interpretation and KPI formulas are owned by the platform.
 
@@ -173,6 +173,14 @@ Status values are Observed, Estimated, Unknown. Estimates remain null on observe
 
 **Module 2:** consumes historical features, publishes predictions and visit priorities. Risk probability is not expected lost units. `units_at_risk_estimated` requires a separately versioned demand/shortfall calculation; `trade_value_at_risk_estimated` needs an explicit price basis. If not validated, publish null with a reason. Do not multiply all SKU probabilities as though they were independent to claim a calibrated store-level OOS probability. Store maximum probability can be a labeled ranking component.
 
+Its business UI shows the latest accepted scoring run, store-SKU risks, drivers,
+freshness and visit priorities. Model precision/recall/AUC, segment diagnostics,
+label maturity and drift belong to a management/technical view. Daily inference
+uses an approved fixed model; retraining, challenger evaluation and promotion
+are separate versioned operations. Seven-day outcomes must mature and satisfy
+the label coverage contract before monitoring metrics are calculated. A visit
+priority is not a geographically optimized route.
+
 **Module 3:** receives shared price, cost, execution, demand and rule context. `net_trade_price = list_price × (1 - proposed_total_discount_pct/100)` and `margin_pct = 100 × (net_trade_price - unit_cost)/net_trade_price`, undefined when net price is zero. If proposal type is additional discount, require an approved composition rule; do not guess additive versus compounded treatment. Unresolved guardrails produce Requires review. Source observations, user assumptions and simulated outcomes are separate fields.
 
 **Module 4:** NLQ uses approved serving views; RAG uses an authorized knowledge registry/index. Both can cite the relevant publication or document version. Module 4 shares metric definitions with the other modules and does not generate its own alternative KPI SQL against raw tables.
@@ -258,4 +266,4 @@ Implementation notes for stages 1-2:
 
 Design-approved does not mean source ambiguities are resolved. Guardrail meaning, MSL applicability, audit expiry, campaign precedence/minimum-volume grain, representative assignments, value-at-risk basis and production availability remain recorded policy decisions. Valid marts may be published with explicit Unknown or Requires review states while those decisions are pending.
 
-The next implementation stage is the corrected historical estimator and shared Gold daily state, validated with account-day block masking before adoption. Existing Aiven ETL and the Module 1 app are outside this implementation's initial scope.
+The stage 3 estimator and experiment are documented in [daily state and masking](v3-daily-state-and-masking.md). Review their candidate diagnostics before operational adoption, then build the shared KPI marts and controlled model feature access. Existing Aiven ETL and the Module 1 app are outside this implementation's initial scope.

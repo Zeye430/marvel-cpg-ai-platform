@@ -74,3 +74,9 @@ The supplied Marvel CPG data and challenge brief are for academic use only. Do n
 ## Status
 
 The initial Module 1 implementation and project environment configuration are available. The remaining modules are under development.
+
+## Shared V3 Data Platform
+
+The four modules will consume a common Bronze/Silver/Gold analytical layer in DuckDB. The [V3 architecture and table catalog](docs/data/v3-medallion-architecture.md) define table grains, lineage, module dependencies, serving views and implementation stages. The [source contract](data_platform/contracts/v3/sources.json) records the eight V3 file schemas. The [KPI and missing-day specification](docs/solution-specifications/kpi-and-missing-store-day-handling.md) defines the shared business rules and validation requirements.
+
+Stages 1-2 are implemented: versioned snapshots, Bronze ingestion, typed Silver, receipt reconciliation and the shared calendar. Run `uv run python -m data_platform build --publish-silver`; see the [pipeline runbook](data_platform/README.md) for artifacts, checks and time boundaries. Gold state/metrics, models and application serving follow in later stages. The Silver build is an internal artifact, not an application database.

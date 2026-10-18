@@ -590,6 +590,8 @@ These checks are part of the next data-layer work, not evidence that the underly
 
 ## Data-Layer Contract
 
+The [V3 shared Medallion architecture](../data/v3-medallion-architecture.md) provides the detailed relation catalog, keys, four-module consumer mapping, serving boundaries and build sequence. The [source contract](../../data_platform/contracts/v3/sources.json) defines the eight source file headers and logical types.
+
 The DuckDB implementation will use three schemas with versioned ingestion metadata:
 
 | Layer | Responsibility | Required outputs |

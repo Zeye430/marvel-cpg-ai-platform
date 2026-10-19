@@ -94,6 +94,9 @@ MANAGER_PROFILE = {
 }
 
 # Standard Theme Channels & Colors
+CH = ["Modern Trade", "Traditional Trade", "Distributor"]
+REG = ["Midwest", "Northeast", "Southeast", "West"]
+
 COL = {
     "Modern Trade": "#0071E3",
     "Traditional Trade": "#FF9500",

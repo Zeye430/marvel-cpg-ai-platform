@@ -26,22 +26,24 @@ marvel-cpg-ai-platform/
 │   ├── data.py                 # Centralized, non-blocking Aiven PostgreSQL loader & CSV fallback
 │   └── auth.py                 # Role-based auth (Director Elena Rostova & 6 Field Rep profiles)
 │
-└── modules/
-    ├── module_1/               # Module 1: Commercial Execution Analytics Dashboard
-    │   ├── ui.py               # Portfolio filters, 5 KPI hero tiles, and 4 visualization sections
-    │   └── server.py           # Reactive scopes (SO, SI, AU) & 10 Plotly chart renderers
-    │
-    ├── module_2/               # Module 2: Predictive Out-of-Stock Risk Engine (t+7 Days)
-    │   ├── ui.py               # ML benchmark scorecard, feature gain chart, and route ranking table
-    │   └── server.py           # Supervised classification / time-series inference & priority ranking
-    │
-    ├── module_3/               # Module 3: Commercial Negotiation Simulator
-    │   ├── ui.py               # Proposed deal terms, discount slider, and margin realization layout
-    │   └── server.py           # Contractual guardrail validation (dim_guardrails) & waterfall economics
-    │
-    └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG)
-        ├── ui.py               # Chat query prompt bar, preset queries, and document citations tray
-        └── server.py           # Natural language to SQL translation & warehouse query execution
+├── modules/
+│   ├── module_1/               # Module 1: Commercial Execution Analytics Dashboard
+│   │   ├── ui.py               # Portfolio filters, 5 KPI hero tiles, and 4 visualization sections
+│   │   └── server.py           # Reactive scopes (SO, SI, AU) & 10 Plotly chart renderers
+│   │
+│   ├── module_2/               # Module 2: Predictive Out-of-Stock Risk Engine (t+7 Days)
+│   │   ├── ui.py               # ML benchmark scorecard, feature gain chart, and route ranking table
+│   │   └── server.py           # Supervised classification / time-series inference & priority ranking
+│   │
+│   ├── module_3/               # Module 3: Commercial Negotiation Simulator
+│   │   ├── ui.py               # Proposed deal terms, discount slider, and margin realization layout
+│   │   └── server.py           # Contractual guardrail validation (dim_guardrails) & waterfall economics
+│   │
+│   └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG)
+│       ├── ui.py               # Chat query prompt bar, preset queries, and document citations tray
+│       └── server.py           # Natural language to SQL translation & warehouse query execution
+│
+└── data_platform/              # Shared V3 Medallion Data Engine (DuckDB Bronze/Silver/Gold Marts)
 ```
 
 ---
@@ -88,7 +90,15 @@ marvel-cpg-ai-platform/
 
 ---
 
-## Quick Start Guide
+## 💾 Shared V3 Data Platform
+
+Start with the [shared-data guide](docs/data/README.md) for architecture, local build, database access and **all four module integration guides**. Look up exact fields in the [Gold dictionary](docs/data/v3-gold-data-dictionary.md); package commands are in [data_platform](data_platform/README.md).
+
+The common Bronze/Silver/Gold layer supplies reported business data through June 30 and separate opt-in Estimated candidates. Module 2 development stops May 31; June independent test remains evidence-gated. Model/ranking release and module applications are separate work.
+
+---
+
+## 🚀 Quick Start Guide
 
 ### Option 1: Run Locally with Python & Shiny
 
@@ -170,3 +180,13 @@ The application includes an executive Apple-style luxury login screen with 1-cli
 - **Field Sales Representative (Alex Mercer / Rep A)**:
   - Click **⚡ Field Rep (Alex Mercer · Rep A)**
   - Access: Route-scoped route view restricted strictly to stores assigned to the active rep.
+
+---
+
+## 🤝 Team Workflow
+
+- Keep `main` stable and do not develop directly on it.
+- Create a branch for each assigned task (`feature/*`).
+- Open a pull request when the work is ready for review.
+- Ask at least one teammate to review the pull request before merging.
+- Do not commit API keys, passwords, local environment files, or other secrets.

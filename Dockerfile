@@ -15,12 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first for optimal Docker layer caching
-COPY module_1/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application assets and dashboard code
-COPY module_1/www/ /app/www/
-COPY module_1/app.py /app/app.py
+# Copy application static assets and platform code
+COPY www/ /app/www/
+COPY shared/ /app/shared/
+COPY modules/ /app/modules/
+COPY app.py /app/app.py
 
 # Create unprivileged application user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

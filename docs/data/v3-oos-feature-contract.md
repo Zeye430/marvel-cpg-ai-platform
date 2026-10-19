@@ -1,7 +1,8 @@
 # V3 Gold OOS feature contract
 
-Status: state/sales slice implemented with synthetic tests; full builder,
-pipeline integration and real-data validation remain pending.
+Status: state/sales slice and isolated input exporter, including its CLI,
+implemented with synthetic tests; full feature orchestration and real-data
+validation remain pending.
 Version: `oos_features.v1`. This document prepares a data-layer handoff to
 Module 2. It does not approve an estimator, train a model, select thresholds,
 generate probabilities or implement visit ranking.
@@ -125,8 +126,9 @@ The caller must prepare a separate connection containing the allowlisted
 `feature_input.daily_state` projection and optional `meta` quality tables. The
 function rejects source/evaluation tables, explicitly selects input columns and
 does not attach or read the internal Bronze/Silver database. This is an internal
-engineering guard, not an application authorization sandbox. A safe projection
-exporter and CLI/pipeline integration remain separate tasks.
+engineering guard, not an application authorization sandbox. The separate exporter
+below now prepares that projection through a function or CLI; feature-build
+orchestration remains pending.
 
 The partial table contains all confirmed historical pair-days through `as_of`,
 not just the latest day. Current observations and candidate estimates remain
@@ -142,4 +144,62 @@ Run the focused fixtures with:
 
 ```bash
 uv run python -m unittest discover -s tests -p test_oos_features.py -v
+```
+
+## 6. Isolated input handoff
+
+`data_platform.feature_handoff.export_feature_input(source_build_dir, output_root,
+as_of)` is the only component in this handoff that opens the internal source
+database. It opens it read-only, requires an Accepted build containing daily
+state, verifies database/quality hashes and passing required checks, then copies
+only `INPUT_COLUMNS` for confirmed pair-days through the requested cutoff.
+Requests beyond the source cutoff or May 31 are rejected.
+
+Each successful export creates a new immutable directory containing:
+
+```text
+feature-input-<id>/
+  projection.duckdb        feature_input.daily_state plus empty meta tables
+  daily_state.parquet     the same allowlisted projection, retaining native types
+  run.json                source identity, cutoff, hashes, columns and code version
+```
+
+No Bronze/Silver relations, labels, future realized rows or attached source
+database are copied. Source hashes are rechecked before the pending directory is
+renamed to its final name. Failures retain a `.pending-feature-*` report without
+publishing it; repeated exports never overwrite accepted directories. Empty
+Bronze/Silver schemas created by the metadata DDL contain no source tables.
+
+For feature calculation, verify the projection hash and use a separate working
+copy of `projection.duckdb`; never mutate the accepted input file, whose hash is
+part of the handoff. Do not attach the original source database. The exporter is
+not a model/evaluation reader or an application security boundary.
+
+Six synthetic integration tests cover projection usability, field/date isolation,
+source immutability, nullable types, unconfirmed membership, source/quality
+tampering, failed checks/builds, identity mismatch, cutoff lock and independent
+repeated exports. This is not yet a real V3 replay or a Gold serving release.
+
+```bash
+uv run python -m unittest discover -s tests -p test_feature_handoff.py -v
+```
+
+### Command-line entry point
+
+`python -m data_platform export-feature-input` invokes only the isolated exporter.
+Specify `--source-build-dir` and an explicit ISO date `--as-of`; optionally set
+`--output-root` (default `outputs/v3/platform/feature-inputs`). See the
+[runbook example](../../data_platform/README.md#export-isolated-oos-feature-inputs).
+Successful stdout is a JSON result containing the final directory and hashes.
+Parse errors exit 2, export/integrity failures exit 1 and interruption exits 130;
+failure messages go to stderr without reporting a successful artifact.
+
+Eight CLI tests cover required/typed arguments, defaults, help without execution,
+an actual `python -m` subprocess export over synthetic data, cutoff failures,
+integrity failure, missing source and interruption. Existing command help is
+also checked. These tests do not constitute a client-data replay or a feature
+build: this command only prepares the safe input projection.
+
+```bash
+uv run python -m unittest discover -s tests -p test_feature_handoff_cli.py -v
 ```

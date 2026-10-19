@@ -14,7 +14,7 @@ Use this document to:
 Historical discovery notes that conflict with a later client response are not active requirements. The following documents contain the detailed implementation specifications:
 
 - [`solution-specifications/kpi-and-missing-store-day-handling.md`](solution-specifications/kpi-and-missing-store-day-handling.md)
-- [`data/data-dictionary-and-analytical-data-model.md`](data/data-dictionary-and-analytical-data-model.md)
+- [Current V3 Gold dictionary](data/v3-gold-data-dictionary.md)
 - [`product/product-requirements-and-user-workflow.md`](product/product-requirements-and-user-workflow.md)
 
 ## Status Definitions

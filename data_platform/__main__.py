@@ -1,4 +1,4 @@
-"""Run with: uv run python -m data_platform build --publish-silver."""
+"""Shared platform commands; run python -m data_platform --help for usage."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 from .pipeline import BuildConfig, build
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Build the versioned shared V3 data platform")
     commands = parser.add_subparsers(dest="command", required=True)
     command = commands.add_parser("build", help="Build and validate a new immutable candidate")
@@ -42,7 +42,18 @@ def main():
     audit.add_argument("--contract-path", type=Path)
     audit.add_argument("--git-ref", default="origin/main")
     audit.add_argument("--output-path", type=Path)
-    args = vars(parser.parse_args())
+    handoff = commands.add_parser(
+        "export-feature-input",
+        help="Export allowlisted historical state to an isolated feature-input database",
+    )
+    handoff.add_argument("--source-build-dir", type=Path, required=True,
+                         help="Accepted build directory containing run.json, quality.json and build.duckdb")
+    handoff.add_argument("--output-root", type=Path,
+                         default=defaults.output_root / "feature-inputs",
+                         help="Parent directory for new immutable projections; no serving publication")
+    handoff.add_argument("--as-of", type=date.fromisoformat, required=True,
+                         help="Explicit YYYY-MM-DD input cutoff, no later than the source cutoff or 2026-05-31")
+    args = vars(parser.parse_args(argv))
     action = args.pop("command")
     try:
         if action == "audit-data":
@@ -55,11 +66,14 @@ def main():
         elif action == "evaluate-missing":
             from .masking import evaluate_missing
             result = evaluate_missing(**args)
+        elif action == "export-feature-input":
+            from .feature_handoff import export_feature_input
+            result = export_feature_input(**args)
         else:
             publish = args.pop("publish_silver")
             result = build(BuildConfig(**args), publish_silver=publish)
     except KeyboardInterrupt:
-        print("Build interrupted; accepted publications unchanged.",file=sys.stderr)
+        print("Operation interrupted; accepted publications unchanged.", file=sys.stderr)
         return 130
     except Exception as error:
         print(f"Operation failed; accepted publications unchanged. {type(error).__name__}: {error}", file=sys.stderr)

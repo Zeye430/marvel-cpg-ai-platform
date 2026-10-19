@@ -11,12 +11,12 @@ The platform is structured into four decoupled, independent business modules orc
 ```text
 marvel-cpg-ai-platform/
 │
-├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Tab Bar
+├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
 ├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
-├── Dockerfile                  # Production container definition for local & Render deploys
-├── docker-compose.yml          # Container orchestration with environment variable injection
+├── Dockerfile                  # Production container definition for local & Render deployments
+├── docker-compose.yml          # Container service definition with environment variable injection
 │
-├── www/                        # Static Web Assets (zero Python AST parsing overhead)
+├── www/                        # Static Web Assets (zero Python string parsing overhead)
 │   ├── styles.css              # 5-color luxury Apple design system (#73fbd3, #44e5e7, #59d2fe, #4a8fe7, #5c7aff)
 │   ├── app.js                  # Asynchronous KPI number-shuffling animations
 │   ├── marvel_logo.jpg         # Brand monogram logo

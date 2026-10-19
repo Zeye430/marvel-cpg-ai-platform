@@ -62,13 +62,42 @@ See [KPI marts and formulas](../docs/data/v3-shared-kpi-marts.md) and the
 is ignored and is not refreshed by a Git pull. The audit compares actual active
 hashes to V3 and understands Git LFS content identities for the legacy path.
 
+### Export isolated OOS feature inputs
+
+Use a validated build that already contains the candidate daily state. The
+following source build ID is a local example; use your own accepted build path:
+
+```bash
+uv run python -m data_platform export-feature-input \
+  --source-build-dir outputs/v3/platform/kpi-candidates/builds/20261018T190828-f1c6ca9b2d85 \
+  --output-root outputs/v3/platform/feature-inputs \
+  --as-of 2026-04-30
+```
+
+Both `--source-build-dir` and `--as-of` are required; there is no implicit
+prediction date. `--output-root` defaults to `outputs/v3/platform/feature-inputs`.
+The cutoff cannot exceed the source build date or 2026-05-31 while June is locked.
+The command prints JSON with the new artifact directory, row count, cutoff,
+source lineage and file hashes. Status Accepted means the **input projection**
+passed its handoff checks, not that a model or application release is approved.
+
+The output contains only allowlisted daily-state columns and confirmed pair-days
+through the cutoff. It does not calculate OOS features, train a model or update
+published Silver/serving pointers. Preserve the immutable input; later feature
+calculation must use a separate verified working copy. Details are in the
+[feature contract](../docs/data/v3-oos-feature-contract.md#6-isolated-input-handoff).
+
+Exit codes: `0` success, `2` invalid/missing CLI arguments, `1` runtime or quality
+failure, `130` interrupted. Existing accepted artifacts remain unchanged on failure.
+
 ## Artifacts
 
 The next data-layer increment is specified in the
 [OOS feature contract](../docs/data/v3-oos-feature-contract.md). Its first isolated
-state/sales feature slice has synthetic tests; complete enrichment, a safe input
-exporter, pipeline integration, restricted labels and Gold-only serving remain
-pending. Model/ranking development belongs to Module 2.
+state/sales feature slice and isolated input exporter (including its CLI) have
+synthetic tests; complete enrichment, feature-build orchestration, real V3 replay,
+restricted labels and Gold-only serving remain pending. Model/ranking development
+belongs to Module 2.
 
 ```text
 data/raw/_snapshots/v3/<dataset_hash>/       byte-identical copies of all eight CSVs

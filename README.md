@@ -74,3 +74,16 @@ The supplied Marvel CPG data and challenge brief are for academic use only. Do n
 ## Status
 
 The initial Module 1 implementation and project environment configuration are available. The remaining modules are under development.
+
+## Shared V3 Data Platform
+
+Start with the [shared-data guide](docs/data/README.md) for architecture, local
+build, database access and **all four module integration guides**. Look up exact
+fields in the [Gold dictionary](docs/data/v3-gold-data-dictionary.md); package
+commands are in [data_platform](data_platform/README.md).
+
+The common Bronze/Silver/Gold layer supplies reported business data through
+June 30 and separate opt-in Estimated candidates. Module 2 development stops
+May 31; June independent test remains evidence-gated. Model/ranking release and
+module applications are separate work. Inputs/databases are provisioned privately,
+not by Git checkout. Existing legacy Module 1 ETL is not automatically migrated.

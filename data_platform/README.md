@@ -1,188 +1,84 @@
-# Shared V3 data platform
+# Shared V3 data-platform package
 
-Implemented: architecture stages 1-2, an immutable input snapshot, text-only Bronze,
-typed Silver sources, receipt reconciliation, common calendar, planned-order
-projection and promotion calendar. Stage 3 adds a candidate Gold daily state and
-corrected account-day masking diagnostics. Stage 4 adds shared store, commercial
-and execution KPI marts. Models, serving views and incremental scheduling remain
-subsequent stages.
+For **all four modules**, start with the [shared-data guide](../docs/data/README.md):
+architecture, source provisioning, complete build, scoped reads and module routing.
+This page is the package command reference, not a second onboarding guide.
 
-See the [architecture](../docs/data/v3-medallion-architecture.md),
-[source contract](contracts/v3/sources.json) and
-[KPI/missing-day specification](../docs/solution-specifications/kpi-and-missing-store-day-handling.md).
+## Entry points
 
-## Run
-
-Place the eight authorized CSV files in `data/raw/`, then run from the repository root:
-
-```bash
-uv sync
-uv run python -m data_platform build
-```
-
-This builds and validates a candidate without changing the accepted pointer. To
-accept the Silver handoff after the same checks:
-
-```bash
-uv run python -m data_platform build --publish-silver
-```
-
-Default calendar: 2025-01-01 through 2026-05-31. All realized Silver facts are
-limited to the authorized cutoff. The CLI rejects a cutoff after May 31 while
-June remains locked. An earlier simulation cutoff can be supplied:
-
-```bash
-uv run python -m data_platform build --as-of 2026-04-30
-```
-
-`--source-dir`, `--snapshot-root`, `--output-root`, `--calendar-start`,
-`--memory-limit` and `--threads` are configurable. Paths are local; no cloud or
-legacy Aiven connection is used. The current writer lock uses Unix `flock`.
-
-For the stage 3 candidate and development-only experiment:
-
-```bash
-uv run python -m data_platform build --include-daily-state
-uv run python -m data_platform evaluate-missing --per-length 100
-```
-
-See [historical estimation and corrected masking](../docs/data/v3-daily-state-and-masking.md)
-for the estimator policy, outputs and release limitations. The optional candidate
-does not authorize application use or establish the Module 2 prediction target.
-
-For shared KPI marts and data version verification:
-
-```bash
-uv run python -m data_platform audit-data
-uv run python -m data_platform build --include-kpi-marts
-```
-
-See [KPI marts and formulas](../docs/data/v3-shared-kpi-marts.md) and the
-[Stage 4 validation record](../docs/data/v3-medallion-stage-4-validation.md). `data/raw`
-is ignored and is not refreshed by a Git pull. The audit compares actual active
-hashes to V3 and understands Git LFS content identities for the legacy path.
-
-### Export isolated OOS feature inputs
-
-Use a validated build that already contains the candidate daily state. The
-following source build ID is a local example; use your own accepted build path:
-
-```bash
-uv run python -m data_platform export-feature-input \
-  --source-build-dir outputs/v3/platform/kpi-candidates/builds/20261018T190828-f1c6ca9b2d85 \
-  --output-root outputs/v3/platform/feature-inputs \
-  --as-of 2026-04-30
-```
-
-Both `--source-build-dir` and `--as-of` are required; there is no implicit
-prediction date. `--output-root` defaults to `outputs/v3/platform/feature-inputs`.
-The cutoff cannot exceed the source build date or 2026-05-31 while June is locked.
-The command prints JSON with the new artifact directory, row count, cutoff,
-source lineage and file hashes. Status Accepted means the **input projection**
-passed its handoff checks, not that a model or application release is approved.
-
-The output contains only allowlisted daily-state columns and confirmed pair-days
-through the cutoff. It does not calculate OOS features, train a model or update
-published Silver/serving pointers. Preserve the immutable input; later feature
-calculation must use a separate verified working copy. Details are in the
-[feature contract](../docs/data/v3-oos-feature-contract.md#6-isolated-input-handoff).
-
-Exit codes: `0` success, `2` invalid/missing CLI arguments, `1` runtime or quality
-failure, `130` interrupted. Existing accepted artifacts remain unchanged on failure.
-
-## Artifacts
-
-The next data-layer increment is specified in the
-[OOS feature contract](../docs/data/v3-oos-feature-contract.md). Its first isolated
-state/sales feature slice and isolated input exporter (including its CLI) have
-synthetic tests and an [April-cutoff V3 validation](../docs/data/v3-oos-state-feature-validation.md).
-Complete enrichment, feature-build orchestration, restricted labels and Gold-only
-serving remain pending. Model/ranking development belongs to Module 2.
-
-```text
-data/raw/_snapshots/v3/<dataset_hash>/       byte-identical copies of all eight CSVs
-outputs/v3/platform/builds/<build_id>/
-  build.duckdb                             internal meta/Bronze/Silver build
-  quality.json                             checks, tolerances and failure examples
-  run.json                                 status, configuration, counts and lineage
-outputs/v3/platform/published/
-  silver.json                              atomic pointer to the accepted Silver build
-  history/<publication_id>.json            immutable publication history
-```
-
-Generated artifacts remain ignored by Git. Each execution creates a new build;
-the same input reuses its byte-preserved snapshot and does not append duplicate
-Bronze records. A candidate contains one copy of each input record. Old accepted
-builds are retained. This is deterministic snapshot rebuilding, not incremental
-CDC or an Airflow DAG yet.
-
-`build.duckdb` contains full original Bronze, including restricted June records.
-It is an internal engineering artifact, **not** an application database or model
-feature connection. Full-file header/type/key checks are ingestion integrity
-checks; June outcome analysis, labels and model evaluation are not performed.
-Persistent Silver realized facts stop at the development cutoff. A separate
-Gold-only serving artifact and a controlled feature access layer are still to
-be built. `application_ready` is therefore `false` in the Silver manifest.
-
-## Implemented Silver relations
-
-The eight typed client sources are accompanied by:
-
-| Relation | Meaning |
+| Need | Reference |
 | --- | --- |
-| `active_assortment` | Static simulation membership, with first-observation availability retained |
-| `store_sku_calendar` | Expected pair-days; missing observed sales/inventory/OOS stay null |
-| `replenishment_events` | One event per actual delivery, with observed-restock corroboration |
-| `order_schedule_events` | Only planned fields for orders known by the cutoff, including later-arriving orders |
-| `inventory_reconciliation` | Exact balance checks on consecutive observed days only |
-| `promotion_calendar` | Campaign membership by day/channel/category; overlapping campaigns remain separate |
+| Module 1: KPIs / Store 360 | [Module 1 guide](../docs/data/v3-module-1-integration.md) |
+| Module 2: features, labels, scoring, risk / visits | [Module 2 guide](../docs/data/v3-module-2-integration.md) |
+| Module 3: negotiation context | [Module 3 guide](../docs/data/v3-module-3-integration.md) |
+| Module 4: controlled business queries / knowledge assistant | [Module 4 guide](../docs/data/v3-module-4-integration.md) |
+| Serving fields / grains | [Gold dictionary](../docs/data/v3-gold-data-dictionary.md) |
+| Governed business rules | [KPI/missing-day specification](../docs/solution-specifications/kpi-and-missing-store-day-handling.md) |
+| Executable interfaces | [Source contract](contracts/v3/sources.json), [module contract](contracts/v3/module-data-contract.json), [read example](../examples/read_shared_data.py) |
 
-`execution_latest_asof` is added when `--include-daily-state` is selected.
-Representative assignments and future labels/model predictions are not generated.
+## Commands
 
-The static assortment is derived from Sell-out pairs within the authorized
-cutoff, not from June. Calendar rows before a pair's first report explicitly have
-`assortment_is_confirmed_asof = false`; a historical feature builder must exclude
-these unconfirmed rows unless an approved initial assortment registry establishes
-prior membership. `last_observed_date` is snapshot metadata, not a historical
-feature. Production requires effective-dated membership inputs.
+Run from the repository root in the locked Python 3.13 environment.
+Every command exposes `--help`; the recommended full workflow is in the guide.
 
-Same-day event availability and the initial order schedule are simulation
-assumptions, registered in `meta.policy_registry`. The file has no historical
-schedule revisions or actual source availability timestamps. Campaign availability
-is conservatively assumed at its start date. These assumptions must be replaced
-with real source history when available.
+| Command | Purpose / boundary |
+| --- | --- |
+| `audit-data` | Source/header/hash diagnostic; inspect JSON, exit 0 alone is not a match |
+| `build-all` | Business source/Gold, May development features/labels, June scoring features, serving; optional publication |
+| `build` | Internal Bronze/Silver; `--include-kpi-marts` adds dependent internal Gold; not an application DB |
+| `build --publish-silver` | Publish internal Silver, not business serving |
+| `export-feature-input` | Allowlisted projection; explicit source build/cutoff; optional replenishment/context inputs |
+| `build-features` | Development capped May 31; `--purpose scoring` permits June past-only features without labels |
+| `build-labels` | Development capped May 31; June `--purpose test --test-release ...` requires approved freeze/May evidence |
+| `build-serving` | New immutable business snapshot from matching source and latest-scoring feature artifacts; optional access policy |
+| `publish-serving` / `rollback-serving` | Promote a verified snapshot or republish a verified historical version |
+| `evaluate-missing` | Restricted March/April masking diagnostics; not model training or estimator approval |
 
-## Checks and failure behavior
+Base-only commands default to `outputs/v3/platform/`; recommended `build-all`
+explicitly uses `outputs/v3/platform/delivery/`. Do not confuse their pointers.
+`build-serving` requires matching dataset/source and exact cutoff: June business
+uses June **scoring**, not May development, features.
 
-Required gates cover ordered headers, parser accounting, exact types (including
-fractional-unit rejection), non-null values, natural keys, foreign keys, ranges,
-invoice arithmetic, campaign scope/discount, delivery labels/fill rate, OOS state,
-restock identity, receipt double counting, missing-day receipts, shelf allocation,
-calendar cardinality and consecutive inventory balance.
+## Publication and rollback
 
-Reference hashes/counts identify the original V3 delivery; they are informational
-for subsequent inputs. Accepted snapshot bytes are checked on reuse. Guardrail
-approval remains `Requires review`, which does not block valid inventory data.
-Consumer reference price is not a supplied historical regular-price series;
-the pipeline does not invent an exact retail-price identity from that reference.
+Use accepted directories/IDs from your own manifests, not another machine's paths:
 
-On failure, the process exits nonzero, retains the snapshot and available failed
-build evidence, and leaves `published/silver.json` unchanged. Inspect `quality.json`
-for failed keys and `meta.quality_results` for SQL-accessible evidence. No rows are
-silently discarded or repaired. A failure before a complete snapshot is retained
-in its pending directory or build report; missing input files cannot be archived.
+```bash
+uv run python -m data_platform publish-serving \
+  --output-root outputs/v3/platform/delivery/serving \
+  --artifact-dir /YOUR/accepted/serving/build-directory
+uv run python -m data_platform rollback-serving \
+  --output-root outputs/v3/platform/delivery/serving \
+  --publication-id YOUR_PREVIOUS_PUBLICATION_ID
+```
 
-## Verification
+Both operations verify artifacts and retain versioned history; do not edit
+accepted databases/manifests, delete good builds or select the newest directory.
+A copied artifact is opened explicitly with the reader's `--artifact-dir`;
+a machine-specific publication pointer is not a portable deployment config.
+
+## Validation and ownership
 
 ```bash
 uv run python -m unittest discover -s tests -v
+git diff --check
 ```
 
-Synthetic integration fixtures exercise missing-day receipts, future outcome
-projection, duplicate keys/fractional units, changed headers, snapshot tampering,
-inventory failures, replay, immutable prior builds, failed publication and writer
-locking. The client-data build is a separate local validation, not a CI fixture.
+Checks cover keys/arithmetic/receipts, calendar and KPI consistency, time windows,
+future-mutation/replay, label isolation, scopes and artifact integrity. Each build
+retains `run.json` / `quality.json`. Passing these checks is not model target
+certification, guardrail approval or candidate-estimator adoption.
 
-The [stage 1-2 validation record](../docs/data/v3-medallion-stage-1-2-validation.md)
-reports the accepted V3 build and checks, with remaining policy assumptions.
+Business reaches June 30; model development stops May 31 and June test stays
+evidence-gated. Reported is default; three separate Estimated candidate views
+need explicit read opt-in and UI labeling. Access defaults to deny all. Missing
+model outputs are unavailable, not zero. No application should connect to the
+internal source or evaluation files.
+
+Pipeline exits: 0 success (audit may still report mismatch), 2 invalid arguments,
+1 runtime/quality failure, 130 interruption. Reader example additionally exits
+3 for unavailable outputs or candidate estimates without opt-in.
+
+Raw data, generated databases/evidence, real scopes and local notes stay outside
+Git. Shared interface changes belong here; models, UI, simulator, NLQ/RAG,
+scheduling and deployment belong to reviewed follow-on module/infrastructure work.

@@ -10,6 +10,18 @@ The reproducible V3 evidence is contained in [`../../notebooks/v3/02_v3_missing_
 
 **Status (2026-10-18):** V3 implementation contract. The published notebook outputs are experimental baselines; the implementation checks under "Notebook-to-Data-Layer Handoff" must pass before production readiness or final test approval is claimed.
 
+**Data-layer delivery update:** Shared business/scoring data reaches June 30;
+separate development features/labels stop May 31. March/April development, May
+validation and evidence-gated June independent test retain their fixed roles.
+Reported defaults and separate opt-in Estimated candidates preserve per-value
+Observed/Estimated/Unknown. See the
+[shared-data quickstart](../data/README.md). Current serving is
+deliberately **Reported Data Only by default**. Separate Estimated candidate views
+require explicit opt-in and Candidate labeling, not silent operational approval.
+The intended operational default below still requires estimator adoption. See the
+[Module 2 time policy and test-release gate](../data/v3-module-2-integration.md). No missing observations, model probabilities or policy approvals are invented
+to bridge that release boundary. Model fitting/acceptance belongs to Module 2.
+
 ## Decision Summary
 
 - Build a complete active store-SKU calendar.
@@ -575,7 +587,7 @@ The existing experiment covers one-, two-, three-, and four-day blocks. Recomput
 
 ## Notebook-to-Data-Layer Handoff
 
-Stage 3 implementation evidence is recorded in [V3 candidate validation](../data/v3-medallion-stage-3-validation.md). Corrected block masking supports the receipt-aware estimator, but natural-gap closure exhibits a distinct mechanical balance pattern, including gaps with receipts. This remains an operational-adoption limitation; the older notebook figures below are not a certified replacement for that review.
+Corrected block-masking diagnostics support the receipt-aware estimator on short artificial gaps, but natural-gap closure exhibits a distinct mechanical balance pattern, including gaps with receipts. This remains an operational-adoption limitation; the older notebook figures below are not a certified replacement for that review.
 
 The numerical outputs above remain the historical V3 experiment. The following requirements make the next implementation reproducible and prevent those outputs from being treated as an audited production benchmark:
 
@@ -592,7 +604,7 @@ These checks are part of the next data-layer work, not evidence that the underly
 
 ## Data-Layer Contract
 
-The [V3 shared Medallion architecture](../data/v3-medallion-architecture.md) provides the detailed relation catalog, keys, four-module consumer mapping, serving boundaries and build sequence. The [source contract](../../data_platform/contracts/v3/sources.json) defines the eight source file headers and logical types.
+The [shared-data quickstart](../data/README.md) defines architecture, four-module routing, serving boundaries and build sequence; the [Gold dictionary](../data/v3-gold-data-dictionary.md) provides serving fields, types and grains. The [source contract](../../data_platform/contracts/v3/sources.json) defines the eight source file headers and logical types.
 
 The DuckDB implementation will use three schemas with versioned ingestion metadata:
 

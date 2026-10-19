@@ -77,8 +77,13 @@ The initial Module 1 implementation and project environment configuration are av
 
 ## Shared V3 Data Platform
 
-The four modules will consume a common Bronze/Silver/Gold analytical layer in DuckDB. The [V3 architecture and table catalog](docs/data/v3-medallion-architecture.md) define table grains, lineage, module dependencies, serving views and implementation stages. The [source contract](data_platform/contracts/v3/sources.json) records the eight V3 file schemas. The [KPI and missing-day specification](docs/solution-specifications/kpi-and-missing-store-day-handling.md) defines the shared business rules and validation requirements.
+Start with the [shared-data guide](docs/data/README.md) for architecture, local
+build, database access and **all four module integration guides**. Look up exact
+fields in the [Gold dictionary](docs/data/v3-gold-data-dictionary.md); package
+commands are in [data_platform](data_platform/README.md).
 
-Stages 1-2 are implemented: versioned snapshots, Bronze ingestion, typed Silver, receipt reconciliation and the shared calendar. Run `uv run python -m data_platform build --publish-silver`; see the [pipeline runbook](data_platform/README.md) for artifacts, checks and time boundaries. The Silver build is an internal artifact, not an application database.
-
-Candidate daily state, corrected masking experiments and shared KPI marts are available through optional build commands in the runbook. See the [Stage 4 validation record](docs/data/v3-medallion-stage-4-validation.md) for verification and limitations. Controlled feature tables and Gold-only application serving remain pending; model and module development are separate workstreams. Run `uv run python -m data_platform audit-data` to verify active local source hashes; the legacy `new_marvel_data` files in Git are not the pipeline's active V3 inputs.
+The common Bronze/Silver/Gold layer supplies reported business data through
+June 30 and separate opt-in Estimated candidates. Module 2 development stops
+May 31; June independent test remains evidence-gated. Model/ranking release and
+module applications are separate work. Inputs/databases are provisioned privately,
+not by Git checkout. Existing legacy Module 1 ETL is not automatically migrated.

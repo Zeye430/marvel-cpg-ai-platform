@@ -1,7 +1,7 @@
 {
   "contract_version": "v3.sources.1",
   "data_version": "v3",
-  "status": "bronze_silver_implemented_gold_pending",
+  "status": "shared_data_foundation_implemented_separate_model_release",
   "source_directory": "data/raw",
   "scope": "Shared source contract for Modules 1, 2, 3 and 4",
   "unknown_columns": "reject_until_contract_revision",
@@ -13,6 +13,7 @@
   "silver_lineage_columns": ["data_version", "dataset_hash", "build_id", "source_file_hash", "source_row_number"],
   "versioned_join_policy": "All references resolve within the same dataset_hash",
   "development_cutoff": "2026-05-31",
+  "business_data_end": "2026-06-30",
   "locked_outcome_start": "2026-06-01",
   "sources": [
     {

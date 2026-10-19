@@ -13,7 +13,9 @@ from data_platform.feature_handoff import export_feature_input
 from data_platform.features import INPUT_COLUMNS, build_oos_state_features
 from data_platform.ingestion import digest
 from data_platform.quality import Quality
+from data_platform.replenishment_features import ORDER_COLUMNS, RECEIPT_COLUMNS, build_oos_replenishment_features
 import test_oos_features as feature_fixtures
+import test_replenishment_features as replenishment_fixtures
 
 
 class FeatureHandoffTests(unittest.TestCase):
@@ -50,6 +52,26 @@ class FeatureHandoffTests(unittest.TestCase):
 
     def export(self, cutoff=date(2025, 2, 1)):
         return export_feature_input(self.source, self.root / "projections", cutoff)
+
+    def add_replenishment_sources(self):
+        helper = replenishment_fixtures.ReplenishmentFeatureTests()
+        self.addCleanup(helper.doCleanups)
+        fixture = helper.connection()
+        helper.order(fixture,"FUTURE","2025-01-31","2025-02-05",40)
+        helper.receipt(fixture,"FUTURE","2025-02-06",39)
+        helper.order(fixture,"LATE","2025-01-20","2025-01-23",9,known="2025-02-02 09:00:00")
+        helper.receipt(fixture,"LATE","2025-01-24",9,known="2025-02-03 09:00:00")
+        with duckdb.connect(str(self.source / "build.duckdb")) as source:
+            source.execute("CREATE SCHEMA silver")
+            for target, name in (("order_schedule_events","order_schedule_events"),
+                                 ("replenishment_events","receipt_events")):
+                path = self.source / (target+".parquet")
+                fixture.execute(f"COPY feature_input.{name} TO ? (FORMAT PARQUET)",[str(path)])
+                source.execute(f"CREATE TABLE silver.{target} AS SELECT * FROM read_parquet(?)",[str(path)])
+            # Deliberately unapproved source columns must never reach the input.
+            source.execute("ALTER TABLE silver.order_schedule_events ADD COLUMN actual_delivery DATE DEFAULT '2025-02-06'")
+            source.execute("ALTER TABLE silver.order_schedule_events ADD COLUMN units_delivered BIGINT DEFAULT 999999")
+        self.write_manifest()
 
     def test_projection_is_allowlisted_bounded_and_usable(self):
         before = digest(self.source / "build.duckdb")
@@ -126,6 +148,41 @@ class FeatureHandoffTests(unittest.TestCase):
         (self.source / "quality.json").write_text("[]")
         with self.assertRaisesRegex(ValueError, "quality hash mismatch"):
             self.export()
+
+    def test_optional_replenishment_projection_is_known_at_and_allowlisted(self):
+        self.add_replenishment_sources()
+        result = export_feature_input(self.source,self.root/"projections",date(2025,2,1),include_replenishment=True)
+        self.assertEqual(result["replenishment_rows"],{"order_schedule_events":6,"receipt_events":2})
+        self.assertEqual(result["projection_version"],"oos_state_replenishment_input.v2")
+        working = self.root/"replen-working.duckdb"
+        shutil.copyfile(Path(result["directory"])/result["database"],working)
+        with duckdb.connect(str(working)) as con:
+            for table,columns in (("order_schedule_events",ORDER_COLUMNS),("receipt_events",RECEIPT_COLUMNS)):
+                self.assertEqual([r[0] for r in con.execute(f"DESCRIBE feature_input.{table}").fetchall()],list(columns))
+            self.assertEqual(con.execute("SELECT scheduled_delivery FROM feature_input.order_schedule_events WHERE delivery_id='FUTURE'").fetchone()[0],date(2025,2,5))
+            build_oos_state_features(con,date(2025,2,1),Quality(con,"state"))
+            built = build_oos_replenishment_features(con,date(2025,2,1),Quality(con,"replen"),assume_complete_snapshot=True)
+            self.assertEqual(built["rows"],32)
+
+    def test_future_receipt_changes_cannot_change_earlier_exported_inputs(self):
+        self.add_replenishment_sources()
+        first = export_feature_input(self.source,self.root/"projections",date(2025,2,1),include_replenishment=True)
+        with duckdb.connect(str(self.source/"build.duckdb")) as con:
+            con.execute("UPDATE silver.replenishment_events SET receipt_date='2025-02-08',source_known_at='2025-02-08 23:59:59',receipt_units=999999 WHERE delivery_id='FUTURE'")
+            con.execute("UPDATE silver.order_schedule_events SET actual_delivery='2025-02-08',units_delivered=999999")
+        self.write_manifest()
+        second = export_feature_input(self.source,self.root/"projections",date(2025,2,1),include_replenishment=True)
+        for table in ("daily_state","order_schedule_events","receipt_events"):
+            with duckdb.connect(str(Path(first["directory"])/first["database"]),read_only=True) as a:
+                before = a.execute(f"SELECT * FROM feature_input.{table} ORDER BY ALL").fetchall()
+            with duckdb.connect(str(Path(second["directory"])/second["database"]),read_only=True) as b:
+                self.assertEqual(before,b.execute(f"SELECT * FROM feature_input.{table} ORDER BY ALL").fetchall())
+
+    def test_missing_replenishment_sources_fail_instead_of_assuming_empty(self):
+        with self.assertRaises(duckdb.CatalogException):
+            export_feature_input(self.source,self.root/"projections",date(2025,2,1),include_replenishment=True)
+        runs = list((self.root/"projections").glob(".pending-*/run.json"))
+        self.assertEqual(json.loads(runs[0].read_text())["status"],"Failed")
 
 
 if __name__ == "__main__":

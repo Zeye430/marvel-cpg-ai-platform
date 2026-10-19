@@ -6,9 +6,9 @@ and optional meta quality tables, not the internal Bronze/Silver build database.
 """
 
 from datetime import date
+from .time_policy import DEVELOPMENT_CUTOFF, validate_feature_cutoff
 
 FEATURE_VERSION = "oos_features.v1-state_sales"
-DEVELOPMENT_CUTOFF = date(2026, 5, 31)
 INPUT_COLUMNS = (
     "build_id", "dataset_hash", "data_version", "date", "store_id", "sku_id",
     "estimator_version", "as_of_timestamp", "availability_assumption_id",
@@ -20,21 +20,31 @@ INPUT_COLUMNS = (
 )
 
 
-def build_oos_state_features(connection, as_of, quality):
+def require_isolated_feature_connection(connection):
+    """Engineering allowlist shared by feature slices, not an SQL sandbox."""
+    relations = connection.execute("""
+        SELECT table_schema, table_name FROM information_schema.tables
+        WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+    """).fetchall()
+    allowed = {
+        ("feature_input", "daily_state"), ("feature_input", "order_schedule_events"),
+        ("feature_input", "receipt_events"), ("gold", "features_oos_daily"),
+        ("gold", "features_oos_replenishment"),
+        ("feature_input", "promotion_calendar"), ("feature_input", "execution_audits"),
+        ("feature_input", "consumer_promotions"), ("gold", "features_oos_context"),
+    }
+    if any(schema != "meta" and (schema, name) not in allowed for schema, name in relations):
+        raise ValueError("Feature builder requires an isolated input connection, not source/evaluation tables")
+
+
+def build_oos_state_features(connection, as_of, quality, *, purpose="development"):
     """Materialize the state/sales slice; the complete feature contract is pending.
 
     `as_of` bounds realized input, not a request to expose only that scoring date:
     the output includes historical confirmed pair-days through that date.
     """
-    if not isinstance(as_of, date) or as_of > DEVELOPMENT_CUTOFF:
-        raise ValueError("A date at/before 2026-05-31 is required; June remains locked")
-    relations = connection.execute("""
-        SELECT table_schema, table_name FROM information_schema.tables
-        WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-    """).fetchall()
-    allowed = {("feature_input", "daily_state"), ("gold", "features_oos_daily")}
-    if any(schema != "meta" and (schema, name) not in allowed for schema, name in relations):
-        raise ValueError("Feature builder requires an isolated input connection, not source/evaluation tables")
+    validate_feature_cutoff(as_of, purpose)
+    require_isolated_feature_connection(connection)
     # The first slice has a deliberately narrow source projection. Unknown
     # columns (including labels) cannot enter the SQL windows or output schema.
     projection = ", ".join(INPUT_COLUMNS)

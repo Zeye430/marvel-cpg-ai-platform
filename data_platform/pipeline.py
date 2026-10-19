@@ -18,6 +18,7 @@ from .estimation import EstimatorConfig, build_daily_state
 from .marts import build_kpi_marts
 from .quality import Quality
 from .silver import shared_relations, source_business_checks, typed_sources
+from .time_policy import BUSINESS_CUTOFF
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = Path(__file__).resolve().parent
@@ -30,7 +31,7 @@ class BuildConfig:
     snapshot_root: Path = ROOT / "data/raw/_snapshots/v3"
     contract_path: Path = PACKAGE / "contracts/v3/sources.json"
     calendar_start: date = date(2025, 1, 1)
-    as_of: date = date(2026, 5, 31)
+    as_of: date = BUSINESS_CUTOFF
     memory_limit: str = "1GB"
     threads: int = 2
     include_daily_state: bool = False
@@ -38,8 +39,8 @@ class BuildConfig:
     invoice_extract_complete: bool = False
 
     def validate(self, contract):
-        if self.as_of > date.fromisoformat(contract["development_cutoff"]):
-            raise ValueError("June outcomes are locked; as_of must not exceed the development cutoff")
+        if self.as_of > date.fromisoformat(contract["business_data_end"]):
+            raise ValueError("Business cutoff exceeds the available data end, 2026-06-30")
         if self.calendar_start > self.as_of:
             raise ValueError("calendar_start must be on or before as_of")
         if self.threads < 1:

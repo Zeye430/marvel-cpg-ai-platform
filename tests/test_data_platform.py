@@ -154,8 +154,8 @@ class PlatformTests(unittest.TestCase):
         self.assertFalse((self.config.output_root / "published/silver.json").exists())
 
     def test_june_locked_and_second_writer_rejected(self):
-        with self.assertRaisesRegex(ValueError, "June outcomes"):
-            build(replace(self.config, as_of=date(2026, 6, 1)))
+        with self.assertRaisesRegex(ValueError, "available data end"):
+            build(replace(self.config, as_of=date(2026, 7, 1)))
         with writer_lock(self.config.output_root / ".writer.lock"):
             with self.assertRaisesRegex(RuntimeError, "Another writer"):
                 build(self.config)

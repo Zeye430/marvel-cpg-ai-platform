@@ -52,7 +52,36 @@ def main(argv=None):
                          default=defaults.output_root / "feature-inputs",
                          help="Parent directory for new immutable projections; no serving publication")
     handoff.add_argument("--as-of", type=date.fromisoformat, required=True,
-                         help="Explicit YYYY-MM-DD input cutoff, no later than the source cutoff or 2026-05-31")
+                         help="Explicit input cutoff; development ends 2026-05-31, scoring can use 2026-06-30")
+    handoff.add_argument("--purpose",choices=("development","scoring"),default="development")
+    handoff.add_argument("--include-replenishment", action="store_true",
+                         help="Also project known order plans and posted receipts; never future actual outcomes")
+    handoff.add_argument("--include-context", action="store_true",help="Also project known campaigns, audits and observed consumer promotions")
+    for name in ("build-features","build-labels","build-serving","build-all"):
+        item=commands.add_parser(name,help="Governed "+name.removeprefix("build-")+" data artifact")
+        item.add_argument("--output-root",type=Path)
+        item.add_argument("--memory-limit",default="1GB")
+        item.add_argument("--threads",type=int,default=2)
+        if name!="build-all": item.add_argument("--source-build-dir",type=Path,required=True)
+        if name!="build-serving": item.add_argument("--as-of",type=date.fromisoformat,required=True)
+        if name in {"build-features","build-all"}: item.add_argument("--assume-complete-snapshot",action="store_true")
+        if name=="build-features": item.add_argument("--purpose",choices=("development","scoring"),default="development")
+        if name=="build-labels":
+            item.add_argument("--purpose",choices=("development","test"),default="development")
+            item.add_argument("--test-release",type=Path,help="Approved frozen-model and passed-May evidence; required for June test")
+        if name in {"build-serving","build-all"}:
+            item.add_argument("--access-policy",type=Path)
+            item.add_argument("--publish",action="store_true")
+        if name=="build-serving": item.add_argument("--feature-build-dir",type=Path,required=True)
+        if name=="build-all":
+            item.add_argument("--source-dir",type=Path)
+            item.add_argument("--snapshot-root",type=Path)
+    promotion=commands.add_parser("publish-serving",help="Atomically publish a verified serving artifact")
+    promotion.add_argument("--output-root",type=Path,required=True)
+    promotion.add_argument("--artifact-dir",type=Path,required=True)
+    rollback=commands.add_parser("rollback-serving",help="Publish an earlier verified serving artifact")
+    rollback.add_argument("--output-root",type=Path,required=True)
+    rollback.add_argument("--publication-id",required=True)
     args = vars(parser.parse_args(argv))
     action = args.pop("command")
     try:
@@ -69,6 +98,24 @@ def main(argv=None):
         elif action == "export-feature-input":
             from .feature_handoff import export_feature_input
             result = export_feature_input(**args)
+        elif action=="build-features":
+            from .feature_runner import build_features
+            result=build_features(**args)
+        elif action=="build-labels":
+            from .labels import build_labels
+            result=build_labels(**args)
+        elif action=="build-serving":
+            from .serving import build_serving
+            result=build_serving(**args)
+        elif action=="build-all":
+            from .workflow import build_all
+            result=build_all(**args)
+        elif action=="publish-serving":
+            from .serving import publish_serving
+            result=publish_serving(**args)
+        elif action=="rollback-serving":
+            from .serving import rollback_serving
+            result=rollback_serving(**args)
         else:
             publish = args.pop("publish_silver")
             result = build(BuildConfig(**args), publish_silver=publish)

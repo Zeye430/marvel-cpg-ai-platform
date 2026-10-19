@@ -62,6 +62,9 @@ class FeatureHandoffCliTests(unittest.TestCase):
             source_build_dir=Path("source"),
             output_root=BuildConfig().output_root / "feature-inputs",
             as_of=date(2025, 2, 1),
+            include_replenishment=False,
+            include_context=False,
+            purpose="development",
         )
 
     def test_help_does_not_export_and_existing_commands_keep_help(self):
@@ -143,6 +146,16 @@ class FeatureHandoffCliTests(unittest.TestCase):
         self.assertEqual(status, 130)
         self.assertEqual(stdout, "")
         self.assertIn("Operation interrupted", stderr)
+
+    def test_optional_replenishment_flag_is_dispatched_explicitly(self):
+        with patch("data_platform.feature_handoff.export_feature_input",return_value={"status":"Accepted"}) as export:
+            status,_,stderr = self.invoke([
+                "export-feature-input","--source-build-dir","source","--as-of","2025-02-01",
+                "--include-replenishment",
+            ])
+        self.assertEqual(status,0)
+        self.assertEqual(stderr,"")
+        self.assertTrue(export.call_args.kwargs["include_replenishment"])
 
 
 if __name__ == "__main__":

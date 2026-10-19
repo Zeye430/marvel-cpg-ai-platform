@@ -1,60 +1,47 @@
 # Marvel CPG AI Commercial Execution Platform
 
-Course project for CDA650. The team will design and build an AI-powered commercial execution platform for the fictional company Marvel CPG.
+An enterprise-grade, multi-module AI commercial execution platform designed for **Marvel CPG**, unifying executive analytics, predictive machine learning, algorithmic trade negotiation, and natural language database assistance into an integrated web platform.
 
-## Project Scope
+---
 
-The final application will integrate four modules:
+## 🏛️ Platform Architecture & Modular Design
 
-1. Commercial execution analytics dashboard
-2. Seven-day out-of-stock risk prediction and store visit prioritization
-3. Commercial negotiation and price scenario simulator
-4. Conversational assistant with Text-to-SQL and retrieval-augmented generation
-
-## Module 1: Commercial Execution Analytics Dashboard
-
-### Docker Quick Start Guide
-
-Ensure Docker and Docker Compose are installed:
-
-```bash
-docker --version
-docker compose version
-```
-
-Navigate to the Module 1 directory:
-
-```bash
-cd module_1
-```
-
-Build and start the container:
-
-```bash
-docker compose up --build
-```
-
-Open the dashboard in a browser:
+The platform is structured into four decoupled, independent business modules orchestrated by a shared executive shell:
 
 ```text
-http://localhost:8000
-```
-
-Stop the container:
-
-```bash
-docker compose down
-```
-
-## Development Environment
-
-The project uses Python 3.13 and `uv` for Python and dependency management.
-
-After cloning the repository and installing [`uv`](https://docs.astral.sh/uv/getting-started/installation/), run:
-
-```bash
-uv sync
-uv run jupyter lab
+marvel-cpg-ai-platform/
+│
+├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
+├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
+├── Dockerfile                  # Production container definition for local & Render deployments
+├── docker-compose.yml          # Container service definition with environment variable injection
+│
+├── www/                        # Static Web Assets (zero Python string parsing overhead)
+│   ├── styles.css              # 5-color luxury Apple design system (#73fbd3, #44e5e7, #59d2fe, #4a8fe7, #5c7aff)
+│   ├── app.js                  # Asynchronous KPI number-shuffling animations
+│   ├── marvel_logo.jpg         # Brand monogram logo
+│   └── marvel_logo_thumb.jpg   # Brand thumbnail
+│
+├── shared/                     # Cross-Module Infrastructure
+│   ├── data.py                 # Centralized, non-blocking Aiven PostgreSQL loader & CSV fallback
+│   └── auth.py                 # Role-based auth (Director Elena Rostova & 6 Field Rep profiles)
+│
+└── modules/
+    ├── module_1/               # Module 1: Commercial Execution Analytics Dashboard
+    │   ├── ui.py               # Portfolio filters, 5 KPI hero tiles, and 4 visualization sections
+    │   └── server.py           # Reactive scopes (SO, SI, AU) & 10 Plotly chart renderers
+    │
+    ├── module_2/               # Module 2: Predictive Out-of-Stock Risk Engine (t+7 Days)
+    │   ├── ui.py               # ML benchmark scorecard, feature gain chart, and route ranking table
+    │   └── server.py           # Supervised classification / time-series inference & priority ranking
+    │
+    ├── module_3/               # Module 3: Commercial Negotiation Simulator
+    │   ├── ui.py               # Proposed deal terms, discount slider, and margin realization layout
+    │   └── server.py           # Contractual guardrail validation (dim_guardrails) & waterfall economics
+    │
+    └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG)
+        ├── ui.py               # Chat query prompt bar, preset queries, and document citations tray
+        └── server.py           # Natural language to SQL translation & warehouse query execution
 ```
 
 Run Python commands through `uv run` so they use the project environment. Commit `pyproject.toml`, `uv.lock`, and `.python-version`, but do not commit `.venv/`.

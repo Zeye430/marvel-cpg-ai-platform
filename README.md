@@ -88,7 +88,7 @@ marvel-cpg-ai-platform/
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 ### Option 1: Run Locally with Python & Shiny
 

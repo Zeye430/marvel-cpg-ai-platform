@@ -1,8 +1,9 @@
 # V3 Gold OOS feature contract
 
 Status: state/sales slice and isolated input exporter, including its CLI,
-implemented with synthetic tests; full feature orchestration and real-data
-validation remain pending.
+implemented with synthetic tests and an April-cutoff V3 replay; full feature
+enrichment and orchestration remain pending. See the
+[real-data validation record](v3-oos-state-feature-validation.md).
 Version: `oos_features.v1`. This document prepares a data-layer handoff to
 Module 2. It does not approve an estimator, train a model, select thresholds,
 generate probabilities or implement visit ranking.
@@ -138,7 +139,9 @@ separate; historical velocity uses only observed non-OOS sales. Results remain
 Synthetic tests cover calendar windows, minimum history, missing/candidate states,
 zero denominators, cold start, exact inventory anchors, store isolation, future
 mutation, truncated replay, duplicate/mixed builds, June lock and output-column
-exclusion. No full V3 feature build or new prediction metric is claimed.
+exclusion. The partial state/sales slice also has a
+[V3 replay](v3-oos-state-feature-validation.md); neither the complete feature set
+nor a new prediction metric is claimed.
 
 Run the focused fixtures with:
 
@@ -178,7 +181,8 @@ not a model/evaluation reader or an application security boundary.
 Six synthetic integration tests cover projection usability, field/date isolation,
 source immutability, nullable types, unconfirmed membership, source/quality
 tampering, failed checks/builds, identity mismatch, cutoff lock and independent
-repeated exports. This is not yet a real V3 replay or a Gold serving release.
+repeated exports. The [V3 validation](v3-oos-state-feature-validation.md) additionally
+checks a real export and the partial feature slice; neither is a Gold serving release.
 
 ```bash
 uv run python -m unittest discover -s tests -p test_feature_handoff.py -v

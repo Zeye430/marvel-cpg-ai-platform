@@ -1,0 +1,46 @@
+{
+  "contract_version": "v3.module-data.1",
+  "scope": "Shared data only; model, simulator, NLQ/RAG and UI implementations are separate branches",
+  "join_identity": ["dataset_hash", "build_id"],
+  "cutoff_policy": "Do not mix artifact cutoffs; June outcomes locked until separate model release workflow",
+  "default_metric_view": "reported_only",
+  "operational_estimate_status": "Candidate; retained in feature/daily internal artifacts, not silently approved for serving",
+  "module_1": {
+    "artifact": "serving",
+    "views": ["store_sku_daily", "store_day", "commercial_period", "execution_visits", "delivery_events", "sell_in_events", "stores", "products", "promotions", "metric_definitions"],
+    "aggregation": "Sum numerator/denominator components; select one period/metric/audit scope; Unknown is not zero"
+  },
+  "module_2": {
+    "artifact": "features",
+    "relation": "gold.features_oos_daily",
+    "key": ["build_id", "scoring_date", "store_id", "sku_id", "feature_version"],
+    "evaluation_artifact": "labels",
+    "evaluation_relation": "evaluation.labels_oos_next7",
+    "labels_must_not_enter_serving": true,
+    "prediction_output": "gold.predictions_oos",
+    "ranking_output": "gold.mart_visit_priority",
+    "output_requirements": ["matching dataset_hash/build_id", "explicit scoring_run_id/date", "model/feature/ranking version", "probability in [0,1]", "one selected run, no fabricated missing outputs"],
+    "unreleased_behavior": "Empty typed output tables and Unavailable_model_not_released, never zero risk"
+  },
+  "module_3": {
+    "artifact": "serving",
+    "views": ["negotiation_context", "products", "commercial_period", "execution_visits"],
+    "policy": "Requires review until guardrail units/composition/version approved; source flag is historical evidence, not platform approval",
+    "price_cost_basis": "Static reference product dimensions and reported invoices; currency not supplied"
+  },
+  "module_4": {
+    "artifact": "serving",
+    "schema": "serving.vw_* allowlist from data_platform.serving.VIEWS",
+    "safe_table_reader": "data_platform.access.ServingReader",
+    "nlq_runtime": "Must enforce SELECT/function/view allowlists, verified identity scope and limits; never expose a raw DuckDB connection to an LLM",
+    "knowledge_contract": {"required_fields": ["document_id", "version", "content_hash", "authorized_source", "effective_date", "permission_scope", "citation_location"], "corpus_status": "Not supplied by the eight CSVs; ingestion/retrieval belongs to Module 4"}
+  },
+  "access": {
+    "authentication_owner": "Application; principal_id must come from verified session, not query text",
+    "scope_file_fields": ["version", "assignments"],
+    "assignment_fields": ["principal_id", "store_id", "role"],
+    "roles": ["sales", "manager"],
+    "default": "Deny all when assignment is absent; manager access is explicit, not automatic",
+    "file_access": "Serving file is private to trusted application service; schemas are not security boundaries"
+  }
+}

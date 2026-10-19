@@ -1,0 +1,252 @@
+{
+  "contract_version": "v3.sources.1",
+  "data_version": "v3",
+  "status": "shared_data_foundation_implemented_separate_model_release",
+  "source_directory": "data/raw",
+  "scope": "Shared source contract for Modules 1, 2, 3 and 4",
+  "unknown_columns": "reject_until_contract_revision",
+  "missing_columns": "reject",
+  "row_count_policy": "reference_counts_are_provenance_not_permanent_validation_limits",
+  "null_tokens": [""],
+  "boolean_tokens": {"true": ["True", "true"], "false": ["False", "false"]},
+  "bronze_policy": "Preserve source text and source files; cast only into Silver with error accounting",
+  "silver_lineage_columns": ["data_version", "dataset_hash", "build_id", "source_file_hash", "source_row_number"],
+  "versioned_join_policy": "All references resolve within the same dataset_hash",
+  "development_cutoff": "2026-05-31",
+  "business_data_end": "2026-06-30",
+  "locked_outcome_start": "2026-06-01",
+  "sources": [
+    {
+      "name": "dim_stores",
+      "filename": "dim_stores.csv",
+      "bronze_relation": "bronze.dim_stores",
+      "silver_relation": "silver.dim_stores",
+      "grain": "one customer account",
+      "primary_key": ["store_id"],
+      "nullable_columns": [],
+      "reference_row_count": 221,
+      "reference_sha256": "0cba699372f8ac009713c6033968a0941af83c0bf2d0e37a3ca486bd08c9c90e",
+      "columns": [
+        {"name": "store_id", "type": "VARCHAR"},
+        {"name": "store_name", "type": "VARCHAR"},
+        {"name": "channel", "type": "VARCHAR"},
+        {"name": "region", "type": "VARCHAR"},
+        {"name": "state", "type": "VARCHAR"},
+        {"name": "segment_tier", "type": "VARCHAR"},
+        {"name": "city", "type": "VARCHAR"}
+      ],
+      "allowed_values": {
+        "channel": ["Modern Trade", "Traditional Trade", "Distributor"],
+        "segment_tier": ["Tier 1", "Tier 2", "Tier 3"]
+      }
+    },
+    {
+      "name": "dim_products",
+      "filename": "dim_products.csv",
+      "bronze_relation": "bronze.dim_products",
+      "silver_relation": "silver.dim_products",
+      "grain": "one SKU",
+      "primary_key": ["sku_id"],
+      "nullable_columns": [],
+      "reference_row_count": 23,
+      "reference_sha256": "96d9c0fcec4363083588203307646a1c0c72a3a86fb5e8648c127249950a6035",
+      "columns": [
+        {"name": "sku_id", "type": "VARCHAR"},
+        {"name": "product_name", "type": "VARCHAR"},
+        {"name": "category", "type": "VARCHAR"},
+        {"name": "brand", "type": "VARCHAR"},
+        {"name": "is_msl", "type": "BOOLEAN"},
+        {"name": "unit_cost", "type": "DECIMAL(18,2)"},
+        {"name": "list_price", "type": "DECIMAL(18,2)"},
+        {"name": "consumer_price", "type": "DECIMAL(18,2)"}
+      ],
+      "allowed_values": {"category": ["Surface Cleaners", "Dishwashing", "Laundry"]},
+      "nonnegative_columns": ["unit_cost", "list_price", "consumer_price"]
+    },
+    {
+      "name": "dim_guardrails",
+      "filename": "dim_guardrails.csv",
+      "bronze_relation": "bronze.dim_guardrails",
+      "silver_relation": "silver.dim_guardrails",
+      "grain": "one channel-category source rule",
+      "primary_key": ["channel", "category"],
+      "nullable_columns": [],
+      "reference_row_count": 9,
+      "reference_sha256": "130a8c91641de8d4fc9cb75d9d42c6868b76e492dbcf1889e40dfac9c4a7faf8",
+      "columns": [
+        {"name": "channel", "type": "VARCHAR"},
+        {"name": "category", "type": "VARCHAR"},
+        {"name": "max_discount_pct", "type": "DECIMAL(9,4)"},
+        {"name": "min_target_margin", "type": "DECIMAL(9,4)"},
+        {"name": "required_exec_tradeoff", "type": "VARCHAR"}
+      ],
+      "policy_status": "Requires review",
+      "version_policy": "Retain prior working dimension; replacement with standard_discount_pct requires explicit approval",
+      "percent_columns": ["max_discount_pct", "min_target_margin"]
+    },
+    {
+      "name": "dim_promotions",
+      "filename": "dim_promotions.csv",
+      "bronze_relation": "bronze.dim_promotions",
+      "silver_relation": "silver.dim_promotions",
+      "grain": "one promotion campaign",
+      "primary_key": ["promo_id"],
+      "nullable_columns": [],
+      "reference_row_count": 37,
+      "reference_sha256": "e05fdff6726ea0bb9b1f50322eda4686b59ede7819476a1195ba6de7a6aeab99",
+      "columns": [
+        {"name": "promo_id", "type": "VARCHAR"},
+        {"name": "promo_name", "type": "VARCHAR"},
+        {"name": "promo_type", "type": "VARCHAR"},
+        {"name": "category", "type": "VARCHAR"},
+        {"name": "channel", "type": "VARCHAR"},
+        {"name": "start_date", "type": "DATE"},
+        {"name": "end_date", "type": "DATE"},
+        {"name": "discount_pct", "type": "DECIMAL(9,4)"},
+        {"name": "min_volume_units", "type": "BIGINT"}
+      ],
+      "percent_columns": ["discount_pct"],
+      "nonnegative_columns": ["min_volume_units"],
+      "date_semantics": "Inclusive planned interval; availability history is not supplied",
+      "scope_reference": {"columns": ["channel", "category"], "source": "dim_guardrails", "approval_not_implied": true}
+    },
+    {
+      "name": "fact_sell_in",
+      "filename": "fact_sell_in.csv",
+      "bronze_relation": "bronze.fact_sell_in",
+      "silver_relation": "silver.fact_sell_in",
+      "grain": "one invoice line",
+      "primary_key": ["transaction_id"],
+      "nullable_columns": ["promo_id"],
+      "reference_row_count": 277059,
+      "reference_sha256": "8461ef4703f1654fa62d0887c4a1190df3688a113e510382cabd901708ceb807",
+      "event_date_column": "date",
+      "columns": [
+        {"name": "transaction_id", "type": "VARCHAR"},
+        {"name": "date", "type": "DATE"},
+        {"name": "store_id", "type": "VARCHAR"},
+        {"name": "sku_id", "type": "VARCHAR"},
+        {"name": "units_sold", "type": "BIGINT"},
+        {"name": "gross_sales", "type": "DECIMAL(18,2)"},
+        {"name": "discount_pct", "type": "DECIMAL(9,4)"},
+        {"name": "extra_discount_pct", "type": "DECIMAL(9,4)"},
+        {"name": "net_sales", "type": "DECIMAL(18,2)"},
+        {"name": "promo_id", "type": "VARCHAR"},
+        {"name": "guardrail_violation", "type": "BOOLEAN"}
+      ],
+      "foreign_keys": [
+        {"columns": ["store_id"], "source": "dim_stores", "references": ["store_id"]},
+        {"columns": ["sku_id"], "source": "dim_products", "references": ["sku_id"]},
+        {"columns": ["promo_id"], "source": "dim_promotions", "references": ["promo_id"]}
+      ],
+      "percent_columns": ["discount_pct", "extra_discount_pct"],
+      "nonnegative_columns": ["units_sold", "gross_sales", "net_sales"],
+      "date_semantics": "Monday invoice after source Sell-out week; not a receipt timestamp"
+    },
+    {
+      "name": "fact_deliveries",
+      "filename": "fact_deliveries.csv",
+      "bronze_relation": "bronze.fact_deliveries",
+      "silver_relation": "silver.fact_deliveries",
+      "grain": "one store-SKU delivery event",
+      "primary_key": ["delivery_id"],
+      "nullable_columns": [],
+      "reference_row_count": 142641,
+      "reference_sha256": "529dbb007254be76cd62df55173cc11aa9d131dfb282d9da4f165cf1e12f04bc",
+      "event_date_column": "actual_delivery",
+      "columns": [
+        {"name": "delivery_id", "type": "VARCHAR"},
+        {"name": "store_id", "type": "VARCHAR"},
+        {"name": "sku_id", "type": "VARCHAR"},
+        {"name": "order_date", "type": "DATE"},
+        {"name": "scheduled_delivery", "type": "DATE"},
+        {"name": "actual_delivery", "type": "DATE"},
+        {"name": "delay_days", "type": "BIGINT"},
+        {"name": "delivery_status", "type": "VARCHAR"},
+        {"name": "units_ordered", "type": "BIGINT"},
+        {"name": "units_delivered", "type": "BIGINT"},
+        {"name": "fill_rate_pct", "type": "DECIMAL(9,4)"}
+      ],
+      "foreign_keys": [
+        {"columns": ["store_id"], "source": "dim_stores", "references": ["store_id"]},
+        {"columns": ["sku_id"], "source": "dim_products", "references": ["sku_id"]}
+      ],
+      "nonnegative_columns": ["units_ordered", "units_delivered"],
+      "percent_columns": ["fill_rate_pct"],
+      "planned_projection_columns": ["delivery_id", "store_id", "sku_id", "order_date", "scheduled_delivery", "units_ordered"],
+      "realized_columns": ["actual_delivery", "delay_days", "delivery_status", "units_delivered", "fill_rate_pct"],
+      "sell_in_join_policy": "No transaction_id or invoice_date exists; do not infer an invoice foreign key"
+    },
+    {
+      "name": "fact_execution_audits",
+      "filename": "fact_execution_audits.csv",
+      "bronze_relation": "bronze.fact_execution_audits",
+      "silver_relation": "silver.fact_execution_audits",
+      "grain": "one audit observation",
+      "primary_key": ["audit_id"],
+      "nullable_columns": [],
+      "reference_row_count": 208459,
+      "reference_sha256": "2306fa9c299f25cc1ac8e69c667be55f89f96f4df6e9ebd8c3a34209bef8187c",
+      "event_date_column": "date",
+      "columns": [
+        {"name": "audit_id", "type": "VARCHAR"},
+        {"name": "date", "type": "DATE"},
+        {"name": "store_id", "type": "VARCHAR"},
+        {"name": "sku_id", "type": "VARCHAR"},
+        {"name": "planogram_compliance", "type": "BOOLEAN"},
+        {"name": "shelf_share_pct", "type": "DECIMAL(9,4)"},
+        {"name": "secondary_display", "type": "BOOLEAN"}
+      ],
+      "foreign_keys": [
+        {"columns": ["store_id"], "source": "dim_stores", "references": ["store_id"]},
+        {"columns": ["sku_id"], "source": "dim_products", "references": ["sku_id"]}
+      ],
+      "percent_columns": ["shelf_share_pct"],
+      "share_semantics": "Normalized SKU allocation per store-date-category visit; no competitor denominator"
+    },
+    {
+      "name": "fact_sell_out",
+      "filename": "fact_sell_out.csv",
+      "bronze_relation": "bronze.fact_sell_out",
+      "silver_relation": "silver.fact_sell_out",
+      "grain": "one observed store-SKU-day",
+      "primary_key": ["date", "store_id", "sku_id"],
+      "nullable_columns": ["promo_id", "restock_delivery_id"],
+      "reference_row_count": 2193868,
+      "reference_sha256": "b5cf058b636e3f74eec2642a3ceaa455abeba49c7f2c1e5e9ca43a610bc4f270",
+      "event_date_column": "date",
+      "columns": [
+        {"name": "date", "type": "DATE"},
+        {"name": "store_id", "type": "VARCHAR"},
+        {"name": "sku_id", "type": "VARCHAR"},
+        {"name": "units_sold_daily", "type": "BIGINT"},
+        {"name": "inventory_level", "type": "BIGINT"},
+        {"name": "is_out_of_stock", "type": "BOOLEAN"},
+        {"name": "consumer_price_actual", "type": "DECIMAL(18,2)"},
+        {"name": "promo_id", "type": "VARCHAR"},
+        {"name": "promo_discount_pct", "type": "DECIMAL(9,4)"},
+        {"name": "restock_units", "type": "BIGINT"},
+        {"name": "restock_delivery_id", "type": "VARCHAR"}
+      ],
+      "foreign_keys": [
+        {"columns": ["store_id"], "source": "dim_stores", "references": ["store_id"]},
+        {"columns": ["sku_id"], "source": "dim_products", "references": ["sku_id"]},
+        {"columns": ["promo_id"], "source": "dim_promotions", "references": ["promo_id"]},
+        {"columns": ["restock_delivery_id"], "source": "fact_deliveries", "references": ["delivery_id"]}
+      ],
+      "nonnegative_columns": ["units_sold_daily", "inventory_level", "consumer_price_actual", "restock_units"],
+      "percent_columns": ["promo_discount_pct"],
+      "missing_row_policy": "Unknown reporting; never zero-fill observations",
+      "restock_policy": "Positive restock iff non-null delivery ID; unique referenced event matches date/store/SKU/units"
+    }
+  ],
+  "quality_tolerances": {
+    "inventory_identity_units": 0,
+    "receipt_quantity_units": 0,
+    "currency_absolute": 0.011,
+    "fill_rate_absolute_percentage_points": 0.00501,
+    "shelf_sum_absolute_percentage_points": 0.031,
+    "relative_tolerance": 0
+  },
+  "implementation_note": "data_platform implements strict parsing, typed Silver, receipt/calendar reconciliation and atomic Silver handoff gates. Gold estimation, KPIs, controlled feature access, model evaluation and application serving remain subsequent stages."
+}

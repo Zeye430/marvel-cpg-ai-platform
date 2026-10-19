@@ -95,9 +95,9 @@ failure, `130` interrupted. Existing accepted artifacts remain unchanged on fail
 The next data-layer increment is specified in the
 [OOS feature contract](../docs/data/v3-oos-feature-contract.md). Its first isolated
 state/sales feature slice and isolated input exporter (including its CLI) have
-synthetic tests; complete enrichment, feature-build orchestration, real V3 replay,
-restricted labels and Gold-only serving remain pending. Model/ranking development
-belongs to Module 2.
+synthetic tests and an [April-cutoff V3 validation](../docs/data/v3-oos-state-feature-validation.md).
+Complete enrichment, feature-build orchestration, restricted labels and Gold-only
+serving remain pending. Model/ranking development belongs to Module 2.
 
 ```text
 data/raw/_snapshots/v3/<dataset_hash>/       byte-identical copies of all eight CSVs

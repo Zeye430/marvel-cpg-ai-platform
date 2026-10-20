@@ -42,6 +42,11 @@ def main(argv=None):
     audit.add_argument("--contract-path", type=Path)
     audit.add_argument("--git-ref", default="origin/main")
     audit.add_argument("--output-path", type=Path)
+    temporal = commands.add_parser(
+        "plan-evaluation", help="Plan strict rolling windows without reading outcomes or unlocking tests",
+    )
+    temporal.add_argument("--source-build-dir", type=Path, required=True,
+                          help="Explicit accepted source/base build; JSON to stdout only, no writes")
     handoff = commands.add_parser(
         "export-feature-input",
         help="Export allowlisted historical state to an isolated feature-input database",
@@ -95,6 +100,9 @@ def main(argv=None):
         elif action == "evaluate-missing":
             from .masking import evaluate_missing
             result = evaluate_missing(**args)
+        elif action == "plan-evaluation":
+            from .temporal_plan import plan_evaluation
+            result = plan_evaluation(**args)
         elif action == "export-feature-input":
             from .feature_handoff import export_feature_input
             result = export_feature_input(**args)

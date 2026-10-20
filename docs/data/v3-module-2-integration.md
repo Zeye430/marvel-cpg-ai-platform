@@ -117,6 +117,42 @@ artifacts stop May 31. June business/scoring inputs are separate and available,
 while June test truth requires the [evidence-gated release below](#10-june-independent-test-release).
 June test scoring dates are June 1–23; June 24–30 targets remain immature.
 
+### Rolling-30-day planning preview
+
+The new shared calendar planner defines test as the latest **30 calendar dates**,
+not a calendar month; validation reserves the preceding non-overlapping 30 dates.
+It is an additive planning utility. The fixed folds/builders/release gate above
+remain implemented behavior until their rolling-plan integration is delivered.
+
+```bash
+uv run python -m data_platform plan-evaluation \
+  --source-build-dir /YOUR/accepted/base/build-directory
+```
+
+This verifies the explicit base artifact and prints JSON using its recorded
+cutoff/history. It does not query its database, open labels, write files, build
+features, approve a model or unlock test. Do not use a feature/label/serving
+directory or a date override as a substitute for the accepted source build.
+
+| Source cutoff | Train scoring cap | Validation reserved / calendar-eligible | Test reserved / calendar-eligible |
+| --- | --- | --- | --- |
+| 2026-06-30 | 2026-04-24 | May2–31 / May2–24 | June1–30 / June1–23 |
+| 2026-08-31 (date-arithmetic example only) | 2026-06-25 | July3–August1 / July3–25 | August2–31 / August2–24 |
+
+H=7 leaves seven purged validation dates and seven pending test dates. Actual
+labels still require seven observed future days; calendar eligibility is not
+label completeness or sample size. Latest June30 inputs can predict July1–7
+without labels. The August example does not provision future client data or
+remove the current source verifier's June30 cap.
+
+The result is `oos_temporal_plan.v1`, `planning_status=Temporal_only`,
+`test_access=Locked`, with source hashes/identity and deterministic plan digest.
+The pure `TemporalPlan` API in `data_platform.temporal_plan` supports roundtrip
+validation and reserved-window overlap counts; declared inputs/digests are not
+authorization. Advancing the cutoff one day overlaps 29 test dates, not a fresh
+independent test. Subsequent label/feature/release integration must preserve
+test-exposure history and freeze the model before controlled evaluation.
+
 ## 5. Development-only loading example
 
 The following is a trusted offline reader pattern, not an app/API endpoint or a

@@ -24,6 +24,7 @@ Every command exposes `--help`; the recommended full workflow is in the guide.
 | Command | Purpose / boundary |
 | --- | --- |
 | `audit-data` | Source/header/hash diagnostic; inspect JSON, exit 0 alone is not a match |
+| `plan-evaluation` | Metadata-only strict rolling-30-day calendar plan from an explicit accepted base build; prints JSON, does not unlock test or alter builders |
 | `build-all` | Business source/Gold, May development features/labels, June scoring features, serving; optional publication |
 | `build` | Internal Bronze/Silver; `--include-kpi-marts` adds dependent internal Gold; not an application DB |
 | `build --publish-silver` | Publish internal Silver, not business serving |
@@ -38,6 +39,21 @@ Base-only commands default to `outputs/v3/platform/`; recommended `build-all`
 explicitly uses `outputs/v3/platform/delivery/`. Do not confuse their pointers.
 `build-serving` requires matching dataset/source and exact cutoff: June business
 uses June **scoring**, not May development, features.
+
+To preview rolling evaluation dates without querying outcomes or writing files:
+
+```bash
+uv run python -m data_platform plan-evaluation \
+  --source-build-dir /YOUR/accepted/base/build-directory
+```
+
+The cutoff/history come from the verified source manifest, not a machine clock
+or date override. Output `oos_temporal_plan.v1` includes provenance, deterministic
+plan identity, reserved/eligible/purged/pending dates and latest prediction dates.
+It remains `Temporal_only` / `test_access=Locked`: not model approval, a complete
+evaluation release or observed-label coverage. Existing build commands still use
+the fixed V3 profile; consuming rolling plans in those builders is follow-on work.
+See the [Module 2 guide](../docs/data/v3-module-2-integration.md) for examples.
 
 ## Publication and rollback
 

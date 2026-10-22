@@ -495,4 +495,3 @@ def challenger_request(run_dir):
     """Surface the latest monitoring trigger; never trains or swaps the champion."""
     requests = sorted(Path(run_dir).glob("monitoring/*/challenger-request.json"))
     return read_json(requests[-1]) if requests else {"status": "Not_requested"}
-

@@ -73,7 +73,7 @@ class LedgerBindingTests(unittest.TestCase):
         self.assertFalse(self.ledger.exists())
 
     def test_consumed_then_missing_refuses_and_restore_keeps_the_limit(self):
-        # Codex's R-05 probe sequence, now fail-closed.
+        # Regression: a consumed ledger cannot be recreated after file loss.
         header = governance.ensure_ledger(self.policy, self.policy_path)
         self.reserve(header)
         governance.record_ledger_tip(self.policy)

@@ -14,6 +14,7 @@ import re
 PLAN_VERSION = "oos_temporal_plan.v1"
 WINDOW_DAYS = 30
 HORIZON_DAYS = 7
+FOLD_POLICY_VERSION = "trailing30.outer_plus_two_history.v1"
 
 
 def _canonical_json(value):
@@ -135,6 +136,59 @@ class TemporalPlan:
         end = min(self.source_as_of, other.source_as_of)
         return max(0, (end - start).days + 1)
 
+    def development_folds(self):
+        """Legacy-shaped tuples: up to two historical folds, then outer validation.
+
+        Calendar support is not observed-label/model support. Omit an earlier
+        fold if it has no possible training date; never shift the outer window.
+        This derived policy does not change the v1 temporal-plan digest.
+        """
+        outer_start = self.source_as_of - timedelta(days=2 * WINDOW_DAYS - 1)
+        folds = []
+        for offset in (2, 1, 0):
+            try:
+                start = outer_start - timedelta(days=offset * WINDOW_DAYS)
+                outcome_end = start + timedelta(days=WINDOW_DAYS - 1)
+                train_last = start - timedelta(days=HORIZON_DAYS + 1)
+            except OverflowError:
+                if offset:
+                    continue
+                raise ValueError("Cannot represent the outer development fold")
+            if train_last < self.history_start:
+                continue
+            fold_id = "rolling_validation" if offset == 0 else f"rolling_dev_{3-offset}"
+            folds.append((fold_id, train_last.isoformat(), start.isoformat(),
+                          (outcome_end - timedelta(days=HORIZON_DAYS)).isoformat(),
+                          outcome_end.isoformat()))
+        return tuple(folds)
+
+
+def _source_temporal_plan(record, cutoff):
+    """Convert already-verified base metadata; does not authenticate a caller."""
+    configuration = record.get("configuration")
+    if record.get("layer") != "silver" or record.get("kind") is not None or not isinstance(configuration, dict):
+        raise ValueError("Temporal planning requires an accepted source/base build, not feature/label/serving artifacts")
+    if configuration.get("as_of") != cutoff.isoformat():
+        raise ValueError("Source configuration cutoff is inconsistent")
+    try:
+        return TemporalPlan(
+            source_as_of=cutoff,
+            history_start=date.fromisoformat(configuration["calendar_start"]),
+            dataset_hash=record["dataset_hash"],
+            source_build_id=record["build_id"],
+            source_database_sha256=record["database_sha256"],
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("Source metadata cannot define a valid temporal plan") from error
+
+
+def bind_source_plan(plan_record, source_record, cutoff):
+    """Bind canonical plan to the actual source metadata after verification."""
+    plan = TemporalPlan.from_dict(plan_record)
+    if plan.to_dict() != _source_temporal_plan(source_record, cutoff).to_dict():
+        raise ValueError("Temporal plan differs from the verified source identity, cutoff or history")
+    return plan
+
 
 def plan_evaluation(source_build_dir):
     """Verify an explicit accepted source build and plan from metadata only.
@@ -146,19 +200,4 @@ def plan_evaluation(source_build_dir):
     from .artifacts import verified_artifact
 
     record, _, cutoff = verified_artifact(source_build_dir)
-    configuration = record.get("configuration")
-    if record.get("layer") != "silver" or record.get("kind") is not None or not isinstance(configuration, dict):
-        raise ValueError("Temporal planning requires an accepted source/base build, not feature/label/serving artifacts")
-    if configuration.get("as_of") != cutoff.isoformat():
-        raise ValueError("Source configuration cutoff is inconsistent")
-    try:
-        plan = TemporalPlan(
-            source_as_of=cutoff,
-            history_start=date.fromisoformat(configuration["calendar_start"]),
-            dataset_hash=record["dataset_hash"],
-            source_build_id=record["build_id"],
-            source_database_sha256=record["database_sha256"],
-        )
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("Source metadata cannot define a valid temporal plan") from error
-    return plan.to_dict()
+    return _source_temporal_plan(record, cutoff).to_dict()

@@ -59,6 +59,7 @@ def main(argv=None):
     handoff.add_argument("--as-of", type=date.fromisoformat, required=True,
                          help="Explicit input cutoff; development ends 2026-05-31, scoring can use 2026-06-30")
     handoff.add_argument("--purpose",choices=("development","scoring"),default="development")
+    handoff.add_argument("--temporal-plan",type=Path,help="Canonical source-bound rolling plan JSON")
     handoff.add_argument("--include-replenishment", action="store_true",
                          help="Also project known order plans and posted receipts; never future actual outcomes")
     handoff.add_argument("--include-context", action="store_true",help="Also project known campaigns, audits and observed consumer promotions")
@@ -71,9 +72,16 @@ def main(argv=None):
         if name!="build-serving": item.add_argument("--as-of",type=date.fromisoformat,required=True)
         if name in {"build-features","build-all"}: item.add_argument("--assume-complete-snapshot",action="store_true")
         if name=="build-features": item.add_argument("--purpose",choices=("development","scoring"),default="development")
+        if name=="build-features": item.add_argument("--temporal-plan",type=Path,help="Canonical source-bound rolling plan JSON")
         if name=="build-labels":
             item.add_argument("--purpose",choices=("development","test"),default="development")
             item.add_argument("--test-release",type=Path,help="Approved frozen-model and passed-May evidence; required for June test")
+            item.add_argument("--temporal-plan",type=Path,
+                              help="Canonical temporal-plan JSON; development labels, or planned test labels with a v2 release")
+            item.add_argument("--test-exposure-ledger",type=Path,
+                              help="Initialized project exposure ledger; planned test (purpose=test + plan + v2 release) only")
+            item.add_argument("--test-replay-reason",
+                              help="Explicit reason for an identical-evidence verification replay of a reserved window")
         if name in {"build-serving","build-all"}:
             item.add_argument("--access-policy",type=Path)
             item.add_argument("--publish",action="store_true")
@@ -81,6 +89,8 @@ def main(argv=None):
         if name=="build-all":
             item.add_argument("--source-dir",type=Path)
             item.add_argument("--snapshot-root",type=Path)
+            item.add_argument("--rolling-evaluation",action="store_true",
+                              help="Generate one trailing-30-day plan for development/labels/latest scoring; test stays locked")
     promotion=commands.add_parser("publish-serving",help="Atomically publish a verified serving artifact")
     promotion.add_argument("--output-root",type=Path,required=True)
     promotion.add_argument("--artifact-dir",type=Path,required=True)
@@ -90,6 +100,10 @@ def main(argv=None):
     args = vars(parser.parse_args(argv))
     action = args.pop("command")
     try:
+        if action in {"export-feature-input", "build-features", "build-labels"}:
+            plan_path = args.pop("temporal_plan")
+            if plan_path is not None:
+                args["temporal_plan"] = json.loads(plan_path.read_text())
         if action == "audit-data":
             from .pipeline import atomic_json
             from .version_audit import audit_data

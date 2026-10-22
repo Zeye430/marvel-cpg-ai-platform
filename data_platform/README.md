@@ -25,12 +25,12 @@ Every command exposes `--help`; the recommended full workflow is in the guide.
 | --- | --- |
 | `audit-data` | Source/header/hash diagnostic; inspect JSON, exit 0 alone is not a match |
 | `plan-evaluation` | Metadata-only strict rolling-30-day calendar plan from an explicit accepted base build; prints JSON, does not unlock test or alter builders |
-| `build-all` | Business source/Gold, May development features/labels, June scoring features, serving; optional publication |
+| `build-all` | Source/Gold, development features/labels, latest scoring features and serving; fixed profile by default, `--rolling-evaluation` opts into one shared 30-day plan |
 | `build` | Internal Bronze/Silver; `--include-kpi-marts` adds dependent internal Gold; not an application DB |
 | `build --publish-silver` | Publish internal Silver, not business serving |
-| `export-feature-input` | Allowlisted projection; explicit source build/cutoff; optional replenishment/context inputs |
-| `build-features` | Development capped May 31; `--purpose scoring` permits June past-only features without labels |
-| `build-labels` | Development capped May 31; June `--purpose test --test-release ...` requires approved freeze/May evidence |
+| `export-feature-input` | Allowlisted projection; explicit source/cutoff; optional `--temporal-plan FILE` and replenishment/context inputs |
+| `build-features` | Legacy fixed cap by default; `--temporal-plan FILE` enforces plan development/scoring boundaries without labels |
+| `build-labels` | Legacy fixed folds by default; `--temporal-plan FILE` builds source-bound rolling development folds only; June legacy test remains evidence-gated |
 | `build-serving` | New immutable business snapshot from matching source and latest-scoring feature artifacts; optional access policy |
 | `publish-serving` / `rollback-serving` | Promote a verified snapshot or republish a verified historical version |
 | `evaluate-missing` | Restricted March/April masking diagnostics; not model training or estimator approval |
@@ -51,8 +51,26 @@ The cutoff/history come from the verified source manifest, not a machine clock
 or date override. Output `oos_temporal_plan.v1` includes provenance, deterministic
 plan identity, reserved/eligible/purged/pending dates and latest prediction dates.
 It remains `Temporal_only` / `test_access=Locked`: not model approval, a complete
-evaluation release or observed-label coverage. Existing build commands still use
-the fixed V3 profile; consuming rolling plans in those builders is follow-on work.
+evaluation release or observed-label coverage. `build-labels --temporal-plan FILE`
+can consume a saved canonical plan for development labels/partitions. Its
+explicit `--as-of` must equal the plan's validation outcome end and its source
+must match exactly. Plan-aware test release is rejected. `build-features` and
+`export-feature-input` also accept `--temporal-plan FILE`, enforcing the exact
+purpose cutoff/source. Default calls retain the fixed V3 profile. To build all
+components with one plan:
+
+```bash
+uv run python -m data_platform build-all \
+  --as-of 2026-06-30 --rolling-evaluation --assume-complete-snapshot \
+  --output-root outputs/v3/platform/rolling-delivery
+```
+
+The workflow saves `temporal-plan.json` beside its run manifest. Development
+features/labels stop at the validation outcome cutoff, latest-scoring features
+and business serving reach the source cutoff, and test remains locked. No model
+is trained and no real test-release evidence is generated. Omit `--publish` to
+keep this an unpublished candidate. Future-source verification/provisioning
+and rolling test release remain separate work.
 See the [Module 2 guide](../docs/data/v3-module-2-integration.md) for examples.
 
 ## Publication and rollback
@@ -85,8 +103,10 @@ future-mutation/replay, label isolation, scopes and artifact integrity. Each bui
 retains `run.json` / `quality.json`. Passing these checks is not model target
 certification, guardrail approval or candidate-estimator adoption.
 
-Business reaches June 30; model development stops May 31 and June test stays
-evidence-gated. Reported is default; three separate Estimated candidate views
+The current supplied business data reaches June30. Legacy development is capped
+at May31; explicit rolling mode derives the cutoff from its source-bound plan
+(also May31 for a June30 source). Neither mode unlocks real test automatically.
+Reported is default; three separate Estimated candidate views
 need explicit read opt-in and UI labeling. Access defaults to deny all. Missing
 model outputs are unavailable, not zero. No application should connect to the
 internal source or evaluation files.

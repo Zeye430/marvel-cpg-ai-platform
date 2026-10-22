@@ -37,13 +37,13 @@ def require_isolated_feature_connection(connection):
         raise ValueError("Feature builder requires an isolated input connection, not source/evaluation tables")
 
 
-def build_oos_state_features(connection, as_of, quality, *, purpose="development"):
+def build_oos_state_features(connection, as_of, quality, *, purpose="development", temporal_plan=None):
     """Materialize the state/sales slice; the complete feature contract is pending.
 
     `as_of` bounds realized input, not a request to expose only that scoring date:
     the output includes historical confirmed pair-days through that date.
     """
-    validate_feature_cutoff(as_of, purpose)
+    validate_feature_cutoff(as_of, purpose, temporal_plan=temporal_plan)
     require_isolated_feature_connection(connection)
     # The first slice has a deliberately narrow source projection. Unknown
     # columns (including labels) cannot enter the SQL windows or output schema.

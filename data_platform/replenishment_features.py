@@ -18,14 +18,14 @@ RECEIPT_COLUMNS = (
 FEATURE_VERSION = "oos_replenishment.v1"
 
 
-def build_oos_replenishment_features(connection, as_of, quality, *, assume_complete_snapshot=False, purpose="development"):
+def build_oos_replenishment_features(connection, as_of, quality, *, assume_complete_snapshot=False, purpose="development", temporal_plan=None):
     """Build a separate feature group to join by build/date/store/SKU later.
 
     Zero-event quantities stay NULL unless feed completeness is explicitly
     assumed. Posted short/zero-unit deliveries close the single V3 delivery
     event; this does not infer that a production backorder has been fulfilled.
     """
-    validate_feature_cutoff(as_of, purpose)
+    validate_feature_cutoff(as_of, purpose, temporal_plan=temporal_plan)
     if type(assume_complete_snapshot) is not bool:
         raise ValueError("assume_complete_snapshot must be an explicit boolean")
     require_isolated_feature_connection(connection)

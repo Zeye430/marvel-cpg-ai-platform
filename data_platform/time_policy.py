@@ -8,11 +8,19 @@ TEST_START = date(2026, 6, 1)
 FEATURE_PURPOSES = ("development", "scoring")
 
 
-def validate_feature_cutoff(as_of, purpose="development"):
+def validate_feature_cutoff(as_of, purpose="development", *, temporal_plan=None):
     if purpose not in FEATURE_PURPOSES or type(as_of) is not date:
         raise ValueError("Explicit feature purpose/date required: development or scoring")
     if as_of > BUSINESS_CUTOFF:
         raise ValueError("Feature date exceeds the available business data end, 2026-06-30")
+    if temporal_plan is not None:
+        from .temporal_plan import TemporalPlan
+        plan = TemporalPlan.from_dict(temporal_plan)
+        expected = (plan.to_dict()["validation"]["outcome_end"]
+                    if purpose == "development" else plan.source_as_of.isoformat())
+        if as_of.isoformat() != expected:
+            raise ValueError("Feature cutoff must match the temporal plan's explicit purpose boundary")
+        return
     if purpose == "development" and as_of > DEVELOPMENT_CUTOFF:
         raise ValueError("June model-development outcomes are locked; development ends 2026-05-31")
 

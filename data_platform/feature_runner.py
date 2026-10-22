@@ -14,27 +14,34 @@ from .pipeline import ROOT, atomic_json
 from .quality import Quality
 from .replenishment_features import build_oos_replenishment_features
 from .time_policy import validate_feature_cutoff
+from .temporal_plan import bind_source_plan
 
 FEATURE_VERSION = "oos_features.v1-complete"
 
 
 def build_features(source_build_dir, as_of, output_root=None, *, assume_complete_snapshot=False,
-                   memory_limit="1GB", threads=2, purpose="development"):
-    validate_feature_cutoff(as_of, purpose)
+                   memory_limit="1GB", threads=2, purpose="development", temporal_plan=None):
+    validate_feature_cutoff(as_of, purpose, temporal_plan=temporal_plan)
     if threads<1:
         raise ValueError("threads must be positive")
     source, _, cutoff = verified_artifact(source_build_dir)
+    plan_args, plan_metadata = {}, {}
+    if temporal_plan is not None:
+        plan = bind_source_plan(temporal_plan, source, cutoff)
+        plan_args["temporal_plan"] = plan.to_dict()
+        plan_metadata = {**plan_args, "source_database_sha256": source["database_sha256"]}
     if as_of>cutoff:
         raise ValueError("Features cannot exceed the source cutoff")
     root = Path(output_root or ROOT/"outputs/v3/platform/features")
     require_separate_root(root,source_build_dir)
     projection = export_feature_input(source_build_dir, root/"inputs",
-                                      as_of, include_replenishment=True, include_context=True, purpose=purpose)
+                                      as_of, include_replenishment=True, include_context=True, purpose=purpose, **plan_args)
     with artifact_attempt(root, "features", {
         "as_of": str(as_of), "source_build_id": source["build_id"], "dataset_hash": source["dataset_hash"],
         "feature_version": FEATURE_VERSION, "projection": projection,
         "assume_complete_snapshot": assume_complete_snapshot, "memory_limit": memory_limit, "threads": threads,
         "purpose": purpose,
+        **plan_metadata,
     }) as (directory, record):
         database = directory/"features.duckdb"
         input_db = Path(projection["directory"])/projection["database"]
@@ -45,9 +52,9 @@ def build_features(source_build_dir, as_of, output_root=None, *, assume_complete
         con.execute("SET preserve_insertion_order=false")
         q = Quality(con, record["artifact_id"])
         try:
-            record["state"] = build_oos_state_features(con,as_of,q,purpose=purpose)
-            record["replenishment"] = build_oos_replenishment_features(con,as_of,q,assume_complete_snapshot=assume_complete_snapshot,purpose=purpose)
-            record["context"] = build_oos_context_features(con,as_of,q,purpose=purpose)
+            record["state"] = build_oos_state_features(con,as_of,q,purpose=purpose,**plan_args)
+            record["replenishment"] = build_oos_replenishment_features(con,as_of,q,assume_complete_snapshot=assume_complete_snapshot,purpose=purpose,**plan_args)
+            record["context"] = build_oos_context_features(con,as_of,q,purpose=purpose,**plan_args)
             # Retain component versions but publish one complete, unique row.
             con.execute(f"""CREATE TEMP TABLE _combined AS
                 SELECT d.* EXCLUDE(feature_version),'{FEATURE_VERSION}' AS feature_version,

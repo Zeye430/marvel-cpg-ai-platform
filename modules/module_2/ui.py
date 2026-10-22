@@ -1,133 +1,110 @@
 """
 modules/module_2/ui.py
 ======================
-UI layout for Module 2: Predictive Out-of-Stock Risk Engine.
-Presents:
-- ML Model Governance & Benchmark Metrics (Precision >= 75%, Recall >= 70%, AUC-ROC >= 0.80)
-- Feature Importance and Risk Distribution Charts
-- Actionable Store Visit Prioritization Engine for field sales route optimization.
+Module 2 layout: today's store priorities, store/SKU detail, and (for managers)
+model health and monitoring. Every number is rendered by the server from the
+published serving candidate; nothing here is a fixed metric or random value.
 """
 
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict
+
+from htmltools import HTMLDependency
 from shiny import ui
-from shinywidgets import output_widget
+
+_CSS = (Path(__file__).with_name("module2.css")).read_text()
+
+
+def plotly_dependency():
+    """Serve plotly.min.js from the installed plotly package (no CDN)."""
+    import plotly
+    source = Path(plotly.__file__).parent / "package_data"
+    return HTMLDependency("m2-plotly", plotly.__version__, source={"subdir": str(source)},
+                          script={"src": "plotly.min.js"})
+
+
+_FILTER_SCRIPT = """
+// Sign-out: drop previously rendered scoped data from the page immediately.
+// Registered once the Shiny client is initialized (before session messages arrive).
+window.jQuery(document).on('shiny:connected', function () {
+  if (window.__m2ClearHandler) { return; }
+  window.__m2ClearHandler = true;
+  Shiny.addCustomMessageHandler('m2-clear', function (message) {
+    document.querySelectorAll('#m2-root .shiny-html-output').forEach(function (e) { e.innerHTML = ''; });
+  });
+});
+document.addEventListener('DOMContentLoaded', function () {
+  var box = document.getElementById('m2_filter_box');
+  if (box && window.matchMedia('(max-width: 640px)').matches) { box.removeAttribute('open'); }
+});
+"""
+
+
+def _filters():
+    return ui.tags.details(
+        ui.tags.summary("Filters"),
+        ui.div(
+            ui.input_select("m2_f_channel", "Channel", {"": "All channels"}),
+            ui.input_select("m2_f_region", "Region", {"": "All regions"}),
+            ui.input_select("m2_f_tier", "Tier", {"": "All tiers"}),
+            ui.input_text("m2_f_search", "Store search", placeholder="Store ID or name"),
+            ui.div(
+                ui.input_checkbox("m2_f_msl", "Observed MSL gap only"),
+                ui.input_checkbox("m2_f_alert", "Predicted alerts only"),
+                ui.input_checkbox("m2_f_unknown", "Unknown inputs only"),
+                class_="m2-checks"),
+            class_="m2-filters"),
+        id="m2_filter_box", class_="m2-card m2-filter-box", open="open")
 
 
 def module_2_ui(dataset: Dict[str, Any]) -> ui.Tag:
-    """Renders the Predictive Out-of-Stock Risk Engine UI."""
+    """Module 2 tab. ``dataset`` is accepted for app compatibility and not used."""
     return ui.div(
-        ui.div(
-            # Hero Card: Model Overview & Benchmarks
-            ui.div(
+        plotly_dependency(),
+        ui.tags.style(_CSS),
+        ui.tags.script(_FILTER_SCRIPT),
+        ui.output_ui("m2_header"),
+        ui.navset_pill(
+            ui.nav_panel(
+                "Today's priorities",
+                ui.div(
+                    _filters(),
+                    ui.output_ui("m2_tiles"),
+                    ui.div(
+                        ui.output_ui("m2_count"),
+                        ui.download_button("m2_export", "Export visit list (CSV)", class_="m2-btn"),
+                        class_="m2-actions"),
+                    ui.output_ui("m2_priority_table"),
+                    ui.div(
+                        ui.input_action_button("m2_prev", "Previous", class_="m2-btn"),
+                        ui.input_action_button("m2_next", "Next", class_="m2-btn"),
+                        ui.output_ui("m2_page_label"),
+                        class_="m2-pager"),
+                    ui.div(
+                        ui.div(ui.h2("Store risk index distribution", class_="m2-h"),
+                               ui.output_ui("m2_risk_chart"), class_="m2-card"),
+                        ui.div(ui.h2("Data follow-up", class_="m2-h"), ui.output_ui("m2_followups"),
+                               class_="m2-card"),
+                        class_="m2-two"),
+                    style="padding-top:12px"),
+                value="priorities"),
+            ui.nav_panel(
+                "Store detail",
                 ui.div(
                     ui.div(
-                        ui.HTML("""
-                        <svg class="header-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                        </svg>
-                        """),
-                        ui.h2("Predictive Out-of-Stock Risk Engine", class_="section-title"),
-                        class_="header-title-box"
-                    ),
+                        ui.input_action_button("m2_back", "← Back to priorities", class_="m2-btn"),
+                        ui.input_select("m2_store", "Store", {"": "Select a store"}),
+                        class_="m2-actions"),
+                    ui.output_ui("m2_detail"),
                     ui.div(
-                        ui.span("XGBOOST / LIGHTGBM t+7 HORIZON", class_="badge-telemetry-live"),
-                        class_="header-actions"
-                    ),
-                    class_="card-header-row mb-2"
-                ),
-                ui.p(
-                    "Supervised machine learning model forecasting the probability of inventory exhaustion 7 days ahead (t+7). "
-                    "Integrates historical sales velocity, current on-hand stock, shelf frontage, and compliance audit signals to generate prioritized store route interventions.",
-                    class_="text-muted small mb-3"
-                ),
-
-                # 4 Benchmark Validation Metric Cards
-                ui.div(
-                    ui.div(
-                        ui.div("Precision (OOS Class)", class_="kpi-title"),
-                        ui.div("78.6%", class_="kpi-value text-success"),
-                        ui.div("Target ≥ 75.0% · Benchmark Met", class_="small text-muted"),
-                        class_="kpi-tile"
-                    ),
-                    ui.div(
-                        ui.div("Recall (Stockout Capture)", class_="kpi-title"),
-                        ui.div("81.4%", class_="kpi-value text-success"),
-                        ui.div("Target ≥ 70.0% · Benchmark Met", class_="small text-muted"),
-                        class_="kpi-tile"
-                    ),
-                    ui.div(
-                        ui.div("ROC-AUC Score", class_="kpi-title"),
-                        ui.div("0.879", class_="kpi-value text-primary"),
-                        ui.div("Target ≥ 0.800 · Benchmark Met", class_="small text-muted"),
-                        class_="kpi-tile"
-                    ),
-                    ui.div(
-                        ui.div("Prediction Horizon", class_="kpi-title"),
-                        ui.div("t+7 Days", class_="kpi-value text-dark"),
-                        ui.div("Lead Time: 1 Full Route Cycle", class_="small text-muted"),
-                        class_="kpi-tile"
-                    ),
-                    class_="kpi-grid-container mb-4"
-                ),
-                class_="sleek-card dashboard-hero-card mb-4"
-            ),
-
-            # Middle Row: Feature Importance and Risk Distribution Charts
-            ui.div(
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Model Feature Importance (Gain / Information Value)", class_="chart-card-title"),
-                            ui.div("Identifies top behavioral drivers governing stockout likelihood 7 days forward.", class_="chart-logic-desc"),
-                            class_="d-flex flex-column"
-                        ),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart_m2_feature_importance"),
-                    class_="sleek-card chart-sleek-card flex-fill"
-                ),
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Portfolio Risk Distribution by Retail Channel", class_="chart-card-title"),
-                            ui.div("Categorizes store-SKU combinations into High (≥70%), Elevated (40-69%), and Stable (<40%) risk tiers.", class_="chart-logic-desc"),
-                            class_="d-flex flex-column"
-                        ),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart_m2_risk_distribution"),
-                    class_="sleek-card chart-sleek-card flex-fill"
-                ),
-                class_="d-flex flex-column flex-xl-row gap-4 mb-4"
-            ),
-
-            # Bottom Section: Prioritized Store Visit Ranking Engine
-            ui.div(
-                ui.div(
-                    ui.div(
-                        ui.span("STORE VISIT PRIORITIZATION ENGINE", class_="section-badge badge-priority"),
-                        ui.h5("Dynamic Route Prioritization & At-Risk SKU Remediation", class_="section-heading"),
-                        ui.p("Ranks stores by composite stockout severity, sales velocity at risk, and planogram non-compliance to optimize field rep route schedules.", class_="section-subheading"),
-                        class_="section-header-block mb-3"
-                    ),
-                    ui.div(
-                        ui.div(
-                            ui.input_select(
-                                "m2_risk_filter",
-                                "Filter by Predicted Risk Tier:",
-                                {"all": "All Stores", "high": "Critical Risk (≥70%) Only", "elevated": "Elevated Risk (≥40%)"},
-                                selected="all"
-                            ),
-                            class_="me-3"
-                        ),
-                        class_="d-flex align-items-center mb-3"
-                    ),
-                    ui.output_table("table_m2_store_visit_ranking"),
-                    class_="sleek-card p-4"
-                ),
-                class_="dashboard-section"
-            ),
-
-            class_="app-container"
-        )
-    )
+                        ui.h2("Reported inventory history (last 28 days)", class_="m2-h"),
+                        ui.input_select("m2_detail_sku", "SKU", {"": "Select a SKU"}),
+                        ui.output_ui("m2_history_chart"),
+                        class_="m2-card"),
+                    style="padding-top:12px"),
+                value="detail"),
+            ui.nav_panel("Model health", ui.div(ui.output_ui("m2_health"), style="padding-top:12px"), value="health"),
+            ui.nav_panel("Monitoring", ui.div(ui.output_ui("m2_monitoring"), style="padding-top:12px"),
+                         value="monitoring"),
+            id="m2_tabs", selected="priorities"),
+        class_="m2", id="m2-root")

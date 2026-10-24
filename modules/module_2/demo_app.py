@@ -5,8 +5,10 @@ Run: python -m modules.module_2 demo --serving-root <isolated candidate root>
 
 Sign-in buttons select fixed *demo* principals on the server; the browser never
 supplies a principal ID or role. This is a local review aid, not production
-authentication. It never imports shared.data, connects to a database service
-or reads raw CSVs.
+authentication. It never imports shared.data or reads raw CSVs. With a serving
+root it is fully offline (local DuckDB). Only an explicit
+SHARED_DATA_BACKEND=postgres (and no serving root) makes it read the shared
+PostgreSQL release configured by SHARED_DATA_DATABASE_URL.
 """
 
 import os
@@ -85,9 +87,12 @@ def make_server(service, reason):
 
 
 def build_app(serving_root=None):
+    """A given ``serving_root`` always uses the offline DuckDB backend. Without it the
+    backend follows SHARED_DATA_BACKEND (default duckdb); PostgreSQL is used only when
+    that variable is explicitly set to ``postgres``."""
     if serving_root:
         os.environ["MODULE2_SERVING_ROOT"] = str(Path(serving_root).resolve())
-    service, reason = configured_service()
+    service, reason = configured_service("duckdb" if serving_root else None)
     return App(app_ui, make_server(service, reason))
 
 

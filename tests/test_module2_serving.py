@@ -430,6 +430,23 @@ class ServingTests(unittest.TestCase):
         stale = Module2Service(self.published["directory"], latest_source_as_of=date(2026, 7, 2))
         self.assertEqual(stale.get_priorities(Principal("demo:manager", True)).status, "Stale")
 
+    def test_injected_reader_matches_artifact_service_and_scope_fingerprint(self):
+        direct = Module2Service(self.published["directory"])
+        injected = Module2Service(reader=ServingReader(self.published["directory"]))
+        for pid in ("demo:manager", "demo:rep-a", "demo:partial-manager"):
+            principal = Principal(pid, True, True)
+            self.assertEqual(injected.get_priorities(principal).to_dict(), direct.get_priorities(principal).to_dict())
+            self.assertEqual(injected.get_model_health(principal).to_dict(), direct.get_model_health(principal).to_dict())
+        with self.assertRaises(Exception):
+            Module2Service()
+        with self.assertRaises(Exception):
+            Module2Service(self.published["directory"], reader=self.reader)
+        scope = self.reader.principal_scope("demo:rep-a")
+        self.assertRegex(scope["scope_fingerprint"], "^[0-9a-f]{64}$")
+        self.assertNotEqual(scope["scope_fingerprint"], self.reader.principal_scope("demo:rep-b")["scope_fingerprint"])
+        self.assertEqual({k for k in scope if k != "scope_fingerprint"},
+                         {"roles", "stores", "full_population", "manager_full_scope"})   # existing fields retained
+
     def test_ranking_package_is_unique_and_reasoned(self):
         manifest, table = ranking.read_package(self.root / "ranking")
         self.assertEqual(sorted(table["priority_rank"]), list(range(1, len(table) + 1)))

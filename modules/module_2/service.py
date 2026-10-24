@@ -1,14 +1,20 @@
 """Module 2 application service: scoped, read-only, JSON-safe responses.
 
 The principal always comes from the server session, never from query text or
-a browser control. Every read goes through the shared ServingReader, which
+a browser control. Every read goes through a shared business reader (the local
+DuckDB ServingReader by default, or an injected PostgreSQL reader), which
 re-applies account scope; this service adds filters, display ranks, counts and
 honest status (Unreleased/Stale/Denied/Unavailable), never invented values.
+Every public call first re-checks the principal's current scope. A failed or
+malformed check ends that request (Permission_denied / unavailable) and drops the
+principal's cached data; cached results are keyed by the verified scope
+fingerprint, so a scope change or revocation is never answered from cache.
 """
 
 import csv
 import io
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -18,6 +24,7 @@ from data_platform.access import DataUnavailable, ServingReader
 from .contracts import Module2Error, read_json
 
 FILTERS = ("channel", "region", "segment_tier", "msl_only", "alert_only", "unknown_only", "search")
+_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 RISK_BINS = 10
 
 
@@ -56,9 +63,14 @@ class Response:
     totals: dict = field(default_factory=dict)
     detail: dict = field(default_factory=dict)
     message: str = ""
+    # Internal, request-owned: the scope fingerprint verified for the request that built
+    # this response. Not serialized and not part of equality.
+    scope_identity: str = field(default=None, repr=False, compare=False)
 
     def to_dict(self):
-        return asdict(self)
+        data = asdict(self)
+        data.pop("scope_identity", None)
+        return data
 
 
 def resolve_published(root):
@@ -70,17 +82,24 @@ def resolve_published(root):
 
 
 class Module2Service:
-    def __init__(self, artifact_dir, *, latest_source_as_of=None):
-        """``latest_source_as_of``: newest accepted source date D known to the operator.
+    def __init__(self, artifact_dir=None, *, latest_source_as_of=None, reader=None):
+        """Exactly one of ``artifact_dir`` (local DuckDB serving) or ``reader`` (a shared
+        business reader, e.g. PostgreSQL) is required.
 
+        ``latest_source_as_of``: newest accepted source date D known to the operator.
         Staleness compares the candidate's data date with that D, never with the
         computer clock (historical demo data is not a pipeline failure).
         """
-        self.reader = ServingReader(artifact_dir)
+        if (artifact_dir is None) == (reader is None):
+            raise Module2Error("Provide exactly one of artifact_dir or reader")
+        if reader is not None and not callable(getattr(reader, "principal_scope", None)):
+            raise Module2Error("The reader must provide principal_scope (BusinessReader interface)")
+        self.reader = ServingReader(artifact_dir) if reader is None else reader
         self.latest_source_as_of = latest_source_as_of
         self.record = self.reader.record
-        self.outputs = self.record.get("model_outputs", {})
+        self.outputs = self.record.get("model_outputs") or {}
         self._cache = {}
+        self._fingerprints = {}
 
     # ------------------------------------------------------------ helpers
     def _base(self, status, **extra):
@@ -95,6 +114,34 @@ class Module2Service:
         if not isinstance(principal, Principal) or not principal.authenticated or not principal.principal_id:
             raise PermissionDenied("Sign in required")
 
+    def _authorize(self, principal):
+        """Verify the principal's current scope for this request and return its fingerprint.
+
+        Any failure (denied, unavailable, missing or malformed identity) clears the
+        principal's cached data and is raised, ending the request; nothing is read
+        from or written to the cache without a verified fingerprint.
+        """
+        pid = principal.principal_id
+        fingerprints = self.__dict__.setdefault("_fingerprints", {})
+        scope = getattr(self.reader, "principal_scope", None)
+        if scope is None:
+            # Only reachable for objects built without __init__ (unit-test doubles); every
+            # service constructed normally requires a reader with principal_scope.
+            return None
+        try:
+            result = scope(pid)
+        except (PermissionError, DataUnavailable):
+            self.clear(pid)
+            raise
+        fingerprint = result.get("scope_fingerprint") if isinstance(result, dict) else None
+        if not isinstance(fingerprint, str) or not _FINGERPRINT.fullmatch(fingerprint):
+            self.clear(pid)
+            raise DataUnavailable("Scope identity could not be verified; request not served")
+        if fingerprints.get(pid) != fingerprint:
+            self.clear(pid)
+            fingerprints[pid] = fingerprint
+        return fingerprint
+
     def _all(self, name, principal, **filters):
         rows, cursor = [], None
         while True:
@@ -104,19 +151,25 @@ class Module2Service:
             if cursor is None:
                 return rows
 
-    def _cached(self, key, loader):
-        full = (self.record["artifact_id"],) + key
-        if full not in self._cache:
-            self._cache[full] = loader()
-        return self._cache[full]
+    def _cached(self, key, loader, fingerprint):
+        # key = (kind, principal_id); fingerprint was verified by _authorize for this request.
+        # The value built here is returned even if another request clears the cache meanwhile.
+        full = (self.record["artifact_id"], fingerprint) + key
+        value = self._cache.get(full)
+        if value is None:
+            value = loader()
+            self._cache[full] = value
+        return value
 
     def clear(self, principal_id=None):
         """Logout/session end: drop that principal's cached data."""
         if principal_id is None:
             self._cache.clear()
+            self.__dict__.get("_fingerprints", {}).clear()
         else:
             for key in [k for k in self._cache if principal_id in k]:
                 del self._cache[key]
+            self.__dict__.get("_fingerprints", {}).pop(principal_id, None)
 
     def _stale(self, scoring_date):
         as_of = date.fromisoformat(str(self.record["as_of"]))
@@ -172,8 +225,9 @@ class Module2Service:
         if type(page_size) is not int or not 1 <= page_size <= 200:
             raise Module2Error("page_size must be 1..200")
         try:
+            fingerprint = self._authorize(principal)
             rows, stores, unscored = self._cached(("priorities", principal.principal_id),
-                                                  lambda: self._scoped_priorities(principal))
+                                                  lambda: self._scoped_priorities(principal), fingerprint)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
         except DataUnavailable as error:
@@ -194,7 +248,7 @@ class Module2Service:
                   "data_followup_stores": sum(1 for r in rows if needs_data_followup(r)) + len(unscored),
                   "unscored_stores": unscored, "full_population_scope": bool(full)}
         status = "Empty" if not rows else ("Stale" if self._stale(scoring) else "Ok")
-        return self._base(status, rows=page, totals=totals,
+        return self._base(status, rows=page, totals=totals, scope_identity=fingerprint,
                           next_cursor=str(start + page_size) if start + page_size < len(filtered) else None,
                           scope={"principal_id": principal.principal_id, "stores": len(stores),
                                  "rank_semantics": "display_rank is continuous within your scope; global_rank is the "
@@ -209,8 +263,9 @@ class Module2Service:
         """Aggregates over every authorized store, independent of table pagination."""
         self._check(principal)
         try:
+            fingerprint = self._authorize(principal)
             rows, stores, unscored = self._cached(("priorities", principal.principal_id),
-                                                  lambda: self._scoped_priorities(principal))
+                                                  lambda: self._scoped_priorities(principal), fingerprint)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
         except DataUnavailable as error:
@@ -237,6 +292,7 @@ class Module2Service:
         self._check(principal)
         if not isinstance(store_id, str) or not store_id:
             raise Module2Error("store_id required")
+        self._authorize(principal)                        # denied/unavailable end the request
         if not self.reader.read_page("stores", principal.principal_id, store_id=store_id)["rows"]:
             raise PermissionDenied("Not available")          # no existence/row-count disclosure
         try:
@@ -272,7 +328,9 @@ class Module2Service:
     def get_model_health(self, principal, model_version=None):
         self._check(principal)
         try:
-            rows = self._cached(("health", principal.principal_id), lambda: self._all("model_health", principal))
+            fingerprint = self._authorize(principal)
+            rows = self._cached(("health", principal.principal_id), lambda: self._all("model_health", principal),
+                                fingerprint)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
         except DataUnavailable as error:
@@ -287,6 +345,7 @@ class Module2Service:
     def get_monitoring(self, principal, window=None):
         self._check(principal)
         try:
+            self._authorize(principal)
             rows = self._all("model_monitoring", principal)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
@@ -297,13 +356,31 @@ class Module2Service:
         return self._base("Pending" if pending else "Ok", rows=clean,
                           limitations=["Monitoring evaluates issued predictions after outcomes mature; it is not the release test"])
 
+    @staticmethod
+    def _export_page(response):
+        if response.status == "Permission_denied":
+            raise PermissionDenied(response.message)
+        if response.status == "Unreleased":
+            raise DataUnavailable(response.message)
+        return response
+
     def export_visit_plan(self, principal, filters=None):
-        response = self.get_priorities(principal, filters, page_size=200)
-        if response.status in ("Permission_denied", "Unreleased"):
-            raise PermissionDenied(response.message) if response.status == "Permission_denied" else DataUnavailable(response.message)
+        """Complete CSV of the filtered priorities, or an error — never a partial file.
+
+        Every page is checked, and every page must carry the same request-owned scope
+        identity as the first page (taken from each response itself, never from shared
+        service state another request can change). A denied/unavailable page, a page
+        without a verified identity or a scope change aborts the whole export.
+        """
+        response = self._export_page(self.get_priorities(principal, filters, page_size=200))
+        scope = response.scope_identity
+        if scope is None:
+            raise DataUnavailable("Scope identity could not be verified; no export was produced")
         rows, cursor = list(response.rows), response.next_cursor
         while cursor:
-            more = self.get_priorities(principal, filters, cursor=cursor, page_size=200)
+            more = self._export_page(self.get_priorities(principal, filters, cursor=cursor, page_size=200))
+            if more.scope_identity != scope:
+                raise PermissionDenied("Account scope changed during export; no partial export was produced")
             rows += more.rows
             cursor = more.next_cursor
         buffer = io.StringIO()

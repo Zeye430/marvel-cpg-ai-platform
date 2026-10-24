@@ -76,12 +76,30 @@ def gate_badge(meets, undefined=False):
 
 # ------------------------------------------------------------------ service wiring
 
-def configured_service():
-    """Pin the published candidate named by MODULE2_SERVING_ROOT, if any."""
+def configured_service(backend=None):
+    """Pin one serving release for the app session.
+
+    ``backend`` (default: SHARED_DATA_BACKEND, else ``duckdb``) is chosen explicitly:
+    ``duckdb`` pins the published candidate named by MODULE2_SERVING_ROOT;
+    ``postgres`` opens the shared PostgreSQL reader from SHARED_DATA_DATABASE_URL
+    (+ SHARED_DATA_SSLROOTCERT, optional SHARED_DATA_RELEASE_ID). A failure is an
+    explicit unavailable state; there is never a fallback to another backend.
+    """
+    backend = backend or os.environ.get("SHARED_DATA_BACKEND") or "duckdb"
+    latest = os.environ.get("MODULE2_LATEST_SOURCE_DATE")
+    if backend == "postgres":
+        try:
+            from data_platform.readers import open_configured_reader
+            reader = open_configured_reader(environ={**os.environ, "SHARED_DATA_BACKEND": "postgres"})
+            return Module2Service(reader=reader,
+                                  latest_source_as_of=date.fromisoformat(latest) if latest else None), None
+        except Exception as error:  # sanitized: class name only, never connection details
+            return None, f"Shared PostgreSQL serving unavailable: {type(error).__name__}"
+    if backend != "duckdb":
+        return None, "Unsupported SHARED_DATA_BACKEND (use duckdb or postgres)."
     root = os.environ.get("MODULE2_SERVING_ROOT")
     if not root:
         return None, "No Module 2 serving candidate is configured (set MODULE2_SERVING_ROOT)."
-    latest = os.environ.get("MODULE2_LATEST_SOURCE_DATE")
     try:
         return Module2Service(resolve_published(Path(root)),
                               latest_source_as_of=date.fromisoformat(latest) if latest else None), None

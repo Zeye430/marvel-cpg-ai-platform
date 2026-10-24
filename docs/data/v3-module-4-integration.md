@@ -50,9 +50,17 @@ def fetch_reported_daily_rows(verified_principal_id, publication_path,
 ```
 
 Only named views in `data_platform.serving.VIEWS` are accepted. `ServingReader`
-returns parameterized, scoped rows and enforces a 1–10,000 row limit. It has
-**no arbitrary SQL input, general aggregate endpoint or pagination**. This makes
-it a starting data interface, not a finished Text-to-SQL system.
+returns parameterized, scoped rows and enforces a 1–10,000 row limit; keyset
+`read_page` exists only for a few fixed views. It has **no arbitrary SQL input or
+general aggregate endpoint**. This makes it a starting data interface, not a
+finished Text-to-SQL system.
+
+The shared PostgreSQL reader (opt-in, not yet used by Module 4) offers exactly the
+same operations and limits; record its `backend`, `release_id` and
+`source_artifact_id` in answer provenance. Its read-only database login cannot
+write, but it can read every published row: store scope is enforced by the
+reader, not by that login. Never give these credentials or a raw connection to an
+LLM or a generated-SQL runtime.
 
 Do not calculate a company/month total from the first 1,000 returned rows. A
 bounded result must be labeled as such. For aggregate questions, implement a

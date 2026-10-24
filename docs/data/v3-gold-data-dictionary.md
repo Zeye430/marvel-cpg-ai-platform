@@ -25,6 +25,19 @@ The feature and isolated label schemas are deliberately not served here.
 - Future prediction and priority interfaces contain zero rows. This means unavailable, not zero risk. Model selection/calibration and ranking algorithms are outside this branch.
 - Global references still require an assigned authenticated principal; store-scoped views additionally filter to explicitly assigned stores. `date_column` below is the reader's bound column, not a claim that all other dates are historical event dates.
 
+## Shared PostgreSQL copy (opt-in)
+
+A published PostgreSQL release contains the same views, columns, order, rows and
+grains as the source snapshot: `platform_serving.vw_<name>` follows the current
+release, and `platform_release_<release_id>.vw_<name>` is one immutable release
+(what the shared reader pins). Types map losslessly, as fixed in the
+[PostgreSQL column/type contract](../../data_platform/contracts/v3/postgres-serving.json):
+VARCHAR → `text COLLATE "C"`, BOOLEAN/DATE/INTEGER/BIGINT unchanged, DOUBLE →
+`double precision`, DECIMAL(p,s) → `numeric(p,s)`, HUGEINT → `numeric(39,0)`.
+The reader returns the same Python values as the DuckDB reader; `schema()` reports
+the DuckDB type names below plus `backend_type`. Account scopes are not part of a
+release.
+
 ## serving.vw_store_sku_daily
 
 Grain: date × store_id × sku_id; confirmed assortment dates only.
@@ -379,7 +392,7 @@ Reader date column: `start_date`.
 
 ## serving.vw_oos_predictions
 
-Grain: scoring_run_id × scoring_date × store_id × sku_id; EMPTY until model release.
+Grain: scoring_run_id × scoring_date × store_id × sku_id; empty in base serving builds. Filled only in a new serving artifact built by `data_platform.model_outputs` for one selected scoring run of a frozen model; `drivers_json` is rule-based context (`explanation_type=rule_based_context`), not causal attribution.
 Account scoped: yes.
 Reader date column: `scoring_date`.
 
@@ -401,7 +414,7 @@ Reader date column: `scoring_date`.
 
 ## serving.vw_visit_priority
 
-Grain: scoring_run_id × scoring_date × store_id × ranking_policy_version; EMPTY until ranking release.
+Grain: scoring_run_id × scoring_date × store_id × ranking_policy_version; empty in base serving builds. `priority_rank` is unique 1..N for the published run (policy `visit_priority.v1`); `risk_score` is the maximum SKU probability, a risk index rather than a calibrated store probability. `reason_json` carries the urgency bucket, percentiles, fallback flags and the reference sales proxy status.
 Account scoped: yes.
 Reader date column: `scoring_date`.
 
@@ -419,6 +432,104 @@ Reader date column: `scoring_date`.
 | `reason_json` | `VARCHAR` |
 
 
+
+## serving.vw_model_health
+
+Grain: model_version × report_id × group_kind × group_id; aggregated counts and metrics only (no row-level
+targets, file paths or model bytes). Additive in this contract version; empty in base builds.
+Access: **manager-only with full-population scope**, enforced by the shared reader on both `read` and
+`read_page`. Reader date column: `outcome_cutoff`.
+
+`evaluation_kind` is one of `development`, `iterative_validation`, `holdout_confirmation`,
+`independent_test`, `prospective_monitoring`; kinds are never relabelled to imply independence.
+`group_kind`/`group_id`: `all`/`all`; `segment`/JSON `[channel, tier]`; `current_status`/`not_oos|oos|unknown`.
+Undefined metrics (single class, zero alerts) are NULL and `meets_numeric_targets` is false; unevaluated rows
+have NULL counts. `selected` marks the development-selected candidate.
+
+| Field | DuckDB type |
+| --- | --- |
+| `dataset_hash` | `VARCHAR` |
+| `source_build_id` | `VARCHAR` |
+| `model_version` | `VARCHAR` |
+| `algorithm` | `VARCHAR` |
+| `candidate_id` | `VARCHAR` |
+| `report_id` | `VARCHAR` |
+| `evaluation_kind` | `VARCHAR` |
+| `fold_id` | `VARCHAR` |
+| `window_start` | `DATE` |
+| `window_end` | `DATE` |
+| `outcome_cutoff` | `DATE` |
+| `group_kind` | `VARCHAR` |
+| `group_id` | `VARCHAR` |
+| `sample_count` | `BIGINT` |
+| `positive_count` | `BIGINT` |
+| `tp` | `BIGINT` |
+| `fp` | `BIGINT` |
+| `fn` | `BIGINT` |
+| `tn` | `BIGINT` |
+| `alert_count` | `BIGINT` |
+| `candidate_count` | `BIGINT` |
+| `precision` | `DOUBLE` |
+| `recall` | `DOUBLE` |
+| `roc_auc` | `DOUBLE` |
+| `average_precision` | `DOUBLE` |
+| `label_coverage` | `DOUBLE` |
+| `brier_score` | `DOUBLE` |
+| `ece` | `DOUBLE` |
+| `meets_numeric_targets` | `BOOLEAN` |
+| `selected` | `BOOLEAN` |
+| `parameters_json` | `VARCHAR` |
+| `fit_seconds` | `DOUBLE` |
+| `calibration_method` | `VARCHAR` |
+| `evaluation_status` | `VARCHAR` |
+| `limitations_json` | `VARCHAR` |
+| `report_sha256` | `VARCHAR` |
+| `schema_version` | `VARCHAR` |
+
+## serving.vw_model_monitoring
+
+Grain: monitoring_run_id × model_version; one row per model version present in the issued-prediction history.
+Additive in this contract version; empty in base builds. Access: manager-only with full-population scope.
+Reader date column: `observation_cutoff`.
+
+Counts refer to predictions actually issued by scoring runs. `performance_status` is
+`Pending_outcomes`, `Insufficient_support` or `Evaluated`; `drift_status` is `Stable`, `Warning`, `Severe`
+or `Insufficient_support`; `retrain_status` is `Not_requested` or `Challenger_requested` (a request, not an
+automatic model change).
+
+| Field | DuckDB type |
+| --- | --- |
+| `dataset_hash` | `VARCHAR` |
+| `source_build_id` | `VARCHAR` |
+| `monitoring_run_id` | `VARCHAR` |
+| `model_version` | `VARCHAR` |
+| `observation_cutoff` | `DATE` |
+| `window_start` | `DATE` |
+| `window_end` | `DATE` |
+| `issued_count` | `BIGINT` |
+| `eligible_count` | `BIGINT` |
+| `pending_count` | `BIGINT` |
+| `unknown_outcome_count` | `BIGINT` |
+| `tp` | `BIGINT` |
+| `fp` | `BIGINT` |
+| `fn` | `BIGINT` |
+| `tn` | `BIGINT` |
+| `alert_count` | `BIGINT` |
+| `precision` | `DOUBLE` |
+| `recall` | `DOUBLE` |
+| `roc_auc` | `DOUBLE` |
+| `average_precision` | `DOUBLE` |
+| `label_coverage` | `DOUBLE` |
+| `brier_score` | `DOUBLE` |
+| `ece` | `DOUBLE` |
+| `performance_status` | `VARCHAR` |
+| `drift_status` | `VARCHAR` |
+| `retrain_status` | `VARCHAR` |
+| `drift_json` | `VARCHAR` |
+| `reasons_json` | `VARCHAR` |
+| `issued_runs_json` | `VARCHAR` |
+| `report_sha256` | `VARCHAR` |
+| `schema_version` | `VARCHAR` |
 
 ## serving.vw_estimated_store_sku_daily
 

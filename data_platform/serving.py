@@ -26,11 +26,32 @@ VIEWS = {
     "promotions":("dim_promotions","start_date",False),
     "oos_predictions":("predictions_oos","scoring_date",True),
     "visit_priority":("mart_visit_priority","scoring_date",True),
+    "model_health":("model_health","outcome_cutoff",False),
+    "model_monitoring":("model_monitoring","observation_cutoff",False),
     "estimated_store_sku_daily":("mart_store_sku_daily_estimated","date",True),
     "estimated_store_day":("mart_store_day_estimated","date",True),
     "estimated_commercial_period":("mart_commercial_period_estimated","period_start",True),
 }
 ESTIMATED_VIEWS = frozenset(name for name in VIEWS if name.startswith("estimated_"))
+# Aggregated model reports: manager-only with full population scope, enforced by readers.
+MANAGER_AGGREGATE_VIEWS = frozenset({"model_health", "model_monitoring"})
+MODEL_HEALTH_DDL = """CREATE TABLE gold.model_health (
+    dataset_hash VARCHAR, source_build_id VARCHAR, model_version VARCHAR, algorithm VARCHAR,
+    candidate_id VARCHAR, report_id VARCHAR, evaluation_kind VARCHAR, fold_id VARCHAR,
+    window_start DATE, window_end DATE, outcome_cutoff DATE, group_kind VARCHAR, group_id VARCHAR,
+    sample_count BIGINT, positive_count BIGINT, tp BIGINT, fp BIGINT, fn BIGINT, tn BIGINT, alert_count BIGINT,
+    candidate_count BIGINT, precision DOUBLE, recall DOUBLE, roc_auc DOUBLE, average_precision DOUBLE,
+    label_coverage DOUBLE, brier_score DOUBLE, ece DOUBLE, meets_numeric_targets BOOLEAN, selected BOOLEAN,
+    parameters_json VARCHAR, fit_seconds DOUBLE, calibration_method VARCHAR, evaluation_status VARCHAR,
+    limitations_json VARCHAR, report_sha256 VARCHAR, schema_version VARCHAR)"""
+MODEL_MONITORING_DDL = """CREATE TABLE gold.model_monitoring (
+    dataset_hash VARCHAR, source_build_id VARCHAR, monitoring_run_id VARCHAR, model_version VARCHAR,
+    observation_cutoff DATE, window_start DATE, window_end DATE,
+    issued_count BIGINT, eligible_count BIGINT, pending_count BIGINT, unknown_outcome_count BIGINT,
+    tp BIGINT, fp BIGINT, fn BIGINT, tn BIGINT, alert_count BIGINT,
+    precision DOUBLE, recall DOUBLE, roc_auc DOUBLE, average_precision DOUBLE, label_coverage DOUBLE,
+    brier_score DOUBLE, ece DOUBLE, performance_status VARCHAR, drift_status VARCHAR, retrain_status VARCHAR,
+    drift_json VARCHAR, reasons_json VARCHAR, issued_runs_json VARCHAR, report_sha256 VARCHAR, schema_version VARCHAR)"""
 
 
 def build_serving(source_build_dir, feature_build_dir, output_root=None, *, access_policy=None,
@@ -117,6 +138,8 @@ def build_serving(source_build_dir, feature_build_dir, output_root=None, *, acce
                 priority_rank BIGINT,risk_score DOUBLE,msl_gap_count BIGINT,ranking_policy_version VARCHAR,reason_json VARCHAR);
                 CREATE TABLE gold.account_scope (principal_id VARCHAR,store_id VARCHAR,role VARCHAR,scope_version VARCHAR,
                     PRIMARY KEY(principal_id,store_id));""")
+            con.execute(MODEL_HEALTH_DDL)
+            con.execute(MODEL_MONITORING_DDL)
             valid_stores={r[0] for r in con.execute("SELECT store_id FROM gold.dim_stores").fetchall()}
             for row in policy["assignments"]:
                 if set(row)!={"principal_id","store_id","role"} or not row["principal_id"] or row["store_id"] not in valid_stores or row["role"] not in {"sales","manager"}:

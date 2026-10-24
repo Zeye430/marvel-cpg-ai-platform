@@ -13,8 +13,11 @@ fill missing days or recreate the pipeline on every dashboard refresh. Database
 generation is a separate job. The user interface/filters/charts live in the
 Module 1 branch; shared definitions and transformations live in the data layer.
 
-There is no PostgreSQL/Aiven connection string for this path. Resolve the local
-published serving manifest and open one verified, read-only version. See the
+The local path needs no connection string: resolve the local published serving
+manifest and open one verified, read-only version. A shared PostgreSQL release
+with the same reader API is available as an opt-in path ([quickstart section 5](README.md#5-connect-your-module--module-developers));
+Module 1 has **not** been migrated to it, and it is unrelated to the legacy Aiven
+raw tables that the old app reads. See the
 quickstart for local rebuild versus an authorized copied artifact. Applications
 must take the principal from a verified session; a dropdown or URL cannot grant
 store access. Pin one publication per request/job and key caches by artifact ID
@@ -138,8 +141,10 @@ run through the shared output interface; do not join all scoring runs together.
 
 ## 6. Migration and acceptance checklist
 
-1. Implement a data adapter in the Module 1 branch using verified shared serving;
-   keep legacy access separate until parity is reviewed. This guide itself does
+1. Implement a data adapter in the Module 1 branch using verified shared serving
+   (local DuckDB, or the shared PostgreSQL reader via
+   `data_platform.readers.open_business_reader`); keep legacy access separate
+   until parity is reviewed. This guide itself does
    not change Aiven credentials, ETL jobs or the old application.
 2. Map each old card/chart to its shared view, grain, fields and denominator.
    Do not mix V1/V2 outputs with the active V3 publication.

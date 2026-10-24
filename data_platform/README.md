@@ -15,6 +15,7 @@ This page is the package command reference, not a second onboarding guide.
 | Serving fields / grains | [Gold dictionary](../docs/data/v3-gold-data-dictionary.md) |
 | Governed business rules | [KPI/missing-day specification](../docs/solution-specifications/kpi-and-missing-store-day-handling.md) |
 | Executable interfaces | [Source contract](contracts/v3/sources.json), [module contract](contracts/v3/module-data-contract.json), [read example](../examples/read_shared_data.py) |
+| Shared PostgreSQL (opt-in) | [PostgreSQL publication](#shared-postgresql-publication-opt-in), [column/type contract](contracts/v3/postgres-serving.json), [PostgreSQL read example](../examples/read_postgres_data.py) |
 
 ## Commands
 
@@ -24,12 +25,13 @@ Every command exposes `--help`; the recommended full workflow is in the guide.
 | Command | Purpose / boundary |
 | --- | --- |
 | `audit-data` | Source/header/hash diagnostic; inspect JSON, exit 0 alone is not a match |
-| `build-all` | Business source/Gold, May development features/labels, June scoring features, serving; optional publication |
+| `plan-evaluation` | Metadata-only strict rolling-30-day calendar plan from an explicit accepted base build; prints JSON, does not unlock test or alter builders |
+| `build-all` | Source/Gold, development features/labels, latest scoring features and serving; fixed profile by default, `--rolling-evaluation` opts into one shared 30-day plan |
 | `build` | Internal Bronze/Silver; `--include-kpi-marts` adds dependent internal Gold; not an application DB |
 | `build --publish-silver` | Publish internal Silver, not business serving |
-| `export-feature-input` | Allowlisted projection; explicit source build/cutoff; optional replenishment/context inputs |
-| `build-features` | Development capped May 31; `--purpose scoring` permits June past-only features without labels |
-| `build-labels` | Development capped May 31; June `--purpose test --test-release ...` requires approved freeze/May evidence |
+| `export-feature-input` | Allowlisted projection; explicit source/cutoff; optional `--temporal-plan FILE` and replenishment/context inputs |
+| `build-features` | Legacy fixed cap by default; `--temporal-plan FILE` enforces plan development/scoring boundaries without labels |
+| `build-labels` | Legacy fixed folds by default; `--temporal-plan FILE` builds source-bound rolling development folds only; June legacy test remains evidence-gated |
 | `build-serving` | New immutable business snapshot from matching source and latest-scoring feature artifacts; optional access policy |
 | `publish-serving` / `rollback-serving` | Promote a verified snapshot or republish a verified historical version |
 | `evaluate-missing` | Restricted March/April masking diagnostics; not model training or estimator approval |
@@ -38,6 +40,39 @@ Base-only commands default to `outputs/v3/platform/`; recommended `build-all`
 explicitly uses `outputs/v3/platform/delivery/`. Do not confuse their pointers.
 `build-serving` requires matching dataset/source and exact cutoff: June business
 uses June **scoring**, not May development, features.
+
+To preview rolling evaluation dates without querying outcomes or writing files:
+
+```bash
+uv run python -m data_platform plan-evaluation \
+  --source-build-dir /YOUR/accepted/base/build-directory
+```
+
+The cutoff/history come from the verified source manifest, not a machine clock
+or date override. Output `oos_temporal_plan.v1` includes provenance, deterministic
+plan identity, reserved/eligible/purged/pending dates and latest prediction dates.
+It remains `Temporal_only` / `test_access=Locked`: not model approval, a complete
+evaluation release or observed-label coverage. `build-labels --temporal-plan FILE`
+can consume a saved canonical plan for development labels/partitions. Its
+explicit `--as-of` must equal the plan's validation outcome end and its source
+must match exactly. Plan-aware test release is rejected. `build-features` and
+`export-feature-input` also accept `--temporal-plan FILE`, enforcing the exact
+purpose cutoff/source. Default calls retain the fixed V3 profile. To build all
+components with one plan:
+
+```bash
+uv run python -m data_platform build-all \
+  --as-of 2026-06-30 --rolling-evaluation --assume-complete-snapshot \
+  --output-root outputs/v3/platform/rolling-delivery
+```
+
+The workflow saves `temporal-plan.json` beside its run manifest. Development
+features/labels stop at the validation outcome cutoff, latest-scoring features
+and business serving reach the source cutoff, and test remains locked. No model
+is trained and no real test-release evidence is generated. Omit `--publish` to
+keep this an unpublished candidate. Future-source verification/provisioning
+and rolling test release remain separate work.
+See the [Module 2 guide](../docs/data/v3-module-2-integration.md) for examples.
 
 ## Publication and rollback
 
@@ -57,6 +92,88 @@ accepted databases/manifests, delete good builds or select the newest directory.
 A copied artifact is opened explicitly with the reader's `--artifact-dir`;
 a machine-specific publication pointer is not a portable deployment config.
 
+## Shared PostgreSQL publication (opt-in)
+
+Processing stays local in DuckDB. A verified, application-ready serving snapshot
+can then be copied **once** into PostgreSQL (`shared_postgres_serving.v1`) so every
+module can read the same release over the network with the same scoped reader
+API. Install the optional driver with `uv sync --frozen --extra postgres`.
+
+```text
+verified business.duckdb --inspect-source--> load (candidate) --> validate --> activate
+                                                         rollback <-- publication history
+```
+
+| Command (`python -m data_platform.postgres_cli ...`) | Effect |
+| --- | --- |
+| `inspect-source --artifact-dir DIR` | Verifies the local snapshot against the column/type contract; no database |
+| `preflight` | SELECT-only: server version, privileges, platform state, release list and sizes |
+| `init` | Creates `platform_meta`, `platform_access`, `platform_serving` and role `platform_serving_reader` (NOLOGIN) once |
+| `load --artifact-dir DIR` | Streams every approved view into a new isolated `platform_release_<id>` schema (≤10,000-row COPY chunks), then validates it; identical input (same run record, quality report and database bytes) is re-verified and reused, never copied twice |
+| `validate --release-id ID` | Re-verifies types, view definitions, write guards, row counts, keys/grains, ranges, KPI components and full typed content digests; a failure exits non-zero and marks the release `Failed` |
+| `activate --release-id ID` | Re-verifies the payload and points `platform_serving.vw_*` and the current-release record at it in one transaction |
+| `rollback --publication-id ID` | Re-verifies and re-publishes an earlier publication's release; history is appended, never edited |
+| `configure-scopes --policy-file FILE` | Replaces store-scope assignments (same JSON format as the DuckDB access policy) |
+
+`inspect-source` and `preflight` are read-only. `init`, `load`, `activate`,
+`rollback` and `configure-scopes` are **dry runs** unless given `--apply` and
+`--confirm-database <target database name>`. `validate` has no dry run: it is an
+explicit operator operation that records its result in the release registry and,
+on failure, marks the release `Failed` and withdraws reader access to it (exit
+status 1). Connection settings come only from environment variables (never from
+arguments or a legacy `DATABASE_URL`):
+
+| Variable | Used by |
+| --- | --- |
+| `SHARED_DATA_PUBLISH_DATABASE_URL` | Operator CLI (schema owner credential) |
+| `SHARED_DATA_DATABASE_URL` | Applications and the read example (read-only credential) |
+| `SHARED_DATA_SSLROOTCERT` | CA certificate file; remote targets require `sslmode=verify-full` |
+| `SHARED_DATA_BACKEND` | `duckdb` (default) or `postgres` for applications that support both |
+| `SHARED_DATA_RELEASE_ID` | Optional: pin an earlier *published* release instead of the current one |
+| `SHARED_DATA_PUBLISH_STATEMENT_TIMEOUT_SECONDS` | Optional operator statement timeout (default 3600) |
+
+Only the 18 named serving views are exported (`gold.account_scope`, source quality
+tables, Bronze/Silver, features, labels and model files never are). Store scopes
+live in `platform_access`, configured separately, and are not changed by
+activation or rollback; no assignment means no access. Existing tables in other
+schemas (for example `public.*`) are never read, altered or dropped. The
+application login must be a member of `platform_serving_reader` only: it can read
+published views and release metadata, and cannot write, create objects or read
+candidates. Readers pin one published release for their lifetime (restart the
+app to pick up a newly activated release).
+
+A release is identified by its source run record, quality report and database
+bytes: the same source artifact ID with different bytes is refused as a conflict.
+Imported payload tables reject writes (a statement trigger); verification also
+detects changes made by bypassing it. A release that fails verification is marked
+`Failed` and is never activated. If it is published, applications lose access to
+it immediately (pinned readers and `platform_serving.vw_*` fail closed); history
+and the current-publication record are left as they are. Recover with
+`rollback --publication-id <earlier publication>` or by loading and activating a
+newly built serving artifact; a published release is never reloaded in place.
+
+A release schema is touched only if this publisher created it (its recorded
+schema OID matches); a pre-existing schema with the same name is refused and left
+untouched, and dropping an own failed candidate never cascades into other objects.
+At most three release payloads may be stored at once, **in any state** (current,
+rollback, candidates, failed or interrupted imports); a further distinct load is
+refused and lists the stored payloads and their sizes. This version has no
+clean-up command and no automatic pruning: agree an explicit clean-up procedure
+before a fourth payload is needed.
+
+Integration tests use a disposable local server only, never a shared database:
+
+```bash
+docker compose -f compose.postgres-test.yml up -d --wait
+export SHARED_POSTGRES_TEST_DATABASE_URL=postgresql://synthetic_admin:synthetic-disposable-only@127.0.0.1:55437/shared_serving_synthetic_test
+SHARED_POSTGRES_REQUIRE_TEST_DB=1 uv run --frozen --extra postgres --extra app --extra module2 \
+  python -m unittest tests.test_postgres_integration -v
+docker compose -f compose.postgres-test.yml down -v   # removes only this test container and its volume
+```
+
+The tests refuse any target that is not a numeric loopback address, the marked
+test database and a server started with the disposable-test marker.
+
 ## Validation and ownership
 
 ```bash
@@ -69,8 +186,10 @@ future-mutation/replay, label isolation, scopes and artifact integrity. Each bui
 retains `run.json` / `quality.json`. Passing these checks is not model target
 certification, guardrail approval or candidate-estimator adoption.
 
-Business reaches June 30; model development stops May 31 and June test stays
-evidence-gated. Reported is default; three separate Estimated candidate views
+The current supplied business data reaches June30. Legacy development is capped
+at May31; explicit rolling mode derives the cutoff from its source-bound plan
+(also May31 for a June30 source). Neither mode unlocks real test automatically.
+Reported is default; three separate Estimated candidate views
 need explicit read opt-in and UI labeling. Access defaults to deny all. Missing
 model outputs are unavailable, not zero. No application should connect to the
 internal source or evaluation files.

@@ -1,0 +1,35 @@
+# Disposable PostgreSQL for the shared-serving integration tests only.
+# Synthetic data and throwaway credentials; not a deployment file and unrelated
+# to the application Compose file. Data lives in this project's own volume;
+# `down -v` removes the container and that volume only.
+#
+#   docker compose -f compose.postgres-test.yml up -d --wait
+#   export SHARED_POSTGRES_TEST_DATABASE_URL=postgresql://synthetic_admin:synthetic-disposable-only@127.0.0.1:55437/shared_serving_synthetic_test
+#   SHARED_POSTGRES_REQUIRE_TEST_DB=1 python -m unittest tests.test_postgres_integration -v
+#   docker compose -f compose.postgres-test.yml down -v
+name: shared-serving-postgres-test
+
+services:
+  postgres:
+    image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+    container_name: shared-serving-postgres-test
+    environment:
+      POSTGRES_USER: synthetic_admin
+      POSTGRES_PASSWORD: synthetic-disposable-only
+      POSTGRES_DB: shared_serving_synthetic_test
+    # The marker setting identifies this server as disposable; tests refuse any
+    # target where it is absent.
+    command: ["postgres", "-c", "shared_serving.synthetic_test_marker=disposable-synthetic-v1",
+              "-c", "max_connections=60"]
+    ports:
+      - "127.0.0.1:55437:5432"
+    volumes:
+      - shared-serving-postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synthetic_admin -d shared_serving_synthetic_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  shared-serving-postgres-test-data:

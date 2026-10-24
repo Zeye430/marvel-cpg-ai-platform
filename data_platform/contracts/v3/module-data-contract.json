@@ -20,7 +20,12 @@
     "prediction_output": "gold.predictions_oos",
     "ranking_output": "gold.mart_visit_priority",
     "output_requirements": ["matching dataset_hash/build_id", "explicit scoring_run_id/date", "model/feature/ranking version", "probability in [0,1]", "one selected run, no fabricated missing outputs"],
-    "unreleased_behavior": "Empty typed output tables and Unavailable_model_not_released, never zero risk"
+    "unreleased_behavior": "Empty typed output tables and Unavailable_model_not_released, never zero risk",
+    "aggregate_outputs": ["gold.model_health", "gold.model_monitoring"],
+    "aggregate_access": "Aggregated counts/metrics only; manager-only with full-population scope, enforced by ServingReader.read and read_page",
+    "output_publisher": "data_platform.model_outputs.build_serving_with_model_outputs: new immutable serving artifact from a verified base; isolated candidate roots only",
+    "paged_read": "ServingReader.read_page(name, principal_id, *, start, end, store_id, sku_id, after, page_size<=1000); fixed view allowlist and keyset order; cursor bound to artifact/view/filters/principal/scope",
+    "test_release": "oos_test_release.v2 via data_platform.test_release.authorize_rolling_test_release with the project exposure ledger (data_platform.test_exposure); plan-bound test labels only via build-labels --purpose test"
   },
   "module_3": {
     "artifact": "serving",
@@ -34,6 +39,17 @@
     "safe_table_reader": "data_platform.access.ServingReader",
     "nlq_runtime": "Must enforce SELECT/function/view allowlists, verified identity scope and limits; never expose a raw DuckDB connection to an LLM",
     "knowledge_contract": {"required_fields": ["document_id", "version", "content_hash", "authorized_source", "effective_date", "permission_scope", "citation_location"], "corpus_status": "Not supplied by the eight CSVs; ingestion/retrieval belongs to Module 4"}
+  },
+  "postgres_serving": {
+    "interface_version": "shared_postgres_serving.v1",
+    "status": "Opt-in; verified against a local disposable PostgreSQL with synthetic data; no shared deployment or module cutover implied",
+    "column_contract": "data_platform/contracts/v3/postgres-serving.json",
+    "publisher": "python -m data_platform.postgres_cli (inspect-source, preflight, init, load, validate, activate, rollback, configure-scopes); inspect-source/preflight read-only; init/load/activate/rollback/configure-scopes dry run unless --apply --confirm-database; validate records its result and on failure marks the release Failed and withdraws reader access",
+    "reader": "data_platform.readers.open_business_reader(backend='postgres', postgres_config=...) -> same read/read_page/principal_scope/schema API, limits and errors as ServingReader; pins one published release",
+    "namespaces": ["platform_meta", "platform_access", "platform_serving", "platform_release_<id>"],
+    "app_settings": ["SHARED_DATA_BACKEND", "SHARED_DATA_DATABASE_URL", "SHARED_DATA_SSLROOTCERT", "SHARED_DATA_RELEASE_ID"],
+    "access": "Scopes live in platform_access and are configured separately; application login is a member of platform_serving_reader only (SELECT on published views)",
+    "integrity": "Release identity binds the source run record, quality report and database bytes; payloads are write-guarded and fully re-verified before activation/rollback; a failed verification marks the release Failed and withdraws reader access; at most max_retained_releases payloads are stored in any state"
   },
   "access": {
     "authentication_owner": "Application; principal_id must come from verified session, not query text",

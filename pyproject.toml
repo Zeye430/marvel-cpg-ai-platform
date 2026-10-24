@@ -22,6 +22,10 @@ module2 = [
     "scikit-learn==1.6.1",
     "xgboost==3.1.2",
 ]
+# Optional shared PostgreSQL serving backend (publisher and read-only reader).
+postgres = [
+    "psycopg2-binary==2.9.13",
+]
 # Shiny application runtime (mirrors requirements.txt for the local app).
 app = [
     "anywidget",

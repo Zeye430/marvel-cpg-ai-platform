@@ -99,7 +99,18 @@ uv run python -m modules.module_2 demo --serving-root outputs/v3/module2/deliver
 
 # Root app: point the Module 2 tab at a candidate root
 MODULE2_SERVING_ROOT=outputs/v3/module2/delivery/<run>/serving uv run shiny run app.py
+
+# Opt-in: read the published shared PostgreSQL release instead (needs --extra postgres)
+SHARED_DATA_BACKEND=postgres SHARED_DATA_DATABASE_URL='postgresql://<read-only login>@<host>:<port>/<db>?sslmode=verify-full' \
+  SHARED_DATA_SSLROOTCERT=<ca.pem> uv run shiny run app.py
 ```
+
+The backend is explicit: DuckDB (`MODULE2_SERVING_ROOT`) is the default, and
+`demo --serving-root` always stays offline on DuckDB. With `SHARED_DATA_BACKEND=postgres`
+the service reads one pinned published release (restart to pick up a newly
+activated one); a connection or configuration problem shows an unavailable state
+and never falls back to local files. Publishing to PostgreSQL is a data-platform
+operator step (`python -m data_platform.postgres_cli`), not a Module 2 command.
 
 Step commands (`benchmark`, `freeze`, `validate`, `evaluate-holdout`, `score`, `rank`,
 `build-serving-candidate`, `monitor`, `challenger-request`, `rollback-candidate`) have
@@ -180,7 +191,9 @@ Sales see **Today's priorities** (filters, CSV export, details) and **Store deta
 **Model health** (real benchmark comparison, validation vs holdout, segments,
 calibration, limitations) and **Monitoring**. The principal comes from the server
 session; health/monitoring are enforced manager-only with full-population scope in
-the shared reader. Demo identities (`demo:rep-a` … `demo:rep-f`, `demo:manager`)
+the shared reader (both backends). Every request re-checks the principal's current
+scope, so a changed or revoked assignment is never answered from cache; if that check
+fails (denied or the data service is unavailable) the request ends without data. Demo identities (`demo:rep-a` … `demo:rep-f`, `demo:manager`)
 use a generated round-robin store assignment, not customer territories, and are
 not production authentication.
 

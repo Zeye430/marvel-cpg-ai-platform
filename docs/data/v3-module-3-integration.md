@@ -114,8 +114,12 @@ be developed with a clearly review-required state without inventing approvals.
 
 ## 6. Read database versus write database
 
-`business.duckdb` is immutable and read-only. Do not insert scenario records,
-chat messages or edited discounts into it. Module 3 owns a separate application
+`business.duckdb` is immutable and read-only, and so is a shared PostgreSQL release:
+the application login can only read published `platform_*` views. Do not insert
+scenario records, chat messages or edited discounts into either. Module 3 has not
+been migrated to the PostgreSQL reader; when it is, open it with
+`data_platform.readers.open_business_reader(backend="postgres", ...)` and keep the
+same review-required states. Module 3 owns a separate application
 store for drafts/scenarios/approval actions; its persistence implementation is
 outside this data-layer delivery. Choose it in the module/application design.
 

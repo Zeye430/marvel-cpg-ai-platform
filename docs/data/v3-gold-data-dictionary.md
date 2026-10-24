@@ -25,6 +25,19 @@ The feature and isolated label schemas are deliberately not served here.
 - Future prediction and priority interfaces contain zero rows. This means unavailable, not zero risk. Model selection/calibration and ranking algorithms are outside this branch.
 - Global references still require an assigned authenticated principal; store-scoped views additionally filter to explicitly assigned stores. `date_column` below is the reader's bound column, not a claim that all other dates are historical event dates.
 
+## Shared PostgreSQL copy (opt-in)
+
+A published PostgreSQL release contains the same views, columns, order, rows and
+grains as the source snapshot: `platform_serving.vw_<name>` follows the current
+release, and `platform_release_<release_id>.vw_<name>` is one immutable release
+(what the shared reader pins). Types map losslessly, as fixed in the
+[PostgreSQL column/type contract](../../data_platform/contracts/v3/postgres-serving.json):
+VARCHAR → `text COLLATE "C"`, BOOLEAN/DATE/INTEGER/BIGINT unchanged, DOUBLE →
+`double precision`, DECIMAL(p,s) → `numeric(p,s)`, HUGEINT → `numeric(39,0)`.
+The reader returns the same Python values as the DuckDB reader; `schema()` reports
+the DuckDB type names below plus `backend_type`. Account scopes are not part of a
+release.
+
 ## serving.vw_store_sku_daily
 
 Grain: date × store_id × sku_id; confirmed assortment dates only.

@@ -431,7 +431,15 @@ Never insert directly into an accepted business.duckdb.
 
 `ServingReader.read_page(name, principal_id, *, start, end, store_id, sku_id, after,
 page_size)` pages the Module 2 views with a stable key order; the opaque cursor is
-bound to the artifact, view, filters and principal and never widens scope.
+bound to the artifact, view, filters, principal and scope fingerprint and never widens scope.
+
+The Module 2 service also runs on the shared PostgreSQL release (opt-in): set
+`SHARED_DATA_BACKEND=postgres` with `SHARED_DATA_DATABASE_URL` and
+`SHARED_DATA_SSLROOTCERT`, or construct `Module2Service(reader=...)` with the
+reader from `data_platform.readers`. Models, ranking and UI are unchanged; the
+local DuckDB candidate remains the default. A PostgreSQL copy carries the source
+snapshot's publication kind and model status unchanged; publishing it there does
+not qualify a model.
 
 A controlled output handoff provides:
 

@@ -50,6 +50,22 @@ class TeamDocumentationTests(unittest.TestCase):
             self.assertIn("](README.md)", (ROOT / "docs/data" / filename).read_text())
         self.assertIn("](docs/data/README.md)", (ROOT / "README.md").read_text())
 
+    def test_postgres_path_is_documented_without_claiming_cutover(self):
+        landing = (ROOT / "docs/data/README.md").read_text()
+        package = (ROOT / "data_platform/README.md").read_text()
+        self.assertIn("](../../examples/read_postgres_data.py)", landing)
+        self.assertIn("](contracts/v3/postgres-serving.json)", package)
+        self.assertIn("Nothing has been published to Aiven yet", landing)
+        for number in (1, 3):
+            self.assertIn("not", (ROOT / "docs/data" / f"v3-module-{number}-integration.md").read_text().split("PostgreSQL", 1)[1][:400])
+        self.assertIn("SHARED_DATA_BACKEND=postgres", (ROOT / "docs/data/v3-module-2-integration.md").read_text())
+        self.assertIn("Never give these credentials", (ROOT / "docs/data/v3-module-4-integration.md").read_text())
+        for doc in PUBLIC_DOCS + [ROOT / "data_platform/README.md", ROOT / "modules/module_2/README.md",
+                                  ROOT / "examples/read_postgres_data.py", ROOT / "compose.postgres-test.yml"]:
+            text = doc.read_text()
+            with self.subTest(document=doc.relative_to(ROOT)):
+                self.assertNotRegex(text, r"TASK-\d{4}|ACR-\d{4}|Claude|Codex|aivencloud\.com")
+
     def test_onboarding_python_and_json_examples_parse(self):
         for doc in PUBLIC_DOCS + [ROOT / "data_platform/README.md"]:
             for language, code in re.findall(r"```(python|json)\n(.*?)\n```", doc.read_text(), re.S):

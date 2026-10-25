@@ -33,10 +33,64 @@ def _plain(value):
     return value.isoformat() if isinstance(value, date) else value
 
 
+def scope_fingerprint(assignments):
+    """Stable digest of one principal's actual (store_id, role, scope_version) assignments."""
+    rows = sorted([str(s), str(r), str(v)] for s, r, v in assignments)
+    return hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest()
+
+
+def check_page_request(name, page_size, store_id, sku_id, start, end):
+    """Shared read_page argument validation; returns (keys, relation, date_column, scoped)."""
+    if name not in PAGE_VIEWS or type(page_size) is not int or not 1 <= page_size <= MAX_PAGE:
+        raise ValueError("Unsupported paged view or invalid page size")
+    keys, filters = PAGE_VIEWS[name]
+    relation, date_column, scoped = VIEWS[name]
+    for label, value in (("store_id", store_id), ("sku_id", sku_id)):
+        if value is not None and (label not in filters or not isinstance(value, str)):
+            raise ValueError(f"{label} filter is not supported for {name}")
+    if (start is not None or end is not None) and not date_column:
+        raise ValueError("This view has no date filter")
+    for bound in (start, end):
+        if bound is not None and type(bound) is not date:
+            raise ValueError("Date filters must be datetime.date values")
+    return keys, relation, date_column, scoped
+
+
+class CursorCodec:
+    """HMAC-authenticated keyset cursors bound to their read context (per reader instance)."""
+
+    def __init__(self):
+        self._key = secrets.token_bytes(32)
+
+    def encode(self, payload):
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=_plain).encode()
+        tag = hmac.new(self._key, body, hashlib.sha256).hexdigest()
+        return base64.urlsafe_b64encode(body).decode() + "." + tag
+
+    def decode(self, cursor, expected, keys):
+        try:
+            body_text, tag = cursor.rsplit(".", 1)
+            body = base64.urlsafe_b64decode(body_text.encode())
+        except (ValueError, AttributeError) as error:
+            raise ValueError("Invalid page cursor") from error
+        if not hmac.compare_digest(hmac.new(self._key, body, hashlib.sha256).hexdigest(), tag):
+            raise ValueError("Invalid page cursor")
+        payload = json.loads(body)
+        if any(payload.get(k) != v for k, v in expected.items()):
+            raise ValueError("Page cursor does not match this view, filters, principal or scope")
+        last = payload["after"]
+        if not isinstance(last, list) or len(last) != len(keys):
+            raise ValueError("Invalid page cursor")
+        return [date.fromisoformat(v) if k in ("date", "scoring_date") and isinstance(v, str) else v
+                for k, v in zip(keys, last)]
+
+
 class ServingReader:
+    backend = "duckdb"
+
     def __init__(self, artifact_dir):
         self.record,self.database,_=verified_artifact(artifact_dir,kind="serving")
-        self._cursor_key = secrets.token_bytes(32)
+        self._cursors = CursorCodec()
 
     def _scope(self, con, principal_id):
         rows = con.execute("SELECT role, scope_version, count(*) FROM gold.account_scope WHERE principal_id=? GROUP BY 1,2",
@@ -94,43 +148,19 @@ class ServingReader:
             names=[c[0] for c in cursor.description]
             return [dict(zip(names,row)) for row in cursor.fetchall()]
 
-    def _encode(self, payload):
-        body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=_plain).encode()
-        tag = hmac.new(self._cursor_key, body, hashlib.sha256).hexdigest()
-        return base64.urlsafe_b64encode(body).decode() + "." + tag
-
-    def _decode(self, cursor, expected):
-        try:
-            body_text, tag = cursor.rsplit(".", 1)
-            body = base64.urlsafe_b64decode(body_text.encode())
-        except (ValueError, AttributeError) as error:
-            raise ValueError("Invalid page cursor") from error
-        if not hmac.compare_digest(hmac.new(self._cursor_key, body, hashlib.sha256).hexdigest(), tag):
-            raise ValueError("Invalid page cursor")
-        payload = json.loads(body)
-        if any(payload.get(k) != v for k, v in expected.items()):
-            raise ValueError("Page cursor does not match this view, filters, principal or scope")
-        return payload["after"]
+    def _fingerprint(self, con, principal_id):
+        return scope_fingerprint(con.execute("SELECT store_id, role, scope_version FROM gold.account_scope WHERE principal_id=?",
+                                             [principal_id]).fetchall())
 
     def read_page(self, name, principal_id, *, start=None, end=None, store_id=None, sku_id=None,
                   after=None, page_size=MAX_PAGE):
         """Keyset pages over a fixed view allowlist; scope is always re-applied."""
-        if name not in PAGE_VIEWS or type(page_size) is not int or not 1 <= page_size <= MAX_PAGE:
-            raise ValueError("Unsupported paged view or invalid page size")
-        keys, filters = PAGE_VIEWS[name]
-        relation, date_column, scoped = VIEWS[name]
-        for label, value in (("store_id", store_id), ("sku_id", sku_id)):
-            if value is not None and (label not in filters or not isinstance(value, str)):
-                raise ValueError(f"{label} filter is not supported for {name}")
-        if (start is not None or end is not None) and not date_column:
-            raise ValueError("This view has no date filter")
-        for bound in (start, end):
-            if bound is not None and type(bound) is not date:
-                raise ValueError("Date filters must be datetime.date values")
+        keys, relation, date_column, scoped = check_page_request(name, page_size, store_id, sku_id, start, end)
         with duckdb.connect(str(self.database), read_only=True) as con:
             rows = self._guard(con, name, principal_id, False)
-            identity = {"artifact": self.record["artifact_id"], "name": name, "principal": principal_id,
-                        "scope_version": sorted(r[1] for r in rows),
+            identity = {"backend": self.backend, "artifact": self.record["artifact_id"], "name": name,
+                        "principal": principal_id, "scope_version": sorted(r[1] for r in rows),
+                        "scope_fingerprint": self._fingerprint(con, principal_id),
                         "filters": {"start": _plain(start), "end": _plain(end), "store_id": store_id, "sku_id": sku_id}}
             predicates, params = [], []
             if scoped or name == "stores":
@@ -143,11 +173,7 @@ class ServingReader:
                 if bound is not None:
                     predicates.append(f"{date_column}{operator}?"); params.append(bound)
             if after is not None:
-                last = self._decode(after, identity)
-                if not isinstance(last, list) or len(last) != len(keys):
-                    raise ValueError("Invalid page cursor")
-                values = [date.fromisoformat(v) if k in ("date", "scoring_date") and isinstance(v, str) else v
-                          for k, v in zip(keys, last)]
+                values = self._cursors.decode(after, identity, keys)
                 predicates.append("(" + ",".join(keys) + ") > (" + ",".join("?" * len(keys)) + ")")
                 params += values
             sql = f"SELECT * FROM serving.vw_{name}"
@@ -159,7 +185,7 @@ class ServingReader:
         next_cursor = None
         if len(result) > page_size:
             result = result[:page_size]
-            next_cursor = self._encode({**identity, "after": [result[-1][k] for k in keys]})
+            next_cursor = self._cursors.encode({**identity, "after": [result[-1][k] for k in keys]})
         return {"rows": result, "next_cursor": next_cursor, "artifact_id": self.record["artifact_id"]}
 
     def principal_scope(self, principal_id):
@@ -169,9 +195,10 @@ class ServingReader:
             stores = con.execute("SELECT count(DISTINCT store_id) FROM gold.account_scope WHERE principal_id=?",
                                  [principal_id]).fetchone()[0]
             total = con.execute("SELECT count(*) FROM gold.dim_stores").fetchone()[0]
+            fingerprint = self._fingerprint(con, principal_id)
         roles = sorted({r[0] for r in rows})
         return {"roles": roles, "stores": stores, "full_population": stores == total,
-                "manager_full_scope": roles == ["manager"] and stores == total}
+                "manager_full_scope": roles == ["manager"] and stores == total, "scope_fingerprint": fingerprint}
 
     def schema(self):
         with duckdb.connect(str(self.database),read_only=True) as con:

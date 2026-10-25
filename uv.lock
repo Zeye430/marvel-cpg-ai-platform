@@ -984,6 +984,9 @@ module2 = [
     { name = "scikit-learn" },
     { name = "xgboost" },
 ]
+postgres = [
+    { name = "psycopg2-binary" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1003,6 +1006,7 @@ requires-dist = [
     { name = "pandas", specifier = "==2.3.3" },
     { name = "plotly", marker = "extra == 'app'", specifier = "==5.24.1" },
     { name = "psycopg2-binary", marker = "extra == 'app'", specifier = ">=2.9.9" },
+    { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = "==2.9.13" },
     { name = "pyarrow", marker = "extra == 'module2'", specifier = "==24.0.0" },
     { name = "python-dotenv", marker = "extra == 'app'", specifier = ">=1.0.0" },
     { name = "scikit-learn", marker = "extra == 'module2'", specifier = "==1.6.1" },
@@ -1012,7 +1016,7 @@ requires-dist = [
     { name = "sqlalchemy", marker = "extra == 'app'", specifier = ">=2.0.0" },
     { name = "xgboost", marker = "extra == 'module2'", specifier = "==3.1.2" },
 ]
-provides-extras = ["module2", "app"]
+provides-extras = ["module2", "postgres", "app"]
 
 [package.metadata.requires-dev]
 dev = [

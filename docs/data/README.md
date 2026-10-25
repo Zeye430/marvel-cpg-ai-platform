@@ -7,7 +7,7 @@ not replace their application/model development.
 | Your task | Read next | Shared input |
 | --- | --- | --- |
 | Module 1: KPIs / Store 360 | [Module 1 guide](v3-module-1-integration.md) | Reported daily facts, KPI components, commercial periods and execution visits |
-| Module 2: OOS / visits | [Module 2 guide](v3-module-2-integration.md) | Private features/labels and time folds; latest scoring inputs; future prediction/ranking interfaces |
+| Module 2: OOS / visits | [Module 2 guide](v3-module-2-integration.md), [module README](../../modules/module_2/README.md) | Private features/labels and time folds; latest scoring inputs; published predictions/ranking and manager-only model health |
 | Module 3: negotiation | [Module 3 guide](v3-module-3-integration.md) | Negotiation context, reference economics and review-required guardrails |
 | Module 4: data/knowledge assistant | [Module 4 guide](v3-module-4-integration.md) | Scoped business views and metric definitions; document retrieval is a separate module responsibility |
 | Check a field/type/grain | [Gold dictionary](v3-gold-data-dictionary.md) | 16 named serving views, including three opt-in Estimated candidate views |
@@ -201,7 +201,7 @@ serving-only copy cannot rebuild internal features/labels.
 | No `serving.json` | Build with `--publish`, select a local `--publication`, or use an accepted `--artifact-dir` |
 | Artifact integrity failure | Restore/rebuild the complete artifact; never bypass checks |
 | No configured account scope | Obtain approved assignments and build a new serving snapshot |
-| Prediction/ranking unavailable | Expected until Module 2 release; never replace with 0% risk |
+| Prediction/ranking unavailable | Expected in base serving and when no qualified model output is published; never replace with 0% risk |
 | Unknown metric / Requires review | Preserve the state; do not invent business approval |
 | Wrong cutoff | Separate June business/scoring from May development artifacts |
 

@@ -16,8 +16,8 @@ CONTEXT_SOURCES = (
 FEATURE_VERSION = "oos_context.v1"
 
 
-def build_oos_context_features(con, as_of, quality, *, purpose="development"):
-    validate_feature_cutoff(as_of, purpose)
+def build_oos_context_features(con, as_of, quality, *, purpose="development", temporal_plan=None):
+    validate_feature_cutoff(as_of, purpose, temporal_plan=temporal_plan)
     require_isolated_feature_connection(con)
     scope = "features_oos_context"
     con.execute("""CREATE TEMP TABLE _ctx_days AS

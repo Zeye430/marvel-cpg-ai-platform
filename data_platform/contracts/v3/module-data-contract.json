@@ -20,7 +20,12 @@
     "prediction_output": "gold.predictions_oos",
     "ranking_output": "gold.mart_visit_priority",
     "output_requirements": ["matching dataset_hash/build_id", "explicit scoring_run_id/date", "model/feature/ranking version", "probability in [0,1]", "one selected run, no fabricated missing outputs"],
-    "unreleased_behavior": "Empty typed output tables and Unavailable_model_not_released, never zero risk"
+    "unreleased_behavior": "Empty typed output tables and Unavailable_model_not_released, never zero risk",
+    "aggregate_outputs": ["gold.model_health", "gold.model_monitoring"],
+    "aggregate_access": "Aggregated counts/metrics only; manager-only with full-population scope, enforced by ServingReader.read and read_page",
+    "output_publisher": "data_platform.model_outputs.build_serving_with_model_outputs: new immutable serving artifact from a verified base; isolated candidate roots only",
+    "paged_read": "ServingReader.read_page(name, principal_id, *, start, end, store_id, sku_id, after, page_size<=1000); fixed view allowlist and keyset order; cursor bound to artifact/view/filters/principal/scope",
+    "test_release": "oos_test_release.v2 via data_platform.test_release.authorize_rolling_test_release with the project exposure ledger (data_platform.test_exposure); plan-bound test labels only via build-labels --purpose test"
   },
   "module_3": {
     "artifact": "serving",

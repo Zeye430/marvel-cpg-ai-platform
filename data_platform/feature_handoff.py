@@ -14,16 +14,17 @@ from .pipeline import PACKAGE, atomic_json, code_provenance
 from .replenishment_features import ORDER_COLUMNS, RECEIPT_COLUMNS
 from .context_features import CONTEXT_SOURCES
 from .time_policy import BUSINESS_CUTOFF, validate_feature_cutoff
+from .temporal_plan import bind_source_plan
 
 
-def export_feature_input(source_build_dir, output_root, as_of, *, include_replenishment=False, include_context=False, purpose="development"):
+def export_feature_input(source_build_dir, output_root, as_of, *, include_replenishment=False, include_context=False, purpose="development", temporal_plan=None):
     """Create an immutable projection directory from a validated local build.
 
     Only this exporter connects to the source database. Feature calculations
     subsequently connect only to projection.duckdb, with no source attachment.
     Failed pending directories are retained for diagnosis, never promoted.
     """
-    validate_feature_cutoff(as_of, purpose)
+    validate_feature_cutoff(as_of, purpose, temporal_plan=temporal_plan)
     if type(include_replenishment) is not bool or type(include_context) is not bool:
         raise ValueError("Projection flags must be explicit booleans")
     source_dir = Path(source_build_dir).resolve()
@@ -42,6 +43,10 @@ def export_feature_input(source_build_dir, output_root, as_of, *, include_replen
     required = [c for c in checks if c.get("severity") == "error"]
     if not required or any(c.get("passed") is not True or c.get("failed_count") != 0 for c in required):
         raise ValueError("Source must have passing required quality checks")
+    plan_metadata = {}
+    if temporal_plan is not None:
+        plan = bind_source_plan(temporal_plan, report, cutoff)
+        plan_metadata["temporal_plan"] = plan.to_dict()
 
     root = Path(output_root).resolve()
     if root == source_dir or source_dir in root.parents:
@@ -63,6 +68,7 @@ def export_feature_input(source_build_dir, output_root, as_of, *, include_replen
         "include_replenishment": include_replenishment,
         "include_context": include_context,
         "purpose": purpose,
+        **plan_metadata,
     }
     try:
         projection = ", ".join(INPUT_COLUMNS)

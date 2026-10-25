@@ -145,6 +145,15 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
     active_rep = reactive.value(None)
     active_name = reactive.value(MANAGER_PROFILE["name"])
     active_title = reactive.value(MANAGER_PROFILE["title"])
+    # Server-side session identity for data scoping (demo identities only; not
+    # production authentication). Signed out until a login handler runs.
+    principal_id = reactive.value(None)
+    authenticated = reactive.value(False)
+    is_demo = reactive.value(True)
+
+    def _sign_in(principal):
+        principal_id.set(principal)
+        authenticated.set(True)
 
     @reactive.effect
     @reactive.event(input.btn_login_manager)
@@ -153,6 +162,7 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         active_rep.set(None)
         active_name.set(MANAGER_PROFILE["name"])
         active_title.set(MANAGER_PROFILE["title"])
+        _sign_in("demo:manager")
         ui.update_text("auth_state", value="logged_in")
         ui.update_text("user_role_state", value="manager")
 
@@ -165,6 +175,7 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         active_rep.set(rep_id)
         active_name.set(prof["name"])
         active_title.set(f"{prof['title']} ({prof['region']})")
+        _sign_in("demo:rep-" + (active_rep() or "Rep A").split()[-1].lower())
         ui.update_text("auth_state", value="logged_in")
         ui.update_text("user_role_state", value="rep")
 
@@ -175,6 +186,7 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         active_rep.set(None)
         active_name.set(MANAGER_PROFILE["name"])
         active_title.set(MANAGER_PROFILE["title"])
+        _sign_in("demo:manager")
         ui.update_text("auth_state", value="logged_in")
         ui.update_text("user_role_state", value="manager")
 
@@ -186,12 +198,15 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         active_rep.set("Rep A")
         active_name.set(prof["name"])
         active_title.set(f"{prof['title']} ({prof['region']})")
+        _sign_in("demo:rep-" + (active_rep() or "Rep A").split()[-1].lower())
         ui.update_text("auth_state", value="logged_in")
         ui.update_text("user_role_state", value="rep")
 
     @reactive.effect
     @reactive.event(input.btn_logout)
     def _do_logout():
+        principal_id.set(None)
+        authenticated.set(False)
         ui.update_text("auth_state", value="logged_out")
 
     @render.ui
@@ -229,4 +244,7 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         "rep": active_rep,
         "name": active_name,
         "title": active_title,
+        "principal_id": principal_id,
+        "authenticated": authenticated,
+        "is_demo": is_demo,
     }

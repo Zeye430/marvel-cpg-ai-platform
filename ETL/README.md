@@ -1,68 +1,77 @@
-# Marvel CPG AI Platform — Aiven PostgreSQL ETL & Loader
+# Marvel CPG AI Platform — Aiven PostgreSQL ETL & Loaders
 
-This directory contains the database initialization and bulk ETL streaming script to load the transformed CPG dataset (`new_marvel_data`) into Aiven PostgreSQL.
+This directory contains database initialization, transformation, and bulk ETL streaming scripts to load the Marvel CPG dataset into Aiven PostgreSQL.
 
-## Features
+## Scripts Overview
 
-- **Automated Environment Resolution**: Loads connection credentials directly from `.env` (`DATABASE_URL` or individual `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`).
-- **Database Management**: Supports automated creation of dedicated databases (`--create-db --dbname <name>`) or loading directly into existing databases (`defaultdb`).
-- **Schema & Constraints**: Complete DDL aligning with [`new_marvel_data/erd_code.mmd`](../new_marvel_data/erd_code.mmd) including Primary Keys, composite keys, and Foreign Key relationships.
-- **High-Speed Streaming**: Ingests millions of rows using PostgreSQL's native streaming `COPY ... FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')`.
-- **Performance Indexes**: Automatically creates analytical B-Tree indexes on dates, store IDs, SKU IDs, promotion IDs, and status flags to ensure sub-second dashboard performance.
-- **Automated Verification**: Automatically validates that table row counts in PostgreSQL match CSV file line counts.
+| Script | Architecture | Input Data | Target Schemas | Purpose |
+|---|---|---|---|---|
+| **[`etl_pipeline.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/etl_pipeline.py)** | **Approach A: Two-Engine Hybrid (DuckDB $\rightarrow$ PostgreSQL)** | `data/raw/*.csv` | `silver`, `gold`, `serving` | Full end-to-end ETL: Extracts raw data, runs Silver typing/reconciliations, generates Gold Marts (KPIs, estimation, commercial periods, visits, negotiation context), and creates Serving views in PostgreSQL. |
+| **[`load_to_aiven.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/load_to_aiven.py)** | Single-Engine Raw Ingest | `new_marvel_data/*.csv` | `public` | Simple EL loader that loads raw CSVs directly into the public schema without transformation. |
 
 ---
 
-## Prerequisites
+## Approach A: End-to-End ETL Pipeline (`ETL/etl_pipeline.py`)
 
-Ensure `psycopg2` and `python-dotenv` are installed:
+### Features
+- **Smart Extraction & Harmonization**: Ingests the 8 raw CSVs from `data/raw/` and harmonizes schema attributes.
+- **DuckDB Transformation Engine**: Computes typed Silver foundations, Gold daily state aggregations, Must-Stock List (MSL) compliance %, Out-of-Stock (OOS) rates, commercial period rollups, and rolling 28-day negotiation context.
+- **High-Speed Streaming to PostgreSQL**: Pipes transformed tables from DuckDB directly into Aiven PostgreSQL using `COPY ... FROM STDIN`.
+- **Governed Serving Views**: Creates 14+ standardized views (`serving.vw_*`) in PostgreSQL for dashboard and application consumption.
+- **Automated Verification**: Automatically compares DuckDB and PostgreSQL row counts to ensure data integrity.
+
+### Usage
 
 ```bash
-pip install psycopg2-binary python-dotenv
-```
+# 1. Dry Run (Test transformations and database connection without loading):
+uv run python ETL/etl_pipeline.py --dry-run
 
-Ensure your `.env` contains the Aiven connection string:
-```bash
-DATABASE_URL=postgres://<user>:<password>@<host>:<port>/<dbname>?sslmode=require
-```
+# 2. Run Full End-to-End ETL (Transforms in DuckDB and loads to Aiven):
+uv run python ETL/etl_pipeline.py --drop-schemas
 
----
+# 3. Create a Dedicated Database & Ingest:
+uv run python ETL/etl_pipeline.py --create-db --dbname marvel_cpg --drop-schemas
 
-## Usage
-
-### 1. Dry Run (Test Connection & Validate Files)
-```bash
-python ETL/load_to_aiven.py --dry-run
-```
-
-### 2. Create a Dedicated Database & Ingest Data
-Creates the database `marvel_cpg` if it does not exist, builds all tables, and loads all 8 CSVs:
-```bash
-python ETL/load_to_aiven.py --create-db --dbname marvel_cpg
-```
-
-### 3. Load into Default Database (Recreate Tables)
-To overwrite or update existing tables in `defaultdb`:
-```bash
-python ETL/load_to_aiven.py --drop-tables
-```
-
-### 4. Create Tables Only (Without Loading CSVs)
-```bash
-python ETL/load_to_aiven.py --skip-load
+# 4. Transform Only (Creates DuckDB tables and checks schema without loading):
+uv run python ETL/etl_pipeline.py --skip-load
 ```
 
 ---
 
-## Schema Overview
+## Target Database Schema Architecture
 
-| Table | Type | Primary Key | Foreign Keys / References |
-|---|---|---|---|
-| `dim_stores` | Dimension | `store_id` | - |
-| `dim_products` | Dimension | `sku_id` | - |
-| `dim_guardrails` | Dimension | `(channel, category)` | - |
-| `dim_promotions` | Dimension | `promo_id` | `(channel, category) -> dim_guardrails` |
-| `fact_sell_in` | Fact | `transaction_id` | `store_id`, `sku_id`, `promo_id` |
-| `fact_deliveries` | Fact | `delivery_id` | `transaction_id (1:1)`, `store_id`, `sku_id` |
-| `fact_execution_audits` | Fact | `audit_id` | `store_id`, `sku_id` |
-| `fact_sell_out` | Fact | `(date, store_id, sku_id)` | `store_id`, `sku_id`, `promo_id` |
+```
+Aiven PostgreSQL
+├── silver/
+│   ├── dim_stores, dim_products, dim_guardrails, dim_promotions
+│   ├── fact_sell_in, fact_deliveries, fact_execution_audits, fact_sell_out
+│   ├── active_assortment, replenishment_events, promotion_calendar
+├── gold/
+│   ├── mart_store_sku_daily (dense facts with observed vs estimated states)
+│   ├── mart_store_day (daily store KPIs: OOS rate, MSL compliance)
+│   ├── mart_commercial_period (weekly/biweekly/monthly flow rollups)
+│   ├── mart_execution_visit (store audit visits and compliance rates)
+│   ├── mart_negotiation_context (28-day rolling window commercial terms)
+│   └── metric_definitions (governed metrics catalog)
+└── serving/ (Views)
+    ├── vw_stores, vw_products, vw_promotions
+    ├── vw_store_sku_daily, vw_store_day, vw_commercial_period
+    ├── vw_delivery_events, vw_sell_in_events, vw_execution_visits
+    ├── vw_negotiation_context, vw_metric_definitions
+    └── vw_estimated_store_sku_daily, vw_estimated_store_day
+```
+
+---
+
+## Raw Database Loader (`ETL/load_to_aiven.py`)
+
+To load the untransformed CSV files directly into the `public` schema:
+
+```bash
+# Dry run:
+uv run python ETL/load_to_aiven.py --dry-run
+
+# Recreate tables in public schema:
+uv run python ETL/load_to_aiven.py --drop-tables
+```
+

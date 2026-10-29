@@ -39,9 +39,13 @@ marvel-cpg-ai-platform/
 │   │   ├── ui.py               # Proposed deal terms, discount slider, and margin realization layout
 │   │   └── server.py           # Contractual guardrail validation (dim_guardrails) & waterfall economics
 │   │
-│   └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG)
-│       ├── ui.py               # Chat query prompt bar, preset queries, and document citations tray
-│       └── server.py           # Natural language to SQL translation & warehouse query execution
+│   └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG), see its README
+│       ├── ui.py, server.py    # Copilot tab: question box, example questions, answers with charts and citations
+│       ├── agent.py, router.py # Routes each question to the data path or the knowledge path
+│       ├── nlq.py, sandbox.py, sql_guard.py  # Text-to-SQL on a per-user scoped sandbox with SQL checks
+│       └── rag.py              # Cited answers from knowledge_base/ (12 authorized documents)
+│
+├── knowledge_base/             # Module 4 RAG corpus: documents, PDFs, registry, exported vector index
 │
 └── data_platform/              # Shared V3 Medallion Data Engine (DuckDB Bronze/Silver/Gold Marts)
 ```
@@ -82,11 +86,11 @@ marvel-cpg-ai-platform/
 
 ### 🤖 Module 4 — Commercial Copilot
 * **Work Type**: Conversational Analytics (Text-to-SQL + Grounded RAG)
-* **Target Users**: Commercial team members querying warehouse data and policy contracts.
+* **Target Users**: Field representatives and regional managers.
 * **Capabilities**:
-  - Natural language querying translated into executable ANSI SQL over warehouse facts.
-  - Live query results previewing records from `fact_sell_out`, `dim_stores`, and `dim_guardrails`.
-  - Grounded RAG document citations referencing official trade handbooks and JBP contract clauses.
+  - Natural-language data questions translated into one checked SQL query over the signed-in user's stores only (shared business publication), with a written answer, an automatic chart, the result table and the SQL.
+  - Product, substitution, objection and policy questions answered only from the 12 authorized documents in `knowledge_base/`, with citations to document, version, section and PDF page.
+  - Runs on a local model (Ollama), so no data leaves the machine. Setup, the RAG pipeline and the practice evaluation are in the [Module 4 README](modules/module_4/README.md).
 
 ---
 

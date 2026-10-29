@@ -36,6 +36,11 @@ app = [
     "shinywidgets",
     "sqlalchemy>=2.0.0",
 ]
+# Module 4 copilot: dense retrieval for the knowledge base (BM25-only without it).
+# The language model runs outside Python (local Ollama by default).
+module4 = [
+    "fastembed==0.9.1",
+]
 
 [dependency-groups]
 dev = [

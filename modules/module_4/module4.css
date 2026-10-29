@@ -1,0 +1,52 @@
+/* Module 4 copilot: conversation layout. Colours come from the app theme (www/styles.css). */
+#m4-root .m4-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+#m4-root .m4-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-light); background: #fff;
+  color: var(--text-secondary); }
+#m4-root .m4-dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa5b1; }
+#m4-root .m4-dot.ok { background: #2fbf71; }
+#m4-root .m4-dot.bad { background: #e5484d; }
+#m4-root .m4-tray { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+#m4-root .m4-tray .tray-label { min-width: 92px; }
+#m4-root .m4-ask { display: flex; gap: 8px; align-items: flex-start; }
+#m4-root .m4-ask .form-group { flex: 1; margin-bottom: 0; width: auto; }
+#m4-root .m4-ask textarea { width: 100%; resize: vertical; min-height: 46px; border-radius: 12px; }
+#m4-root .m4-turn { margin-bottom: 18px; }
+#m4-root .m4-q { display: inline-block; max-width: 85%; background: linear-gradient(135deg, rgba(115,251,211,0.28),
+  rgba(74,143,231,0.18)); border: 1px solid var(--border-light); border-radius: 14px 14px 4px 14px;
+  padding: 9px 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+#m4-root .m4-q-row { display: flex; justify-content: flex-end; }
+#m4-root .m4-a { padding: 18px 20px; }
+#m4-root .m4-a-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+#m4-root .m4-route { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; padding: 3px 9px;
+  border-radius: 6px; color: #fff; background: var(--accent-primary); }
+#m4-root .m4-route.knowledge { background: #7a5af8; }
+#m4-root .m4-route.other { background: #8794a8; }
+#m4-root .m4-meta { font-size: 0.74rem; color: var(--text-tertiary); }
+#m4-root .m4-answer { font-size: 0.92rem; line-height: 1.6; color: var(--text-primary); }
+#m4-root .m4-answer p:last-child { margin-bottom: 0; }
+#m4-root .m4-warn { border-left: 3px solid #f5a524; background: rgba(245,165,36,0.08); padding: 8px 12px;
+  border-radius: 6px; font-size: 0.86rem; }
+#m4-root .m4-section { margin-top: 14px; }
+#m4-root .m4-section-title { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; color: var(--text-tertiary);
+  margin-bottom: 6px; text-transform: uppercase; }
+#m4-root .m4-table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--border-light); border-radius: 10px; }
+#m4-root table.m4-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; }
+#m4-root table.m4-table th { position: sticky; top: 0; background: #eef5fc; text-align: left; padding: 6px 10px;
+  font-weight: 700; color: var(--text-secondary); }
+#m4-root table.m4-table td { padding: 5px 10px; border-top: 1px solid rgba(74,143,231,0.10); }
+#m4-root details.m4-details summary { cursor: pointer; font-size: 0.78rem; font-weight: 700; color: var(--accent-primary); }
+#m4-root pre.m4-sql { background: #1e1e24; color: #73fbd3; padding: 12px 14px; border-radius: 10px; font-size: 0.78rem;
+  white-space: pre-wrap; margin: 8px 0 0; }
+#m4-root ul.m4-cites { padding-left: 18px; margin: 0; font-size: 0.8rem; }
+#m4-root ul.m4-cites li { margin-bottom: 3px; color: var(--text-secondary); }
+#m4-root .m4-marker { font-weight: 800; color: #7a5af8; margin-right: 4px; }
+#m4-root .m4-passage { font-size: 0.78rem; color: var(--text-secondary); border-left: 2px solid var(--border-light);
+  padding-left: 10px; margin: 8px 0; white-space: pre-wrap; }
+#m4-root .m4-provenance { margin-top: 12px; font-size: 0.72rem; color: var(--text-tertiary); }
+#m4-root .m4-thinking { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 0.88rem; }
+#m4-root .m4-spinner { width: 16px; height: 16px; border: 2px solid var(--border-light); border-top-color: var(--accent-primary);
+  border-radius: 50%; animation: m4spin 0.8s linear infinite; }
+@keyframes m4spin { to { transform: rotate(360deg); } }
+#m4-root .m4-empty { text-align: center; color: var(--text-tertiary); font-size: 0.86rem; padding: 18px; }
+@media (max-width: 640px) { #m4-root .m4-ask { flex-direction: column; } #m4-root .m4-q { max-width: 100%; } }

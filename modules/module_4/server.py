@@ -2,182 +2,206 @@
 modules/module_4/server.py
 ==========================
 Server logic for Module 4: Commercial Copilot.
-Handles Text-to-SQL translation, in-memory execution, and grounded RAG responses.
+
+The principal (store scope) and the document role come from the server-side
+session (shared/auth.py), never from the question. Questions run in a background
+task so the app stays responsive while the local model works. Signing out or
+switching user clears the conversation.
 """
 
+from __future__ import annotations
+
+import asyncio
+import html
+import threading
+
 import pandas as pd
-from shiny import render, reactive, ui
+from htmltools import TagList, tags
+from shiny import reactive, render, ui
+
+from .agent import Copilot, CopilotAnswer
+from .ui import PROMPTS
+
+_COPILOT = None
+_COPILOT_LOCK = threading.Lock()
+ROUTE_LABEL = {"data": ("DATA · TEXT-TO-SQL", "data"), "knowledge": ("KNOWLEDGE · RAG", "knowledge"),
+               "other": ("OUT OF SCOPE", "other")}
+TABLE_ROWS = 50
+
+
+def shared_copilot() -> Copilot:
+    """One copilot per process: the pinned publication, sandbox cache and index are shared by sessions."""
+    global _COPILOT
+    with _COPILOT_LOCK:
+        if _COPILOT is None:
+            _COPILOT = Copilot.from_env()
+        return _COPILOT
+
+
+def _markdown(text: str):
+    # Escape first: model output and document text are never rendered as raw HTML.
+    return ui.markdown(html.escape(text or ""))
+
+
+def _table(frame: pd.DataFrame) -> ui.HTML:
+    shown = frame.head(TABLE_ROWS)
+    table = shown.to_html(index=False, border=0, classes="m4-table", na_rep="—",
+                          float_format=lambda v: f"{v:,.2f}")
+    return ui.HTML(f'<div class="m4-table-wrap">{table}</div>')
+
+
+def _chart(fig, element_id: str) -> ui.HTML:
+    markup = fig.to_html(full_html=False, include_plotlyjs=False, div_id=element_id,
+                         config={"displayModeBar": False, "responsive": True})
+    return ui.HTML(f'<div role="img" aria-label="Chart of the query result">{markup}</div>')
+
+
+def render_answer(answer: CopilotAnswer, index: int) -> ui.Tag:
+    label, kind = ROUTE_LABEL.get(answer.route, ("COPILOT", "other"))
+    body = [_markdown(answer.answer)]
+    if answer.status in ("unavailable", "denied", "failed"):
+        body = [tags.div(_markdown(answer.answer), class_="m4-warn")]
+    if answer.route == "data" and answer.frame is not None and len(answer.frame):
+        if answer.chart is not None:
+            body.append(tags.div(tags.div("Chart", class_="m4-section-title"),
+                                 _chart(answer.chart, f"m4-chart-{index}"), class_="m4-section"))
+        rows = len(answer.frame)
+        note = f"first {TABLE_ROWS} of {rows}" if rows > TABLE_ROWS else f"{rows} row{'s' if rows != 1 else ''}"
+        if answer.truncated:
+            note += " (result capped at 200 rows)"
+        body.append(tags.div(tags.div(f"Result table · {note}", class_="m4-section-title"),
+                             _table(answer.frame), class_="m4-section"))
+    if answer.sql:
+        body.append(tags.details(tags.summary("Show the SQL that produced this answer"),
+                                 tags.pre(answer.sql, class_="m4-sql"), class_="m4-details m4-section"))
+    if answer.citations:
+        body.append(tags.div(tags.div("Sources cited", class_="m4-section-title"),
+                             tags.ul(*[tags.li(tags.span(c["marker"], class_="m4-marker"), c["citation"])
+                                       for c in answer.citations], class_="m4-cites"), class_="m4-section"))
+    if answer.sources and answer.route == "knowledge":
+        passages = [tags.div(tags.span(s["marker"], class_="m4-marker"), s["citation"],
+                             tags.div(s.get("text", ""), class_="m4-passage") if s.get("text") else None)
+                    for s in answer.sources]
+        body.append(tags.details(tags.summary(f"All {len(answer.sources)} retrieved passages"),
+                                 *passages, class_="m4-details m4-section"))
+    p = answer.provenance
+    if p:
+        if answer.route == "data":
+            line = (f"Source: shared business publication {p.get('artifact_id')} · data through {p.get('as_of')} · "
+                    f"scope: {p.get('scope')} · {p.get('metric_version')} · model: {p.get('model')}")
+        else:
+            line = (f"Source: Marvel knowledge base (corpus {p.get('corpus_hash')}) · document access: "
+                    f"{p.get('role')} · retrieval: {p.get('retrieval')} · model: {p.get('model')}")
+        body.append(tags.div(line, class_="m4-provenance"))
+    head = tags.div(tags.span(label, class_=f"m4-route {kind}"),
+                    tags.span(f"{answer.elapsed_s:.1f}s", class_="m4-meta"), class_="m4-a-head")
+    return tags.div(tags.div(tags.div(answer.question, class_="m4-q"), class_="m4-q-row"),
+                    tags.div(head, tags.div(*body, class_="m4-answer"), class_="sleek-card m4-a"),
+                    class_="m4-turn")
 
 
 def module_4_server(input, output, session, dataset: dict, auth_state: dict):
-    """Parses natural language prompts into SQL and serves grounded commercial answers."""
-    stores = dataset["stores"]
-    guardrails = dataset["guardrails"]
-    prods = dataset["prods"]
-    so_raw = dataset["so_raw"]
+    """Root-app entry point; ``dataset`` is accepted for compatibility and not used."""
+    copilot = shared_copilot()
+    history = reactive.value([])
+    pending = reactive.value(None)
+    last_result = reactive.value(None)
 
-    active_prompt = reactive.value("Which 5 stores had the highest OOS rate in the Northeast?")
+    def principal():
+        pid, authenticated = auth_state.get("principal_id"), auth_state.get("authenticated")
+        if pid is None or authenticated is None or not authenticated() or not pid():
+            return None
+        return pid()
 
-    @reactive.effect
-    @reactive.event(input.m4_prompt_1)
-    def _p1():
-        active_prompt.set("Which 5 stores had the highest OOS rate in the Northeast?")
-        ui.update_text("m4_user_query", value="Which 5 stores had the highest OOS rate in the Northeast?")
+    def doc_role():
+        # Document permission is a separate check from store scope (Module 4 guide, section 5).
+        return "manager" if auth_state["role"]() == "Regional Manager" else "sales"
 
-    @reactive.effect
-    @reactive.event(input.m4_prompt_2)
-    def _p2():
-        active_prompt.set("What are the contractual discount guardrail rules for Modern Trade?")
-        ui.update_text("m4_user_query", value="What are the contractual discount guardrail rules for Modern Trade?")
+    @ui.bind_task_button(button_id="m4_btn_ask")
+    @reactive.extended_task
+    async def ask_task(question, principal_id, role):
+        return await asyncio.to_thread(copilot.ask, question, principal_id, role)
 
-    @reactive.effect
-    @reactive.event(input.m4_prompt_3)
-    def _p3():
-        active_prompt.set("Show weekly invoiced sales vs consumer sell-out for top products.")
-        ui.update_text("m4_user_query", value="Show weekly invoiced sales vs consumer sell-out for top products.")
-
-    @reactive.effect
-    @reactive.event(input.m4_prompt_4)
-    def _p4():
-        active_prompt.set("Explain the planogram compliance policy and required execution tradeoffs.")
-        ui.update_text("m4_user_query", value="Explain the planogram compliance policy and required execution tradeoffs.")
+    def start(question):
+        question = (question or "").strip()
+        if not question or ask_task.status() == "running":
+            return
+        pending.set(question)
+        ask_task.invoke(question, principal(), doc_role())
 
     @reactive.effect
     @reactive.event(input.m4_btn_ask)
     def _ask():
-        if input.m4_user_query():
-            active_prompt.set(input.m4_user_query())
+        start(input.m4_user_query())
 
-    @reactive.calc
-    def parsed_query_state():
-        query_text = active_prompt().lower()
+    for i, prompt in enumerate(PROMPTS):
+        def make(i=i, prompt=prompt):
+            @reactive.effect
+            @reactive.event(input[f"m4_ex_{i}"])
+            def _example():
+                ui.update_text_area("m4_user_query", value=prompt)
+                start(prompt)
+        make()
 
-        if "guardrail" in query_text or "discount" in query_text or "rule" in query_text:
-            sql_text = """SELECT channel, category, max_discount_pct, min_target_margin, required_exec_tradeoff
-FROM dim_guardrails
-WHERE channel = 'Modern Trade'
-ORDER BY max_discount_pct DESC;"""
-            nl_answer = (
-                "For **Modern Trade accounts**, contractual policy allows a maximum standard discount of **15.0%** "
-                "on Surface Cleaners (minimum 25.0% gross margin) and **18.0%** on Laundry, provided that retailers "
-                "honor mandatory secondary display or +15% shelf share commitments."
-            )
-            citations = [
-                "dim_guardrails (Warehouse Policy Table)",
-                "Marvel Commercial Trade Terms Handbook 2026 §3.1",
-                "Contractual Concession Agreement (Modern Trade Annex)"
-            ]
-            df_res = guardrails[guardrails.channel == "Modern Trade"].copy()
-
-        elif "weekly" in query_text or "sell-in" in query_text or "units" in query_text:
-            sql_text = """SELECT p.product_name, p.category, SUM(s.units_sold_daily) AS total_sell_out_units
-FROM fact_sell_out s
-JOIN dim_products p ON s.sku_id = p.sku_id
-GROUP BY p.product_name, p.category
-ORDER BY total_sell_out_units DESC
-LIMIT 5;"""
-            nl_answer = (
-                "Across the latest evaluated quarter, **Surface Cleaners** and **Dishwashing liquids** represent the "
-                "highest sell-out velocity, accounting for over 64% of total daily consumer offtake units across the portfolio."
-            )
-            citations = [
-                "fact_sell_out (Point-of-Sale Observations)",
-                "dim_products (Product Catalog)",
-                "Marvel Monthly Commercial Review (Q2 2026)"
-            ]
-            df_res = pd.DataFrame({
-                "Product Name": prods["product_name"].head(5),
-                "Category": prods["category"].head(5),
-                "Total Observed Sell-Out Units": [142050, 118400, 98200, 87400, 65100],
-                "Velocity Rank": [1, 2, 3, 4, 5]
-            })
-
-        elif "planogram" in query_text or "penalty" in query_text or "tradeoff" in query_text:
-            sql_text = """SELECT channel, category, required_exec_tradeoff, min_target_margin
-FROM dim_guardrails
-WHERE required_exec_tradeoff IS NOT NULL;"""
-            nl_answer = (
-                "Under the **Commercial Trade Terms Policy**, planogram adherence is mandatory for trade discounts. "
-                "Retailers failing planogram audits forfeits off-invoice promotional allowances and requires a compensatory "
-                "commitment of **+15% shelf share** or **featured endcap placement** on the next order cycle."
-            )
-            citations = [
-                "dim_guardrails (Execution Trade-offs)",
-                "Marvel Field Sales SOP: Planogram Audit Protocol §6",
-                "Retailer Joint Business Planning (JBP) Contract Framework"
-            ]
-            df_res = guardrails[["channel", "category", "required_exec_tradeoff", "min_target_margin"]].head(5)
-
+    @reactive.effect
+    def _collect():
+        status = ask_task.status()
+        if status not in ("success", "error"):
+            return
+        if status == "success":
+            result = ask_task.result()
         else:
-            # Default: OOS high risk query
-            sql_text = """SELECT s.store_name, s.channel, s.city,
-       ROUND(AVG(CASE WHEN f.is_out_of_stock THEN 1.0 ELSE 0.0 END) * 100, 1) AS oos_rate_pct
-FROM fact_sell_out f
-JOIN dim_stores s ON f.store_id = s.store_id
-WHERE s.region = 'Northeast'
-GROUP BY s.store_name, s.channel, s.city
-ORDER BY oos_rate_pct DESC
-LIMIT 5;"""
-            nl_answer = (
-                "In the **Northeast Region**, the stores with the highest stockout rates are predominantly concentrated in "
-                "high-volume Modern Trade accounts experiencing weekend delivery lag. Prioritizing expedited replenishment "
-                "in these 5 locations will reduce regional OOS by an estimated 1.8 percentage points."
-            )
-            citations = [
-                "fact_sell_out (Daily Inventory Audits)",
-                "dim_stores (Territory Hierarchy)",
-                "Northeast Commercial Route Optimization Brief (Rep A)"
-            ]
-            ne_stores = stores[stores.region == "Northeast"].head(5)
-            df_res = pd.DataFrame({
-                "Store Name": ne_stores["store_name"],
-                "Channel": ne_stores["channel"],
-                "City": ne_stores["city"],
-                "Observed OOS Rate": ["12.4%", "10.8%", "9.6%", "8.9%", "8.2%"],
-                "Priority Status": ["Critical", "Critical", "Elevated", "Elevated", "Elevated"]
-            })
+            result = CopilotAnswer(question=pending.get() or "", route="", status="failed",
+                                   answer="Something went wrong while answering. Please try again.")
+        with reactive.isolate():
+            if last_result.get() is result:
+                return
+            last_result.set(result)
+            if result.question and principal() is not None:
+                history.set([result] + history.get())
+            pending.set(None)
 
-        return {
-            "sql": sql_text,
-            "answer": nl_answer,
-            "citations": citations,
-            "data": df_res
-        }
+    @reactive.effect
+    @reactive.event(input.m4_btn_clear)
+    def _clear():
+        history.set([])
+
+    @reactive.effect
+    def _reset_on_identity_change():
+        principal()  # dependency: sign-out or a different user clears the conversation
+        with reactive.isolate():
+            history.set([])
+            pending.set(None)
 
     @render.ui
-    def m4_copilot_response():
-        res = parsed_query_state()
-        citations_html = "".join([f"<li style='font-size:0.75rem;color:#4a8fe7;'>{c}</li>" for c in res["citations"]])
-        return ui.div(
-            ui.div(
-                ui.HTML("""
-                <div class="d-flex align-items-center gap-2 mb-2">
-                    <span style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#73fbd3,#4a8fe7);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.75rem;">AI</span>
-                    <span class="fw-bold" style="font-size:0.9rem;color:#1d1d1f;">Marvel Copilot Synthesis</span>
-                </div>
-                """),
-                ui.p(res["answer"], class_="mb-3", style="line-height:1.55;font-size:0.88rem;color:#1d1d1f;"),
-                ui.div(
-                    ui.span("Grounded Document Citations:", class_="fw-bold text-muted d-block mb-1", style="font-size:0.7rem;letter-spacing:0.06em;"),
-                    ui.HTML(f"<ul style='padding-left:18px;margin-bottom:0;'>{citations_html}</ul>"),
-                    class_="p-2 rounded-2",
-                    style="background:rgba(74,143,231,0.06);border:1px solid rgba(74,143,231,0.18);"
-                )
-            )
-        )
+    def m4_status():
+        history()  # refresh after each answer
+        st = copilot.status()
+        def chip(ok, text):
+            return tags.span(tags.span(class_="m4-dot " + ("ok" if ok else "bad")), text, class_="m4-chip")
+        data_text = (f"Data through {st['as_of']} · {st['artifact_id']}" if st["data_ready"]
+                     else (st["data_reason"] or "No business data configured"))
+        role = doc_role() if principal() else None
+        return tags.div(
+            chip(st["model_ready"], f"Model: {st['model']}" + ("" if st["model_ready"] else " (not running)")),
+            chip(st["data_ready"], data_text),
+            chip(True, "Knowledge base: 12 documents" + (f" · access: {role}" if role else "")),
+            class_="m4-status", role="status")
 
     @render.ui
-    def m4_sql_preview():
-        res = parsed_query_state()
-        return ui.div(
-            ui.span("TRANSLATED ANSI SQL QUERY", class_="small fw-bold text-muted d-block mb-1", style="font-size:0.7rem;letter-spacing:0.08em;"),
-            ui.tags.pre(
-                ui.tags.code(res["sql"]),
-                style="background:#1e1e24;color:#73fbd3;padding:14px;border-radius:10px;font-size:0.78rem;font-family:monospace;overflow-x:auto;margin-bottom:0;"
-            )
-        )
-
-    @render.table
-    def m4_query_results():
-        res = parsed_query_state()
-        return res["data"]
+    def m4_conversation():
+        items = []
+        question = pending()
+        if question and ask_task.status() == "running":
+            items.append(tags.div(tags.div(tags.div(question, class_="m4-q"), class_="m4-q-row"),
+                                  tags.div(tags.div(tags.span(class_="m4-spinner"),
+                                                    "Working on it: choosing data or documents, then answering…",
+                                                    class_="m4-thinking"), class_="sleek-card m4-a"),
+                                  class_="m4-turn", role="status", aria_live="polite"))
+        turns = history()
+        for n, answer in enumerate(turns):
+            items.append(render_answer(answer, len(turns) - n))
+        if not items:
+            items.append(tags.div("Ask a question above, or start with one of the example questions.",
+                                  class_="m4-empty sleek-card"))
+        return TagList(*items)

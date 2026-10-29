@@ -6,8 +6,40 @@ This directory contains database initialization, transformation, and bulk ETL st
 
 | Script | Architecture | Input Data | Target Schemas | Purpose |
 |---|---|---|---|---|
-| **[`etl_pipeline.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/etl_pipeline.py)** | **Approach A: Two-Engine Hybrid (DuckDB $\rightarrow$ PostgreSQL)** | `data/raw/*.csv` | `silver`, `gold`, `serving` | Full end-to-end ETL: Extracts raw data, runs Silver typing/reconciliations, generates Gold Marts (KPIs, estimation, commercial periods, visits, negotiation context), and creates Serving views in PostgreSQL. |
+| **[`v3_etl_pipeline.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/v3_etl_pipeline.py)** | **Governed V3 Medallion (DuckDB $\rightarrow$ Aiven PostgreSQL)** | `data/raw/*.csv` | `silver`, `gold`, `serving`, `public` | Full governed V3 pipeline: dense Cartesian calendar (`store_sku_calendar`), 1-4 day gap estimation, tri-state data status (Observed/Estimated/Unknown), dual KPI views, accurate reporting coverage (~91.86%), MSL compliance bounds, and high-speed streaming to Aiven PostgreSQL. |
+| **[`etl_pipeline.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/etl_pipeline.py)** | Approach A: Two-Engine Hybrid (DuckDB $\rightarrow$ PostgreSQL) | `data/raw/*.csv` | `silver`, `gold`, `serving` | Standalone ETL: Extracts raw data and loads observed facts/marts into PostgreSQL. |
 | **[`load_to_aiven.py`](file:///Users/tsomorlig/Documents/marvel-cpg-ai-platform/ETL/load_to_aiven.py)** | Single-Engine Raw Ingest | `new_marvel_data/*.csv` | `public` | Simple EL loader that loads raw CSVs directly into the public schema without transformation. |
+
+---
+
+## Governed V3 ETL Pipeline (`ETL/v3_etl_pipeline.py`)
+
+### Features
+- **Strict V3 Compliance**: Implements the contracts from `data_platform/` and `docs/solution-specifications/kpi-and-missing-store-day-handling.md`.
+- **Complete Cartesian Calendar Grid**: Generates `silver.store_sku_calendar` over `calendar date x store x active SKU`.
+- **Short-Gap State Estimation**: Reconstructs 1-4 day gaps via rolling hierarchical sales baselines (weekday, recent, group medians) and physical inventory recurrence with delivery receipt reconciliation.
+- **Tri-State Visibility**: Explicit `Observed`, `Estimated`, and `Unknown` tags on every row.
+- **Accurate Reporting Coverage**: Correctly accounts for non-reporting store-days (the 18 absent stores daily, ~91.86% coverage, rather than a false 100%).
+- **Strict MSL Compliance Bounds**: Evaluates eligible, assessable, compliant, noncompliant, unknown store counts and calculates lower/upper bounds.
+- **Dual Metric Views**: Populates `reported_only` and `operational_estimate` views.
+- **High-Speed Streaming to PostgreSQL**: Bulk streams transformed DuckDB tables to Aiven PostgreSQL using `COPY ... FROM STDIN`.
+- **Automated Verification**: Validates row counts and KPI component parity between DuckDB and PostgreSQL.
+
+### Usage
+
+```bash
+# 1. Dry Run (Tests transformations and PostgreSQL connection without streaming):
+uv run python ETL/v3_etl_pipeline.py --dry-run
+
+# 2. Run Full Governed V3 ETL (Transforms in DuckDB and loads to Aiven):
+uv run python ETL/v3_etl_pipeline.py --drop-schemas
+
+# 3. Views Only (Refreshes serving and public views and runs verification without re-streaming tables):
+uv run python ETL/v3_etl_pipeline.py --views-only
+
+# 4. Transform Only (Inspects DuckDB tables without writing to PostgreSQL):
+uv run python ETL/v3_etl_pipeline.py --skip-load
+```
 
 ---
 

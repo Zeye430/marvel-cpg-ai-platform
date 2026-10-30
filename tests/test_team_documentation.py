@@ -55,7 +55,10 @@ class TeamDocumentationTests(unittest.TestCase):
         package = (ROOT / "data_platform/README.md").read_text()
         self.assertIn("](../../examples/read_postgres_data.py)", landing)
         self.assertIn("](contracts/v3/postgres-serving.json)", package)
-        self.assertIn("Nothing has been published to Aiven yet", landing)
+        self.assertIn("already published to Aiven PostgreSQL", landing)
+        self.assertIn("](../aiven-connection.md)", landing)
+        self.assertIn("does not automatically migrate existing module code", landing)
+        self.assertNotIn("Nothing has been published to Aiven yet", landing)
         for number in (1, 3):
             self.assertIn("not", (ROOT / "docs/data" / f"v3-module-{number}-integration.md").read_text().split("PostgreSQL", 1)[1][:400])
         self.assertIn("SHARED_DATA_BACKEND=postgres", (ROOT / "docs/data/v3-module-2-integration.md").read_text())

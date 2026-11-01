@@ -118,6 +118,11 @@ def login_ui(logo_path: str = "marvel_logo.jpg") -> ui.Tag:
                             ui.input_action_button("quick_mgr", "⚡ Manager View (All Stores)", class_="btn-quick-demo flex-fill"),
                             ui.input_action_button("quick_rep", "⚡ Field Rep (Alex Mercer · Rep A)", class_="btn-quick-demo flex-fill"),
                             class_="d-flex gap-2"
+                        ),
+                        ui.div(
+                            # Separate operations entry: model quality reports only (demo; manager data permission).
+                            ui.input_action_button("quick_ops", "⚙ ML Operations (demo)", class_="btn-quick-demo flex-fill"),
+                            class_="d-flex gap-2 mt-2"
                         )
                     )
                 ),
@@ -150,8 +155,10 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
     principal_id = reactive.value(None)
     authenticated = reactive.value(False)
     is_demo = reactive.value(True)
+    workspace = reactive.value("business")     # "ops" only through the separate ML Operations entry
 
-    def _sign_in(principal):
+    def _sign_in(principal, space="business"):
+        workspace.set(space)
         principal_id.set(principal)
         authenticated.set(True)
 
@@ -203,11 +210,28 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         ui.update_text("user_role_state", value="rep")
 
     @reactive.effect
-    @reactive.event(input.btn_logout)
-    def _do_logout():
+    @reactive.event(input.quick_ops)
+    def _quick_ops():
+        active_role.set("Regional Manager")
+        active_rep.set(None)
+        active_name.set("ML Operations (demo)")
+        active_title.set("Model quality reports · read-only")
+        _sign_in("demo:manager", "ops")
+        ui.update_text("auth_state", value="logged_in")
+        ui.update_text("user_role_state", value="manager")
+        ui.update_navset("platform_active_module", selected="tab_mod2")
+
+    def logout():
+        """The one server-side sign-out path (root button and module sign-out controls)."""
         principal_id.set(None)
         authenticated.set(False)
+        workspace.set("business")
         ui.update_text("auth_state", value="logged_out")
+
+    @reactive.effect
+    @reactive.event(input.btn_logout)
+    def _do_logout():
+        logout()
 
     @render.ui
     def login_rep_preview_details():
@@ -247,4 +271,6 @@ def auth_server(input, output, session, stores_df) -> Dict[str, Any]:
         "principal_id": principal_id,
         "authenticated": authenticated,
         "is_demo": is_demo,
+        "workspace": workspace,
+        "logout": logout,
     }

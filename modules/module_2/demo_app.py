@@ -19,70 +19,72 @@ from shiny import App, reactive, render, ui
 
 from .server import configured_service, register
 from .service import Principal
-from .ui import module_2_ui
+from .ui import LOGO, font_dependency, module_2_ui
 
 DEMO_ACCOUNTS = {
-    "m2_demo_rep_a": ("demo:rep-a", "Sales Rep A (demo)"),
-    "m2_demo_rep_b": ("demo:rep-b", "Sales Rep B (demo)"),
-    "m2_demo_manager": ("demo:manager", "Manager, all stores (demo)"),
+    "m2_demo_rep_a": ("demo:rep-a", "Sales Rep A (demo)", "business"),
+    "m2_demo_rep_b": ("demo:rep-b", "Sales Rep B (demo)", "business"),
+    "m2_demo_manager": ("demo:manager", "Manager, all stores (demo)", "business"),
+    # Separate entry; reuses the demo manager's data permission (not production authentication).
+    "m2_demo_ops": ("demo:manager", "ML Operations (demo)", "ops"),
 }
 
 
 def app_ui(request=None):
     buttons = [ui.input_action_button(key, f"Sign in as {label}", class_="m2-btn" + (" primary" if i == 0 else ""))
-               for i, (key, (_, label)) in enumerate(DEMO_ACCOUNTS.items())]
+               for i, (key, (_, label, workspace)) in enumerate(DEMO_ACCOUNTS.items()) if workspace == "business"]
+    ops = ui.input_action_button("m2_demo_ops", "Open ML Operations (demo)", class_="m2-btn")
     return ui.page_fluid(
         ui.busy_indicators.use(),
         ui.tags.title("Module 2 · OOS risk (local demo)"),
         ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1"),
+        font_dependency(),
         ui.div(ui.output_text("m2_demo_signed_in"), style="display:none", id="m2-demo-flag"),
         ui.panel_conditional(
             "output.m2_demo_signed_in !== 'yes'",
             ui.div(ui.div(
+                ui.div(LOGO, ui.div(tags.strong("Marvel CPG"), tags.span("Module 2 · Stockout risk"),
+                                    class_="m2-logo-text"), class_="m2-logo"),
                 tags.h1("Module 2 local demo", class_="m2-title"),
                 tags.p("Choose a demo identity. These are generated demo assignments (round-robin stores to Reps A–F; "
                        "manager has all stores), not client territories or production sign-in.", class_="m2-sub"),
-                ui.div(*buttons, class_="m2-roles"), class_="m2-card m2-login", id="m2-login"), class_="m2")),
-        ui.panel_conditional(
-            "output.m2_demo_signed_in === 'yes'",
-            ui.div(ui.div(ui.output_ui("m2_demo_session"),
-                          ui.input_action_button("m2_demo_logout", "Sign out", class_="m2-btn"),
-                          class_="m2-actions", style="margin:0"), class_="m2", style="padding-bottom:0"),
-            module_2_ui({})),
-        style="padding:0;max-width:100%;overflow-x:hidden")
+                ui.div(*buttons, class_="m2-roles"),
+                tags.p("Model quality reports are a separate, read-only operations page.", class_="m2-sub",
+                       style="margin-top:16px"),
+                ui.div(ops, class_="m2-roles"), class_="m2-card m2-login", id="m2-login"), class_="m2")),
+        ui.panel_conditional("output.m2_demo_signed_in === 'yes'", module_2_ui({})),
+        style="padding:0;max-width:100%;overflow-x:clip")
 
 
 def make_server(service, reason):
     def server(input, output, session):
         principal = reactive.value(None)
         label = reactive.value("")
+        workspace = reactive.value("business")
 
-        for key, (principal_id, text) in DEMO_ACCOUNTS.items():
-            def bind(key=key, principal_id=principal_id, text=text):
+        for key, (principal_id, text, space) in DEMO_ACCOUNTS.items():
+            def bind(key=key, principal_id=principal_id, text=text, space=space):
                 @reactive.effect
                 @reactive.event(getattr(input, key))
                 def _sign_in():
                     principal.set(Principal(principal_id, True, True, text))
                     label.set(text)
+                    workspace.set(space)
             bind()
 
-        @reactive.effect
-        @reactive.event(input.m2_demo_logout)
-        def _sign_out():
+        def sign_out():
+            """The demo's one server-side sign-out path (used by the Module 2 sign-out control)."""
             principal.set(None)
             label.set("")
+            workspace.set("business")
 
         @output(suspend_when_hidden=False)
         @render.text
         def m2_demo_signed_in():
             return "yes" if principal() else "no"
 
-        @render.ui
-        def m2_demo_session():
-            return tags.span("Demo session: ", tags.strong(label()), " · server-controlled demo identity",
-                             class_="m2-muted", id="m2-demo-identity")
-
-        register(input, output, session, lambda: principal(), service, reason)
+        register(input, output, session, lambda: principal(), service, reason, workspace_fn=lambda: workspace(),
+                 logout_fn=sign_out, identity_fn=lambda: (label(), None))
     return server
 
 

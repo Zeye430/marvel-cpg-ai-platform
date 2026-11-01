@@ -186,11 +186,70 @@ original file (or reconcile manually) and keep the receipt with its backups.
 
 ## 7. UI and access
 
-Sales see **Today's priorities** (filters, CSV export, details) and **Store detail**
-(reported state and predicted risk shown separately). Managers additionally see
-**Model health** (real benchmark comparison, validation vs holdout, segments,
-calibration, limitations) and **Monitoring**. The principal comes from the server
-session; health/monitoring are enforced manager-only with full-population scope in
+Module 2 opens as its own workspace inside the Module 2 area (the app's navigation still switches
+modules): a collapsible Module 2 sidebar (*Overview*, *Store ranking*, *Analytics*, Help and Settings
+marked "coming soon", the user card and **Sign out**, which uses the host's own server-side logout),
+and a top bar with store search, the signed-in user (initials, name, title) and placeholder buttons
+for Copilot, messages, notifications and calendar (visible, labelled "coming soon", no behaviour).
+Text uses Inter 4.1 (SIL OFL 1.1), bundled in `modules/module_2/assets/fonts` with its licence and
+registered only for Module 2. The logo is an original placeholder mark, not a client brand asset.
+
+- **Overview**: key figures (stores needing action, act urgently, prevent stockouts, verify data,
+  estimated Marvel sales at risk, current MSL-gap SKUs; no period-over-period arrows), Today's focus,
+  the SKUs most out of stock now (MSL / non-MSL / unknown), the 10 highest-priority stores and, for
+  managers, an overview by region. All follow the channel / region / tier / urgency filters.
+- **Store ranking**: the full list in overall priority-score order, sortable by score, sales at risk,
+  shelf risk, MSL risk and urgency in either direction (unavailable values last, ranks unchanged),
+  views, 10 / 50 / 100 rows, export of the selected view, filters and sort. A store opens from its
+  name (a keyboard-accessible link) or by selecting its row; back returns to the same page, view,
+  sort and position.
+- **Analytics**: SKUs most out of stock in the stores you can see — *out of stock now* (the reported
+  state on the as-of date only) or, on request, *past 28 days* (distinct reported out-of-stock
+  store x SKU x day observations in [as-of − 27, as-of]); split MSL / non-MSL / unknown from each
+  observation; a donut of that split; daily out-of-stock observations with the number of reports per
+  day (counts, not rates, because the applicable assortment is not confirmed); and the stores behind
+  a SKU. Unreported observations are listed as unknown, never as in stock.
+- **Store**: key figures incl. the estimate confidence, recommended actions, why the store ranks where
+  it does, then tabs: *SKUs* (reported now and next 7 days, sortable, filterable, 10 / 50 / 100 rows),
+  *Inventory trend* (30 days of reported inventory and units sold with gaps for unreported days,
+  joined to the 7-day scenario used for sales at risk — not a model forecast), *Out-of-stock SKUs*
+  (reported OOS days per SKU in the past 28 days, unknown days separate), *Shelf execution* and
+  *Estimate quality*.
+
+The 28-day analysis is computed on request from the paged daily view, page by page, over your
+scope and filters; it is discarded (never shown partially) if a page fails or your scope or the data
+release changes meanwhile, and only completed results are cached (bounded, per scope).
+`tests/benchmarks/module2_oos_benchmark.py` measures it on a generated synthetic release (DuckDB and
+the disposable PostgreSQL test server).
+
+The business-priority score (`modules/module_2/business_priority.py`, policy
+`business-priority.v2-proposed`) is a display-time projection over the published data; it does not
+change stored ranks, scores or thresholds. Its weights and cut-offs are proposals awaiting business
+approval:
+
+- *Sales at risk* is a seven-day scenario, not a revenue forecast: demand at the prior 28-day
+  in-stock daily rate, covered first by reported inventory and then by units on the known schedule
+  (assumed to arrive on the next scheduled receipt day, not guaranteed); uncovered units are valued
+  at the reported net trade price of the past 28 days (USD). Missing inputs leave a SKU
+  unestimated (shown as *Unavailable* or a "≥" lower bound), never zero.
+- *Shelf risk* is the share of SKUs non-compliant at the latest audit within 28 days; it has no
+  dollar value. *MSL risk* averages current MSL stockouts and the model risk of in-stock MSL SKUs.
+- Score = 80% sales-at-risk position among the stores you can see + 10% shelf + 10% MSL. Scores and
+  ranks never use stores outside your scope.
+
+`get_oos_analytics(principal, store_filters, "current" | "28d")` returns the analysis. The
+service API accepts `filters={"view": "all" | "current_msl" | "prevention" |
+"verify_data", "urgency": "urgent" | "high" | "monitor"}` and `sort=(key, "asc" | "desc")` with key
+`rank`, `score`, `sales_at_risk`, `shelf_risk`, `msl_risk` or `urgency`; with a view the default is
+score, high to low. Without `view` the legacy filters (`msl_only`, `alert_only`, `unknown_only`)
+and the stored order behave as before, and combining both is rejected.
+
+Model quality is not part of the daily page. **Model health** and **Monitoring**
+are a separate, read-only **ML Operations** entry (the standalone demo's "Open ML
+Operations (demo)" button and the root app's "ML Operations (demo)" quick entry).
+That demo entry reuses the demo manager's full-store data permission; it is not
+production authentication and cannot train, change thresholds, publish or approve.
+Health/monitoring data remain enforced manager-only with full-population scope in
 the shared reader (both backends). Every request re-checks the principal's current
 scope, so a changed or revoked assignment is never answered from cache; if that check
 fails (denied or the data service is unavailable) the request ends without data. Demo identities (`demo:rep-a` … `demo:rep-f`, `demo:manager`)
@@ -210,8 +269,10 @@ uv run python tests/browser/run_acceptance.py --candidate-root <synthetic delive
 
 The browser acceptance drives the real app with the local Google Chrome (headless,
 temporary profile, loopback only) and Node's built-in WebSocket; it covers three
-widths, Sales/Manager, filters, export, details, pagination, sign-out and the
-unavailable/unreleased/stale/error/empty/denied/pending states.
+widths, Sales/Manager/ML Operations, the four views and their summary counts,
+view-based export, details and back-to-position, pagination, sign-out and the
+unavailable/unreleased/stale/error/empty/denied/pending states. It also checks that
+the business page carries no model-quality content.
 
 ## 9. Limitations
 

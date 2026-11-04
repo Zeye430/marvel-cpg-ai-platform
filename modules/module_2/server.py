@@ -15,9 +15,11 @@ from htmltools import TagList, tags
 from shiny import reactive, render, ui
 
 from data_platform.access import DataUnavailable
+from shared.chart_palette import CHART_COLORS, CHART_NEUTRAL
 
 from .contracts import Module2Error
 from . import business_priority as bp
+from . import service as service_module
 from .service import VIEW_LABELS, Module2Service, PermissionDenied, Principal, resolve_published
 
 TARGETS = {"precision": 0.75, "recall": 0.70, "roc_auc": 0.80}
@@ -43,12 +45,13 @@ def state(title, text, kind="info"):
                     role="status")
 
 
-def plot(fig, element_id):
+def plot(fig, element_id, post_script=None):
+    from shared.ui_kit import FONT_STACK          # imported on use: the server module stays importable alone
     fig.update_layout(template="plotly_white", margin=dict(l=48, r=16, t=24, b=44), height=300,
-                      font=dict(family="M2 Inter, Inter, -apple-system, Segoe UI, sans-serif", size=12,
+                      font=dict(family=FONT_STACK, size=12,
                                 color="#211b1c"),
                       paper_bgcolor="rgba(0,0,0,0)")
-    html = fig.to_html(full_html=False, include_plotlyjs=False, div_id=element_id,
+    html = fig.to_html(full_html=False, include_plotlyjs=False, div_id=element_id, post_script=post_script,
                        config={"displayModeBar": False, "responsive": True})
     return ui.HTML(f'<div class="m2-chart" role="img" aria-label="{element_id}">{html}</div>')
 
@@ -111,12 +114,20 @@ def configured_service(backend=None):
 
 
 def module_2_server(input, output, session, dataset: dict, auth_state: dict):
-    """Root-app entry point; ``dataset`` is accepted for compatibility and not used.
+    """App entry point.
 
+    In the integrated app ``dataset['runtime']`` (shared.runtime.SharedRuntime) supplies one
+    service bound to the shared source used by every module; a module-specific source that
+    differs is shown unavailable. Without a runtime, the standalone configuration is used.
     ``auth_state['workspace']`` (optional) selects the business workspace or the separate
-    ML Operations entry; the business workspace is the default.
+    ML Operations entry; the business workspace is the default. ``auth_state['navigate']``
+    (optional) lets the top-bar Copilot button open the host's copilot module. With
+    ``dataset['hosted']`` the host's sidebar shows Module 2's pages (``m2_nav``) and its
+    breadcrumb uses ``dataset['module_label']``.
     """
-    service, reason = configured_service()
+    runtime = dataset.get("runtime") if isinstance(dataset, dict) else None
+    service, reason = runtime.module2_service() if runtime is not None else configured_service()
+    navigate = auth_state.get("navigate")
 
     def principal():
         pid, authenticated = auth_state.get("principal_id"), auth_state.get("authenticated")
@@ -129,7 +140,10 @@ def module_2_server(input, output, session, dataset: dict, auth_state: dict):
     register(input, output, session, principal, service, reason,
              workspace_fn=(lambda: workspace() or "business") if workspace else None,
              logout_fn=auth_state.get("logout"),                 # the root app's own server-side logout
-             identity_fn=(lambda: (name(), title())) if name and title else None)
+             identity_fn=(lambda: (name(), title())) if name and title else None,
+             open_copilot_fn=(lambda: navigate("module_4")) if navigate else None,
+             hosted=bool(dataset.get("hosted")) if isinstance(dataset, dict) else False,
+             module_label=(dataset.get("module_label") if isinstance(dataset, dict) else None) or "Module 2")
 
 
 ROLE_TEXT = {"sales": "Sales", "manager": "Manager"}
@@ -175,8 +189,9 @@ def _day(d):
     return f"{d:%b} {d.day}, {d.year}"
 
 
-MSL_COLORS = {"MSL": "#b41824", "Non-MSL": "#8a7f80", "Unknown": "#d9cfcf"}
-SKU_COLORS = ["#b41824", "#2b2526", "#c26a00", "#5f6f7f", "#7a1fa2"]
+# Data colours come from the shared chart palette; red/white is the frame, not the data colour.
+MSL_COLORS = {"MSL": CHART_COLORS[0], "Non-MSL": CHART_COLORS[1], "Unknown": CHART_NEUTRAL}
+SKU_COLORS = list(CHART_COLORS[:5])
 BUSINESS_PAGES = {"overview": "Overview", "ranking": "Store ranking", "analytics": "Analytics"}
 OPS_PAGES = {"health": "Model health", "monitoring": "Monitoring"}
 NAV_ICONS = {"overview": "home", "ranking": "list", "analytics": "chart", "health": "gauge", "monitoring": "pulse"}
@@ -188,6 +203,11 @@ SKU_SORTS = {"sku": "SKU", "status": "Status now", "inventory": "Inventory", "oo
 def icon(name, size=18):
     from .ui import icon as _icon                 # imported on use: the server module stays importable alone
     return _icon(name, size)
+
+
+def kit_nav_item(icon_name, label, active=False, **attrs):
+    from shared.ui_kit import nav_item            # imported on use, like icon()
+    return nav_item(icon_name, label, active=active, **attrs)
 
 
 def _category(text):
@@ -215,7 +235,7 @@ def _kpi(label, value, note, key, icon_name, tone=""):
 
 
 def register(input, output, session, principal_fn, service, unavailable_reason=None, workspace_fn=None,
-             logout_fn=None, identity_fn=None):
+             logout_fn=None, identity_fn=None, open_copilot_fn=None, hosted=False, module_label="Module 2"):
     page = reactive.value(0)
     sku_page = reactive.value(0)
     previous = reactive.value(None)
@@ -404,6 +424,13 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         go(input.m2_go())
 
     @reactive.effect
+    @reactive.event(input.m2_open_copilot)
+    def _open_copilot():
+        """Host navigation only (no question or store context is passed to the copilot)."""
+        if open_copilot_fn is not None and who() is not None:
+            open_copilot_fn()
+
+    @reactive.effect
     @reactive.event(input.m2_focus_go)
     def _focus_go():
         view = input.m2_focus_go()
@@ -504,6 +531,12 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         if mode() == "none":
             return None
         pages = OPS_PAGES if mode() == "ops" else BUSINESS_PAGES
+        if hosted:                                  # the host's sidebar: page items under the module entry
+            return tags.nav(*[kit_nav_item(NAV_ICONS[key], text, active=current_page() == key or
+                                           (key == return_page() and current_page() == "detail"),
+                                           onclick=f"m2Go('{key}')", **{"data-page": key})
+                              for key, text in pages.items()],
+                            class_="ws-subnav-items", **{"aria-label": f"{module_label} pages"})
         label = "ML Operations · demo" if mode() == "ops" else "Module 2"
         return tags.nav(tags.p(label, class_="m2-nav-label"),
                         *[tags.button(icon(NAV_ICONS[key]), tags.span(text), type="button",
@@ -540,8 +573,16 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         if mode() == "none":
             return None
         pages = OPS_PAGES if mode() == "ops" else {**BUSINESS_PAGES, "detail": "Store"}
-        return tags.nav(tags.span("Module 2"), tags.span("/", **{"aria-hidden": "true"}),
+        return tags.nav(tags.span(module_label), tags.span("/", **{"aria-hidden": "true"}),
                         tags.strong(pages.get(current_page(), "")), class_="m2-crumb", **{"aria-label": "Breadcrumb"})
+
+    def _model_label(element_id="m2-model-status"):
+        """Candidate disclosure shown on every business page (overview, ranking, analytics, store)."""
+        if service is None or (service.record.get("model_outputs") or {}).get("publication_kind") != \
+                "Local_review_candidate":
+            return None
+        return tags.span("Model: review candidate, not an approved production model", class_="m2-model-label",
+                         id=element_id)
 
     @render.ui
     @safe
@@ -560,9 +601,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                           f" · {fmt_int(sc.get('stores'))} assigned stores"),
                 tags.span("Reported as of ", tags.b(_day(date.fromisoformat(str(as_of))) if as_of else "N/A")),
                 tags.span("Stockout risk window ", tags.b(f"{_day(start)} – {_day(end)}" if start else "N/A"))]
-        if (service.record.get("model_outputs") or {}).get("publication_kind") == "Local_review_candidate":
-            meta.append(tags.span("Model: review candidate, not an approved production model",
-                                  class_="m2-model-label", id="m2-model-status"))
+        label = _model_label()
+        if label is not None:
+            meta.append(label)
         action = ui.download_button("m2_export", "Export visit list", class_="m2-btn primary") \
             if current_page() == "ranking" else None
         return tags.div(tags.div(tags.h1(titles[current_page()], class_="m2-title"), tags.p(*meta, class_="m2-meta"),
@@ -582,8 +623,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             banners.append(tags.div(tags.strong("Synthetic demo. "), "Stores, products and predictions are generated "
                                     "test data, not client evidence.", class_="m2-banner warn", role="note"))
         elif outputs.get("publication_kind") == "Local_review_candidate":
-            banners.append(tags.div("Some figures are estimates or model predictions because parts of the reported "
-                                    "data are missing.", class_="m2-banner info", role="note", id="m2-estimate-note"))
+            banners.append(tags.div("Stockout risks are predictions from a model under review. Because parts of the "
+                                    "reported data are missing, some other figures are estimates.",
+                                    class_="m2-banner info", role="note", id="m2-estimate-note"))
         as_of = record.get("as_of")
         if as_of and service._stale(date.fromisoformat(str(as_of))):
             banners.append(tags.div(tags.strong("Out of date. "),
@@ -672,7 +714,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             name = r["store_name"] or r["store_id"]
             body.append(tags.tr(
                 {"data-open-store": "1", "data-store": r["store_id"], "data-rank": str(r["overall_rank"] or "")},
-                tags.td(str(r["overall_rank"]), class_="num m2-rank", **{"data-label": "Overall rank"}),
+                _rank_cell(r),
                 tags.td(_store_link(r["store_id"], name),
                         tags.span(f"{r['store_id']} · {r['region'] or '—'}", class_="m2-store-meta"),
                         class_="m2-cell-store"),
@@ -706,8 +748,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             class_="m2-table-wrap")
         return tags.section(head, table, class_="m2-card", id="m2-top10")
 
-    def _oos_bar(detail, group, top=10, element_id="m2-oos-bar", height=None):
-        """Top SKUs by out-of-stock count, stacked by MSL / non-MSL / unknown (text labels in legend/hover)."""
+    def _oos_bar(detail, group, top=10, element_id="m2-oos-bar", height=None, select_input=None):
+        """Top SKUs by out-of-stock count, stacked by MSL / non-MSL / unknown (text labels in legend/hover).
+        ``select_input``: clicking a bar sends its SKU to this input (the SKU select is the keyboard route)."""
         import plotly.graph_objects as go_
         key = (lambda s: s["oos"]) if group == "all" else (lambda s: s["msl"][group])
         skus = [s for s in detail["skus"] if key(s) > 0]
@@ -729,7 +772,12 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         fig.update_layout(barmode="stack", xaxis_title=detail["unit"].capitalize(), legend=dict(orientation="h", y=-0.2),
                           height=height or max(260, 34 * len(skus) + 90),
                           xaxis=dict(tickformat=",d", rangemode="tozero", dtick=1 if max(map(key, skus)) <= 8 else None))
-        return plot(fig, element_id)
+        script = None
+        if select_input:
+            script = ("var gd=document.getElementById('{plot_id}');gd.on('plotly_click',function(e){"
+                      "if(e&&e.points&&e.points.length&&window.Shiny){Shiny.setInputValue('" + select_input +
+                      "',String(e.points[0].y),{priority:'event'});}});")
+        return plot(fig, element_id, script)
 
     @render.ui
     @safe
@@ -852,7 +900,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                  "data-urgency": attr(r["urgency"]), "data-msl-gaps": attr(r["msl_gap_count"]),
                  "data-prevention": attr(r["prevention_alert_count"]),
                  "data-checks": str(len(r["data_check_reasons"]))},
-                tags.td(str(r["overall_rank"]), class_="num m2-rank", **{"data-label": "Overall rank"}),
+                _rank_cell(r),
                 tags.td(_store_link(r["store_id"], name),
                         tags.span(f"{r['store_id']} · {r['channel']} · {r['region'] or '—'}", class_="m2-store-meta"),
                         class_="m2-cell-store"),
@@ -884,7 +932,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         bins = response.detail["risk_histogram"]
         import plotly.graph_objects as go_
         fig = go_.Figure(go_.Bar(x=[f"{b['lower']:.1f}–{b['upper']:.1f}" for b in bins], y=[b["stores"] for b in bins],
-                                 marker_color="#b41824",
+                                 marker_color=CHART_COLORS[0],
                                  hovertemplate="Highest SKU risk %{x}<br>%{y} stores<extra></extra>"))
         fig.update_layout(xaxis_title="Highest SKU stockout risk in the store (not a store probability)",
                           yaxis_title="Stores in your scope", bargap=0.08)
@@ -909,6 +957,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
     def m2_oos_note():
         if mode() != "business":
             return None
+        group = oos_group()
         data = oos_selected()
         if data is None:
             return None
@@ -925,7 +974,11 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                    f"{fmt_int(d['stores_in_filter'])} filtered stores; {fmt_int(t['unknown'])} not reported"
                    + (f"; {fmt_int(t['duplicates'])} duplicate rows ignored" if t["duplicates"] else "") + ".",
                    class_="m2-meta"),
-            tags.p(d["coverage_note"], class_="m2-meta"), id="m2-oos-note")
+            tags.p(d["coverage_note"], class_="m2-meta"),
+            tags.p(f"MSL filter: {group}. It applies to the chart, the SKU list and the store list; the totals above "
+                   "and the MSL share include all observations.", class_="m2-meta", id="m2-oos-filter-note")
+            if group != "all" else None,
+            id="m2-oos-note")
 
     @render.ui
     @safe
@@ -933,11 +986,12 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         data = oos_selected()
         if data is None or data["status"] != "Ok":
             return None
-        group = input.m2_oos_msl() if input.m2_oos_msl() in ("all", "MSL", "Non-MSL", "Unknown") else "all"
-        chart = _oos_bar(data["detail"], group)
+        group = oos_group()
+        chart = _oos_bar(data["detail"], group, select_input="m2_oos_bar_click")
         title = tags.div(tags.h2("Top 10 SKUs out of stock", class_="m2-h"),
                          tags.p(f"{data['detail']['unit'].capitalize()} · "
-                                + ("all SKUs" if group == "all" else f"{group} observations only"), class_="m2-meta"),
+                                + ("all SKUs" if group == "all" else f"{group} observations only")
+                                + " · select a bar to list its stores", class_="m2-meta"),
                          class_="m2-card-head")
         return tags.section(title, chart or state("None reported", "No out-of-stock observations for this selection."),
                             class_="m2-card", id="m2-oos-chart-card")
@@ -950,7 +1004,8 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             return None
         split = data["detail"]["totals"]["msl"]
         title = tags.div(tags.h2("MSL share", class_="m2-h"),
-                         tags.p("Share of the out-of-stock observations", class_="m2-meta"), class_="m2-card-head")
+                         tags.p("Share of all out-of-stock observations (not filtered by MSL)", class_="m2-meta"),
+                         class_="m2-card-head")
         if not sum(split.values()):
             return tags.section(title, tags.p("No out-of-stock observations, so no share is shown.", class_="m2-meta"),
                                 class_="m2-card")
@@ -976,10 +1031,10 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         from plotly.subplots import make_subplots
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go_.Bar(x=[d["date"] for d in days], y=[d["oos"] for d in days], name="Out-of-stock observations",
-                              marker_color="#b41824"), secondary_y=False)
+                              marker_color=CHART_COLORS[0]), secondary_y=False)
         fig.add_trace(go_.Scatter(x=[d["date"] for d in days], y=[d["observed"] for d in days],
                                   name="Reported observations (coverage)", mode="lines",
-                                  line=dict(color="#8a7f80", dash="dot")), secondary_y=True)
+                                  line=dict(color=CHART_NEUTRAL, dash="dot")), secondary_y=True)
         fig.update_layout(legend=dict(orientation="h", y=-0.25), height=300)
         fig.update_yaxes(title_text="OOS observations", secondary_y=False)
         fig.update_yaxes(title_text="Reported observations", secondary_y=True)
@@ -989,19 +1044,38 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                             class_="m2-meta"), class_="m2-card-head"),
                             plot(fig, "m2-oos-daily"), class_="m2-card", id="m2-oos-daily-card")
 
+    def oos_group():
+        value = input.m2_oos_msl()
+        return value if value in ("all", "MSL", "Non-MSL", "Unknown") else "all"
+
+    def _group_count(item, group):
+        """Out-of-stock count of a SKU (or of one store for a SKU) within the selected MSL group."""
+        return item["oos"] if group == "all" else item["msl"][group]
+
     @reactive.effect
     def _oos_sku_choices():
+        group = oos_group()
         try:
             data = oos_selected()
         except Exception:  # noqa: BLE001 - an effect must never end the session; the card shows the error
             data = None
-        skus = [s for s in (data or {}).get("detail", {}).get("skus", []) if s["oos"] > 0] \
-            if data and data.get("status") == "Ok" else []
         with reactive.isolate():
             current = input.m2_oos_sku()
-        choices = {"": "Select a SKU", **{s["sku_id"]: f"{s['sku_id']} · {s['product_name'] or ''} ({s['oos']})"
-                                          for s in skus}}
+        # SKUs with observations in the selected group; the current choice stays listed (count 0) so
+        # changing the MSL filter never silently drops the user's selection.
+        skus = [s for s in (data or {}).get("detail", {}).get("skus", [])
+                if _group_count(s, group) > 0 or (s["sku_id"] == current and s["oos"] > 0)] \
+            if data and data.get("status") == "Ok" else []
+        skus.sort(key=lambda s: (-_group_count(s, group), s["sku_id"]))
+        choices = {"": "Select a SKU", **{s["sku_id"]: f"{s['sku_id']} · {s['product_name'] or ''} "
+                                                       f"({_group_count(s, group)})" for s in skus}}
         ui.update_select("m2_oos_sku", choices=choices, selected=current if current in choices else "")
+
+    @reactive.effect
+    @reactive.event(input.m2_oos_bar_click)
+    def _oos_bar_click():
+        """A bar click selects that SKU (same choices as the select, which is the keyboard route)."""
+        ui.update_select("m2_oos_sku", selected=str(input.m2_oos_bar_click() or ""))
 
     @render.ui
     @safe
@@ -1011,18 +1085,22 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         if data is None or data["status"] != "Ok" or not sku:
             return tags.p("Choose a SKU to list the stores (in your scope and filters) that reported it out of stock.",
                           class_="m2-meta")
+        group = oos_group()
         match = next((s for s in data["detail"]["skus"] if s["sku_id"] == sku), None)
-        if match is None or not match["stores"]:
-            return state("No stores", "No store reported this SKU out of stock for this measure.")
+        stores = sorted((s for s in (match or {}).get("stores", []) if _group_count(s, group) > 0),
+                        key=lambda s: (-_group_count(s, group), s["store_id"]))
+        if not stores:
+            return state("No stores", "No store reported this SKU out of stock for this measure"
+                         + ("." if group == "all" else f" in the {group} group."))
         unit = "OOS days" if data["detail"]["measure"] == "28d" else "Out of stock now"
-        rows = [tags.tr({"data-open-store": "1", "data-store": s["store_id"]},
+        rows = [tags.tr({"data-open-store": "1", "data-store": s["store_id"], "data-count": str(_group_count(s, group))},
                         tags.td(_store_link(s["store_id"], s["store_name"]), tags.span(s["store_id"],
                                                                                        class_="m2-store-meta"),
                                 class_="m2-cell-store"),
-                        tags.td(str(s["oos"]) if data["detail"]["measure"] == "28d" else "Yes", class_="num",
-                                **{"data-label": unit}),
-                        tags.td(_dash(s["overall_rank"]), class_="num", **{"data-label": "Overall rank"}))
-                for s in match["stores"]]
+                        tags.td(str(_group_count(s, group)) if data["detail"]["measure"] == "28d" else "Yes",
+                                class_="num", **{"data-label": unit}),
+                        _rank_cell(s))
+                for s in stores]
         return tags.div(tags.table(tags.thead(tags.tr(tags.th("Store", scope="col"), tags.th(unit, scope="col", class_="num"),
                                                       tags.th("Overall rank", scope="col", class_="num"))),
                                    tags.tbody(*rows), class_="m2-table m2-cards m2-clickable", id="m2-oos-store-table"),
@@ -1046,7 +1124,8 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
 
     def _detail_parts():
         store_id, response = detail_data()
-        if store_id is None or response == "denied" or isinstance(response, tuple) or response.status == "Unreleased":
+        if store_id is None or response == "denied" or isinstance(response, tuple) or \
+                response.status in ("Unreleased", "Unavailable"):
             return store_id, response, None, None
         detail = response.detail
         return store_id, response, detail, detail.get("business") or {}
@@ -1077,6 +1156,8 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         if response.status == "Unreleased":
             return state("Predictions not released", "There are no published predictions for this data; "
                                                      "that is not zero risk.", "bad")
+        if response.status == "Unavailable":
+            return state("Not available right now", response.message or "Please retry.", "bad")
         store = detail.get("store") or {}
         as_of = date.fromisoformat(detail["scoring_date"])
         start, end = _window(as_of)
@@ -1091,8 +1172,10 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             tags.div(tags.h1(store.get("store_name") or store_id, class_="m2-title"),
                      tags.div(chip(store_id, "id", "Store ID"), chip(store.get("channel"), "channel", "Channel"),
                               chip(store.get("region"), "region", "Region"), chip(store.get("segment_tier"), "tier", "Tier"),
-                              class_="m2-chips"), class_="m2-head-main"),
-            tags.div(figure("Overall rank", str(store["overall_rank"]) if store.get("overall_rank") else "—", key="rank"),
+                              class_="m2-chips"),
+                     _model_label("m2-detail-model-status"), class_="m2-head-main"),
+            tags.div(figure("Overall rank", str(store["overall_rank"]) if store.get("overall_rank") else
+                            tags.span("Not ranked", class_="m2-fig-muted", title=NOT_RANKED), key="rank"),
                      figure("Score", tags.span(_score(store.get("priority_score")),
                                                tags.small(" / 100") if store.get("priority_score") is not None else None),
                             key="score"),
@@ -1142,7 +1225,8 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                       "of cause, a delivery guarantee or a completed visit.", class_="m2-meta"),
                                class_="m2-card m2-focus", id="m2-actions")
         why = tags.section(
-            tags.h2(f"Why this store ranks {store.get('overall_rank') or '—'}", class_="m2-h"),
+            tags.h2(f"Why this store ranks {store['overall_rank']}" if store.get("overall_rank")
+                    else "Why this store is not ranked", class_="m2-h"),
             tags.p(tags.b(f"Score {_score(store.get('priority_score'))} / 100")), _category(store.get("risk_category")),
             tags.ul(tags.li(f"Sales at risk ({weights['impact']:.0%}): "
                             + ("unavailable, so no score" if pct is None else
@@ -1182,8 +1266,10 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             else:
                 action = "Monitor"
             rows.append({"sku": s["sku_id"], "product": s["product_name"], "msl": s["is_msl"],
-                         "status": current, "inventory": ev.get("inventory_observed"),
-                         "oos_days": d.get("reported_oos_days") if d else None, "unknown_days": d.get("unknown_days"),
+                         "status": current, "status_text": _as_of_status(d) if d else "No as-of report",
+                         "inventory": ev.get("inventory_observed"),
+                         "oos_days": d.get("reported_oos_days") if d else None,
+                         "unreported_days": d.get("unreported_days"), "days_with_rows": d.get("days_with_rows"),
                          "risk": s["probability"], "alert": s["is_predicted_oos"], "units_short": e.get("units_short"),
                          "price": e.get("price"), "sales": e.get("sales_at_risk"), "estimable": e.get("estimable"),
                          "reasons": e.get("reasons") or [], "action": action})
@@ -1257,7 +1343,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             reported = detail.get("reported_now") or []
             rows = [tags.tr(tags.td(tags.span(r["sku_id"], class_="m2-store-name"),
                                     tags.span(r.get("product_name") or "", class_="m2-store-meta"), class_="m2-cell-store"),
-                            tags.td("Yes" if r.get("is_msl") else "No", **{"data-label": "MSL"}),
+                            tags.td(_msl_text(r.get("is_msl")), **{"data-label": "MSL"}),
                             tags.td(_status(r.get("oos_observed")), **{"data-label": "Status"}),
                             tags.td(fmt_num(r.get("inventory_observed"), 0), class_="num", **{"data-label": "Inventory (units)"}),
                             tags.td(r["date"], **{"data-label": "Reported on"})) for r in reported]
@@ -1303,12 +1389,14 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                 class_="m2-sku-link", onclick=f"m2OpenSku('{r['sku']}')",
                                 **{"aria-label": f"Show inventory and sales trend for {r['sku']}", "data-sku": r["sku"]}),
                     class_="m2-cell-store"),
-            tags.td("Yes" if r["msl"] else ("No" if r["msl"] is False else "Unknown"), **{"data-label": "MSL"}),
-            tags.td(_status(r["status"]), **{"data-label": "Status now"}),
+            tags.td(_msl_text(r["msl"]), **{"data-label": "MSL (as of)"}),
+            tags.td(r["status_text"], **{"data-label": "Status now"}),
             tags.td(fmt_num(r["inventory"], 0) if r["inventory"] is not None else "—", class_="num",
                     **{"data-label": "Inventory (units)"}),
-            tags.td(_dash(r["oos_days"]) + (f" (+{r['unknown_days']} unknown)" if r["unknown_days"] else ""),
-                    class_="num", **{"data-label": "Reported OOS days · past 28"}),
+            tags.td(_dash(r["oos_days"]) + (f" (+{r['unreported_days']} unreported)" if r["unreported_days"] else ""),
+                    class_="num", title=(f"{r['days_with_rows']} of {service_module.OOS_WINDOW_DAYS} days have data; "
+                                         "days without data are not counted") if r["days_with_rows"] is not None else None,
+                    **{"data-label": "Reported OOS days · past 28"}),
             tags.td(fmt_pct(r["risk"]), class_="num", **{"data-label": "Stockout risk · 7 days"}),
             tags.td(tags.span("Alert" if r["alert"] else "No alert", class_="m2-pill " + ("alert" if r["alert"] else "plain")),
                     **{"data-label": "Alert"}),
@@ -1428,8 +1516,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         products = {s["sku_id"]: s["product_name"] for s in detail["skus"]}
         with_oos = [(s, d) for s, d in rows if d["reported_oos_days"]]
         head = tags.div(tags.h2("Out-of-stock days per SKU · past 28 days", class_="m2-h"),
-                        tags.p(f"Reported out-of-stock days {window[0]} – {window[1]}; days without a report are counted "
-                               "separately as unknown.", class_="m2-meta"), class_="m2-card-head")
+                        tags.p(f"Reported out-of-stock days {window[0]} – {window[1]}. "
+                               + (business.get("oos_coverage_note") or ""), class_="m2-meta", id="m2-detail-oos-note"),
+                        class_="m2-card-head")
         if not with_oos:
             chart = state("No stockouts reported", "No SKU was reported out of stock in this window.")
         else:
@@ -1451,18 +1540,20 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                                                                  categoryarray=[s for s, _ in top]))
             chart = plot(fig, "m2-detail-oos-bar")
         table = tags.div(tags.table(
-            tags.thead(tags.tr(*[tags.th(h, scope="col", class_="num" if h in ("OOS days", "Unknown days") else None)
-                                 for h in ("SKU", "MSL (as of)", "Now", "OOS days", "Unknown days")])),
+            tags.thead(tags.tr(*[tags.th(h, scope="col", class_="num" if h in ("OOS days", "Unreported", "Days with data")
+                                         else None)
+                                 for h in ("SKU", "MSL (as of)", "Now", "OOS days", "Unreported", "Days with data")])),
             tags.tbody(*[tags.tr(tags.td(tags.button(tags.span(s, class_="m2-store-name"),
                                                      tags.span(products.get(s) or "", class_="m2-store-meta"), type="button",
                                                      class_="m2-sku-link", onclick=f"m2OpenSku('{s}')",
                                                      **{"aria-label": f"Show inventory and sales trend for {s}",
                                                         "data-sku": s}), class_="m2-cell-store"),
-                                 tags.td("Yes" if d.get("is_msl") is True else "No" if d.get("is_msl") is False else "Unknown",
-                                         **{"data-label": "MSL (as of)"}),
-                                 tags.td(_status(d.get("current")), **{"data-label": "Now"}),
+                                 tags.td(_msl_text(d.get("is_msl")), **{"data-label": "MSL (as of)"}),
+                                 tags.td(_as_of_status(d), **{"data-label": "Now"}),
                                  tags.td(str(d["reported_oos_days"]), class_="num", **{"data-label": "OOS days"}),
-                                 tags.td(str(d["unknown_days"]), class_="num", **{"data-label": "Unknown days"}))
+                                 tags.td(str(d["unreported_days"]), class_="num", **{"data-label": "Unreported"}),
+                                 tags.td(f"{d['days_with_rows']} / {d['window_days']}", class_="num",
+                                         **{"data-label": "Days with data"}))
                          for s, d in rows]),
             class_="m2-table m2-cards", id="m2-detail-oos-table"), class_="m2-table-wrap")
         return TagList(head, chart, table)
@@ -1573,6 +1664,28 @@ def _status(oos):
     return "Unknown" if oos is None else ("Out of stock" if oos else "In stock")
 
 
+def _as_of_status(day):
+    """Store x SKU state on the as-of date: no row is not the same as a row without a report."""
+    if day.get("as_of_report") == "missing":
+        return "No as-of report"
+    return "Not reported" if day.get("current") is None else _status(day.get("current"))
+
+
+def _msl_text(value):
+    return "Yes" if value is True else ("No" if value is False else "Unknown")
+
+
+NOT_RANKED = "Not ranked: no priority score (sales at risk unavailable or no usable model score)"
+
+
+def _rank_cell(row):
+    """Overall rank, or an explicit 'Not ranked' for stores without a priority score."""
+    if row.get("overall_rank") is None:
+        return tags.td(tags.span("—", **{"aria-hidden": "true"}), tags.span("Not ranked", class_="m2-sr"),
+                       class_="num m2-rank m2-unranked", title=NOT_RANKED, **{"data-label": "Overall rank"})
+    return tags.td(str(row["overall_rank"]), class_="num m2-rank", **{"data-label": "Overall rank"})
+
+
 NUMERIC_HEADERS = {"Rows", "Positives", "Precision", "Recall", "ROC-AUC", "AP", "Label coverage", "Brier", "ECE",
                    "Trials", "Completed", "Feasible", "Best precision", "Its recall", "Its ROC-AUC"}
 
@@ -1627,12 +1740,14 @@ def _comparison(dev):
                         class_="m2-card")
     fig = go.Figure()
     symbols = {"lightgbm": "circle", "xgboost": "square", "random_forest": "diamond", "logistic_regression": "triangle-up"}
+    # Three tree models take the first three palette slots (all-pairs safe); the baseline is neutral.
+    algorithm_colors = {"lightgbm": CHART_COLORS[0], "xgboost": CHART_COLORS[1], "random_forest": CHART_COLORS[2]}
     for algorithm in sorted({r["algorithm"] for r in complete}):
         mine = [r for r in complete if r["algorithm"] == algorithm]
         fig.add_trace(go.Scatter(x=[r["recall"] for r in mine], y=[r["precision"] for r in mine], mode="markers",
                                  name=algorithm.replace("_", " "),
                                  marker=dict(symbol=symbols.get(algorithm, "circle"), size=[14 if r["selected"] else 8 for r in mine],
-                                             color="#b41824" if algorithm != "logistic_regression" else "#8a7f80",
+                                             color=algorithm_colors.get(algorithm, CHART_NEUTRAL),
                                              line=dict(width=[2 if r["selected"] else 0 for r in mine], color="#0f1f2e")),
                                  text=[r["candidate_id"] for r in mine],
                                  hovertemplate="%{text}<br>Recall %{x:.3f}<br>Precision %{y:.3f}<extra></extra>"))
@@ -1704,7 +1819,7 @@ def _monitoring(rows):
         chart = None
         if top:
             fig = go.Figure(go.Bar(x=[v["psi"] for _, v in top][::-1], y=[k for k, _ in top][::-1], orientation="h",
-                                   marker_color="#b41824"))
+                                   marker_color=CHART_COLORS[0]))
             fig.add_vline(x=0.2, line_dash="dot", line_color="#8a4b00", annotation_text="warning .20")
             fig.update_layout(xaxis_title="Population stability index vs training", height=300)
             chart = plot(fig, f"m2-psi-{r['model_version']}"[:60])

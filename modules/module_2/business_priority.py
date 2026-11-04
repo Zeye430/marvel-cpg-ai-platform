@@ -16,6 +16,7 @@ otherwise any missing input leaves that SKU unestimated; it never becomes zero.
 """
 
 import json
+import math
 from datetime import date
 
 POLICY_VERSION = "business-priority.v2-proposed"
@@ -66,6 +67,16 @@ def price_for(context, basis=PRICE_BASIS):
     return price, None
 
 
+def receipt_day(scheduled, arrival_day):
+    """Window day (1..7) on which the scheduled units become usable, or None if none arrive inside
+    the window. Days before the window count as day 1; a fractional day (not expected in the source,
+    which uses whole days) counts from the next whole day. Shared by the summary and the day path."""
+    if not scheduled or arrival_day is None:
+        return None
+    day = max(1, math.ceil(arrival_day))
+    return day if day <= WINDOW_DAYS else None
+
+
 def shortfall_units(inventory, velocity, scheduled, arrival_day):
     """Units of demand not covered in the 7-day window; None when any needed input is unknown.
 
@@ -78,7 +89,8 @@ def shortfall_units(inventory, velocity, scheduled, arrival_day):
     elif arrival_day is None:
         return None
     else:
-        gap = int(min(max(arrival_day - 1, 0), WINDOW_DAYS))
+        day = receipt_day(scheduled, arrival_day)
+        gap = WINDOW_DAYS if day is None else day - 1
     before = max(0.0, velocity * gap - inventory)
     left = max(0.0, inventory - velocity * gap)
     after = max(0.0, velocity * (WINDOW_DAYS - gap) - left - (scheduled if gap < WINDOW_DAYS else 0.0))
@@ -94,12 +106,10 @@ def scenario_path(inventory, velocity, scheduled, arrival_day):
     """
     if shortfall_units(inventory, velocity, scheduled, arrival_day) is None:
         return None
-    receipt_day = None if scheduled == 0 else (arrival_day if 1 <= arrival_day <= WINDOW_DAYS else None)
-    if scheduled and arrival_day is not None and arrival_day < 1:
-        receipt_day = 1
+    arrives = receipt_day(scheduled, arrival_day)
     stock, path = inventory, []
     for day in range(1, WINDOW_DAYS + 1):
-        receipt = scheduled if day == receipt_day else 0.0
+        receipt = scheduled if day == arrives else 0.0
         available = stock + receipt
         sold = min(available, velocity)
         short = velocity - sold
@@ -264,32 +274,41 @@ def risk_category(row):
     return " + ".join(parts)
 
 
+def _list_order(r):
+    """Deterministic list position: ranked stores by overall rank, then stores without a score
+    (stored visit order, then store id). Never a rank for an unscored store."""
+    stored = r["display_rank"] if r.get("display_rank") is not None else float("inf")
+    rank = r.get("overall_rank")
+    return (rank is None, rank if rank is not None else 0, stored, r["store_id"])
+
+
 def assign_overall_ranks(rows):
     """Stable overall rank within the given (authorized) set: score desc, then the stored visit
-    order, then store id; stores without a score follow, by stored order then store id."""
+    order, then store id. Stores without a priority score (score unavailable, or no usable model
+    score at all) get no rank (None, "Not ranked"); they stay listed last in stored order."""
     def key(r):
         stored = r["display_rank"] if r["display_rank"] is not None else float("inf")
-        return (r["priority_score"] is None, -(r["priority_score"] or 0.0), stored, r["store_id"])
-    for i, r in enumerate(sorted(rows, key=key), start=1):
+        return (-(r["priority_score"]), stored, r["store_id"])
+    for r in rows:
+        r["overall_rank"] = None
+    for i, r in enumerate(sorted((r for r in rows if r["priority_score"] is not None), key=key), start=1):
         r["overall_rank"] = i
     return rows
 
 
 def sort_rows(rows, sort_key="score", descending=True):
     """Sort the whole filtered set. Missing values are last in both directions; ties keep the
-    overall rank, then store id. Sorting never re-ranks."""
+    list order (overall rank, then unranked stores), then store id. Sorting never re-ranks."""
     if sort_key not in SORT_KEYS:
         raise ValueError(f"Unsupported sort: {sort_key}")
-    if sort_key == "rank":
-        return sorted(rows, key=lambda r: ((-1 if descending else 1) * r["overall_rank"], r["store_id"]))
-    getter = {"score": lambda r: r["priority_score"], "sales_at_risk": lambda r: r["sales_at_risk_usd"],
-              "shelf_risk": lambda r: r["shelf_risk"], "msl_risk": lambda r: r["msl_risk"],
-              "urgency": lambda r: r["urgency"]}[sort_key]
+    getter = {"rank": lambda r: r["overall_rank"], "score": lambda r: r["priority_score"],
+              "sales_at_risk": lambda r: r["sales_at_risk_usd"], "shelf_risk": lambda r: r["shelf_risk"],
+              "msl_risk": lambda r: r["msl_risk"], "urgency": lambda r: r["urgency"]}[sort_key]
     present = [r for r in rows if getter(r) is not None]
     missing = [r for r in rows if getter(r) is None]
     sign = -1 if descending else 1
-    present.sort(key=lambda r: (sign * getter(r), r["overall_rank"], r["store_id"]))
-    missing.sort(key=lambda r: (r["overall_rank"], r["store_id"]))
+    present.sort(key=lambda r: (sign * getter(r), _list_order(r)))
+    missing.sort(key=_list_order)
     return present + missing
 
 

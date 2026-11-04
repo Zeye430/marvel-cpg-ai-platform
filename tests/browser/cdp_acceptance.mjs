@@ -215,7 +215,13 @@ async function openStore(p, how, selector) {
     await evaluate(p, `(document.querySelector(${JSON.stringify(selector)}).focus(), true)`);
     await key(p, "Enter", "Enter", 13);
   } else {
-    await click(p, selector);
+    // A table that follows a just-changed filter can re-render once more; retry while it settles.
+    for (let attempt = 1; ; attempt++) {
+      try { await click(p, selector); break; } catch (error) {
+        if (attempt >= 4 || !/Not clickable|obscured/.test(String(error))) throw error;
+        await idle(p); await sleep(400);
+      }
+    }
   }
   await waitFor(p, "(document.querySelector('#m2_page')?.innerText || '') === 'detail' && !!document.querySelector('#m2_detail')", 30000, "store detail");
   await idle(p);
@@ -258,7 +264,7 @@ async function shellChecks(p, tag, viewport, mode) {
   check(`${tag}: user avatar, name and title in the top bar`, await evaluate(p,
     "(() => { const u = document.querySelector('#m2-user'); return !!u && !!u.querySelector('.m2-avatar') && u.querySelectorAll('.m2-user-text > *').length === 2; })()"));
   check(`${tag}: Inter loaded locally for Module 2 text`, await evaluate(p,
-    "document.fonts.ready.then(() => document.fonts.check('600 16px \"M2 Inter\"') && getComputedStyle(document.querySelector('.m2-title')).fontFamily.includes('M2 Inter'))"));
+    "document.fonts.ready.then(() => document.fonts.check('600 16px \"Workspace Inter\"') && getComputedStyle(document.querySelector('.m2-title')).fontFamily.includes('Workspace Inter'))"));
 }
 
 async function businessChecks(p, tag, role, viewport) {
@@ -409,9 +415,14 @@ async function businessChecks(p, tag, role, viewport) {
     const ownScope = role.name === "sales" ? affected.length <= EXPECT.rep : affected.length <= EXPECT.manager;
     check(`${tag}: SKU drilldown lists affected stores in scope`, affected.length > 0 && ownScope, JSON.stringify(affected.slice(0, 3)));
     await click(p, "#m2_oos_msl input[value='MSL'] + span"); await idle(p);
+    // The MSL filter also applies to the drilldown; the selected SKU stays selected.
+    await waitFor(p, `document.querySelector('#m2_oos_sku').value === ${JSON.stringify(sku)} && !!document.querySelector('#m2-oos-filter-note') && (!!document.querySelector('#m2-oos-store-table') || /in the MSL group/.test(document.querySelector('#m2_oos_stores')?.innerText || ''))`, 20000, "MSL drilldown");
+    check(`${tag}: MSL filter keeps the SKU and filters its stores`, await evaluate(p, "[...document.querySelectorAll('#m2-oos-store-table tr[data-count]')].every(r => Number(r.dataset.count) > 0)"));
     await sleep(300);
     await shot(p, "3-analytics");
     await click(p, "#m2_oos_msl input[value='all'] + span"); await idle(p);
+    await waitFor(p, `!!document.querySelector('#m2-oos-store-table a.m2-store-link[data-store=${JSON.stringify(affected[0])}]')`, 20000, "all-group drilldown");
+    await idle(p);
     await openStore(p, "link", `#m2-oos-store-table a.m2-store-link[data-store=${JSON.stringify(affected[0])}]`);
     await click(p, "#m2_back");
     await waitFor(p, "(document.querySelector('#m2_page')?.innerText || '') === 'analytics'", 15000, "back to analytics");
@@ -519,8 +530,8 @@ async function detailChecks(p, tag, viewport) {
     await shot(p, "5-detail-trend");
     await click(p, "#m2_detail_tabs a[data-value='oos']");
     await waitFor(p, "!!document.querySelector('#m2-detail-oos-table')", 20000, "store OOS table");
-    check(`${tag}: store OOS SKUs for the past 28 days with unknown days`, await evaluate(p,
-      "/past 28 days/.test(document.querySelector('.tab-pane[data-value=oos]').innerText) && /Unknown days/.test(document.querySelector('.tab-pane[data-value=oos]').innerText)"));
+    check(`${tag}: store OOS SKUs for the past 28 days with unreported rows and days with data`, await evaluate(p,
+      "/past 28 days/.test(document.querySelector('.tab-pane[data-value=oos]').innerText) && /Unreported/.test(document.querySelector('.tab-pane[data-value=oos]').innerText) && /Days with data/.test(document.querySelector('.tab-pane[data-value=oos]').innerText) && /not counted as missing reports/.test(document.querySelector('#m2-detail-oos-note').textContent)"));
     await click(p, "#m2_detail_tabs a[data-value='skus']");
   }
 }

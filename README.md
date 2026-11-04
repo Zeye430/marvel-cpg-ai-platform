@@ -12,6 +12,7 @@ The platform is structured into four decoupled, independent business modules orc
 marvel-cpg-ai-platform/
 │
 ├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
+├── integrated_app.py           # Local Module 2 + Module 4 app on one shared publication (demo sign-in)
 ├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
 ├── Dockerfile                  # Production container definition for local & Render deployments
 ├── docker-compose.yml          # Container service definition with environment variable injection
@@ -130,6 +131,9 @@ The common Bronze/Silver/Gold layer supplies reported business data through June
    shiny run --host 0.0.0.0 --port 8000 app.py
    ```
    Open [http://localhost:8000](http://localhost:8000) in your browser.
+
+   To run only Module 2 (stockout risk) and Module 4 (Commercial Copilot) on one shared publication,
+   see the [integrated app guide](docs/integrated-app.md).
 
 ---
 

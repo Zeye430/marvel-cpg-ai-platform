@@ -275,7 +275,7 @@ class ServiceTests(unittest.TestCase):
     def test_partial_scope_scores_within_own_stores_only(self):
         rep = {r["store_id"]: r for r in self.rows(self.rep).rows}
         self.assertEqual(set(rep), {"A", "C", "E"})
-        self.assertEqual([rep[s]["overall_rank"] for s in ("C", "A", "E")], [1, 2, 3])
+        self.assertEqual([rep[s]["overall_rank"] for s in ("C", "A", "E")], [1, 2, None])   # E: no score, not ranked
         self.assertTrue(all(r["global_rank"] is None for r in rep.values()))
         self.assertEqual([g["region"] for g in self.rows(self.rep).totals["regions"]], ["East", "West"])
         self.assertEqual(sum(g["stores"] for g in self.rows(self.rep).totals["regions"]), 3)
@@ -305,7 +305,8 @@ class ServiceTests(unittest.TestCase):
         by_id = {r["store_id"]: r for r in exported}
         self.assertEqual(float(by_id["C"]["sales_at_risk_usd"]), round(rows["C"]["sales_at_risk_usd"], 2))
         self.assertEqual(by_id["D"]["sales_at_risk_usd"], "")
-        self.assertEqual(by_id["E"]["overall_rank"], "5")
+        self.assertEqual((by_id["D"]["overall_rank"], by_id["E"]["overall_rank"]), ("", ""))   # no score: not ranked
+        self.assertEqual([r["store_id"] for r in exported][-2:], ["D", "E"])   # listed last, stored order
         self.assertNotIn("confidence", exported[0])                    # confidence is detail-only
 
     def test_no_shelf_loss_dollars_anywhere(self):

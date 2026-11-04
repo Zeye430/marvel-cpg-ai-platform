@@ -9,14 +9,11 @@ production authentication. It never imports shared.data or reads raw CSVs: data
 comes from the accepted business publication, answers from the local model.
 """
 
-from pathlib import Path
-
 from shiny import App, reactive, render, ui
 
 from modules.module_4.server import module_4_server
 from modules.module_4.ui import module_4_ui
 
-WWW = Path(__file__).resolve().parents[2] / "www"
 DEMO_ACCOUNTS = {
     "m4_demo_manager": ("demo:manager", "Regional Manager", "Regional Manager · all stores (demo)"),
     "m4_demo_rep_a": ("demo:rep-a", "Field Rep", "Field Rep A · assigned stores (demo)"),
@@ -24,18 +21,19 @@ DEMO_ACCOUNTS = {
 }
 
 app_ui = ui.page_fluid(
-    ui.tags.head(ui.tags.link(rel="stylesheet", href="styles.css"),
-                 ui.tags.title("Module 4 · Commercial Copilot (local demo)")),
+    ui.tags.head(ui.tags.title("Module 4 · Commercial Copilot (local demo)"),
+                 ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1")),
     ui.div(
-        ui.div(ui.span("Demo sign-in:", class_="tray-label"),
-               *[ui.input_action_button(key, label, class_="btn-quick-demo")
+        ui.div(ui.span("Demo sign-in", class_="ws-label"),
+               *[ui.input_action_button(key, label, class_="ws-btn")
                  for key, (_, _, label) in DEMO_ACCOUNTS.items()],
-               ui.input_action_button("m4_demo_logout", "Sign out", class_="btn-quick-demo"),
+               ui.input_action_button("m4_demo_logout", "Sign out", class_="ws-btn"),
                ui.output_text("m4_demo_who", inline=True),
                class_="d-flex flex-wrap align-items-center gap-2 p-3"),
         module_4_ui({}),
-        style="max-width:1280px;margin:0 auto;",
+        class_="ws",
     ),
+    style="padding:0;max-width:100%;overflow-x:clip",
 )
 
 
@@ -45,6 +43,7 @@ def server(input, output, session):
     role = reactive.value("Field Rep")
     label = reactive.value("Signed out")
     auth_state = {"principal_id": principal, "authenticated": authenticated, "role": role,
+                  "name": lambda: label().removeprefix("Signed in: ").split(" · ")[0], "title": lambda: "Demo identity",
                   "is_demo": lambda: True}
 
     for key, (principal_id, role_name, text) in DEMO_ACCOUNTS.items():
@@ -72,4 +71,4 @@ def server(input, output, session):
     module_4_server(input, output, session, {}, auth_state)
 
 
-app = App(app_ui, server, static_assets=str(WWW))
+app = App(app_ui, server)

@@ -51,8 +51,17 @@ uv run --extra app --extra module4 shiny run modules.module_4.demo_app:app --por
 | `MODULE4_LLM_TIMEOUT_S` | `120` | Per-call timeout |
 | `MODULE4_RAG_DENSE` | `1` | `0` = BM25-only retrieval (no embedding model) |
 
-If the model, the data or the knowledge base is missing, the tab shows that state (red status chip and an
-explanation) instead of an answer. With the model stopped, a knowledge question still lists the permitted
+The page uses the shared workspace design (Module 2's design, `shared/ui_kit.py`) as a conversation:
+suggested questions on the home screen while the conversation is empty (your data, stockout predictions,
+Marvel documents), questions and answers oldest first, and the question box fixed at the bottom (Enter
+sends). Each data answer starts with the summary and offers Chart | Table | SQL tabs; prediction notes stay
+visible, source tags (reported data date, scope, prediction status and window, document access) close the
+answer, and the full provenance is under "How this was answered". A "Data scope" panel beside the
+conversation (collapsed above it on narrow screens) shows the data date, the user's scope, the prediction
+release, the language model and document access. Charts use the shared multi-hue palette, one axis only. Questions about the future are answered only from Module 2's published predictions (the
+executed query must read them), never from observed history; probabilities are shown as percentages
+(`formatting.py`), so a small nonzero risk never reads as zero. If the model, the data or the knowledge base is missing, the tab shows that state (a red
+status marker and an explanation) instead of an answer. With the model stopped, a knowledge question still lists the permitted
 passages.
 
 **Hardware.** The 7B model needs about 5 GB of free memory and answers in roughly 7-20 s on an Apple M-series
@@ -83,8 +92,30 @@ them, and signing out or switching user clears the conversation.
 ## 3. Component A: NLQ / Text-to-SQL
 
 **Data source.** The same accepted `business.duckdb` publication the other modules read, pinned through
-`examples.read_shared_data.open_reader` (integrity and quality checks included). Module 4 never reads raw
-CSVs, `build.duckdb`, features or labels.
+`examples.read_shared_data.open_reader` (integrity and quality checks included), or the shared PostgreSQL
+release when `SHARED_DATA_BACKEND=postgres`. In the [integrated app](../../docs/integrated-app.md) the
+copilot uses the app's single shared source. Module 4 never reads raw CSVs, `build.duckdb`, features or
+labels.
+
+**Module 2 predictions and rankings.** When the publication's model outputs are released
+(`model_outputs_status = Available`) and every scoped prediction and ranking row comes from the publication's
+selected scoring run and model version, the sandbox also has:
+
+| Table | From | Notes |
+| --- | --- | --- |
+| `sku_risk` | `oos_predictions` | `predicted_oos_probability`, `alert_threshold`, `is_alert`, scoring date and the 7-day window. A prediction, not observed stock (`is_oos`). Driver details are not copied. |
+| `store_priority` | `visit_priority` | Stored v1 ranking. `stored_rank_in_scope` renumbers it within the asker's stores; the chain-wide `priority_rank` is not copied, so a rep cannot see other stores' positions. `risk_index` is the highest SKU probability, not a store probability. |
+| `business_priority` | Module 2 service | Integrated app only. Module 2's business rank and score for the same scope and run, read from the Module 2 service (proposed policy, not recomputed here). Copied only if its scope fingerprint, run and stores match the sandbox. |
+
+Answers that use these tables carry fixed notes (model status such as "synthetic demo" or "review
+candidate", run, scoring date and window; which ranking it is; blank = unknown) and provenance. If the outputs
+are not released, or runs or model versions are mixed, the tables are absent and prediction questions get an
+explicit "unavailable, not zero risk" answer without generating SQL. Business-data questions are unaffected.
+
+**Access changes while answering.** After a data answer is computed, the copilot re-checks the asker's
+account scope and the pinned release; if either changed (or access was revoked), the answer is discarded
+and the user is asked to try again. Signing out or switching identity cancels a question still being
+answered, and its answer is never shown to the next user.
 
 **Scoped sandbox** ([sandbox.py](sandbox.py)). For each principal, trusted code copies only that principal's
 stores from the serving views into a compressed in-memory DuckDB with ten analyst-friendly tables
@@ -96,7 +127,7 @@ about 1.5 s and uses about 280 MB; a rep sandbox (37 stores) about 0.2 s.
 
 **SQL check** ([sql_guard.py](sql_guard.py)). DuckDB's own parser (`json_serialize_sql`) checks every query
 before it runs: exactly one `SELECT` (so `ATTACH`, `COPY`, `SET`, `PRAGMA`, writes and a second statement
-hidden after a comment are rejected), only the ten sandbox tables or the query's own CTEs, no schema prefixes
+hidden after a comment are rejected), only this sandbox's tables or the query's own CTEs, no schema prefixes
 (`information_schema`, attached databases), no table functions (`read_csv`, `query`, ...) and no denied
 functions (`getenv`, `read_*`, ...). Queries are interrupted after 20 s and return at most 200 rows (totals
 are always computed on the full scoped input; only the displayed rows are capped, and the cap is reported).
@@ -161,7 +192,8 @@ score. Before the presentation, teammates should each add questions they did not
   send questions and results outside the machine, which needs the team's and client's agreement). The
   Docker image does not yet copy `knowledge_base/` or `data_platform/`.
 - **Scope.** Reported data only (unknown days are excluded, never treated as zero). Candidate estimates,
-  Module 2 predictions and visit priorities are not exposed to the copilot yet.
+  price/audit context, metric definitions, model evaluation reports and Module 2's sales-at-risk scenario
+  are not exposed to the copilot.
 - **Multi-agent system (planned).** The router already separates a data agent and a knowledge agent; the
   next step is a coordinator that can call both in one answer and add Module 2 (OOS risk) and Module 3
   (deal check) tools.

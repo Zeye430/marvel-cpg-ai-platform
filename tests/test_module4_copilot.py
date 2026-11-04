@@ -102,6 +102,30 @@ class ChartTests(unittest.TestCase):
         self.assertIsNone(auto_chart(pd.DataFrame({"avg": [13.4]})))
         self.assertIsNone(auto_chart(None))
 
+    def test_one_axis_only_and_long_labels_shortened_but_distinct(self):
+        mixed = pd.DataFrame({"channel": ["A", "B"], "stores": [3, 4], "reported_units": [20000.0, 17000.0]})
+        self.assertEqual([t.name for t in auto_chart(mixed).data], ["reported units"])   # 3 vs 20,000: not one axis
+        comparable = pd.DataFrame({"channel": ["A", "B"], "sell_in_units": [900.0, 700.0],
+                                   "sell_out_units": [800.0, 750.0]})
+        self.assertEqual(len(auto_chart(comparable).data), 2)
+        names = pd.DataFrame({"product_name": ["Marvel Dish Soap Antibacterial 28oz"] * 2,
+                              "store_name": ["Nashville Neighborhood Grocery #94", "Raleigh SuperCenter"],
+                              "units": [5.0, 6.0]})
+        bar = auto_chart(names).data[0]
+        self.assertTrue(all(len(n) <= 30 for n in bar.y))
+        self.assertEqual(len(set(bar.y)), 2)
+        self.assertIn("Nashville Neighborhood Grocery #94", bar.hovertext[0])           # full name on hover
+
+    def test_repeated_labels_are_never_stacked_into_one_bar(self):
+        # The same product in two stores: one bar per row (product · store), each its own probability.
+        rows = pd.DataFrame({"store_name": ["North", "South", "North"], "product_name": ["Soap", "Soap", "Wipes"],
+                             "predicted_oos_probability": [0.9, 0.8, 0.7]})
+        bar = auto_chart(rows).data[0]
+        self.assertEqual(list(bar.x), ["Soap · North", "Soap · South", "Wipes · North"])
+        self.assertEqual(list(bar.y), [0.9, 0.8, 0.7])
+        twins = pd.DataFrame({"product_name": ["Soap", "Soap"], "units": [1, 2]})
+        self.assertIsNone(auto_chart(twins))                          # indistinguishable rows: no chart
+
 
 class UITests(unittest.TestCase):
     def test_tab_renders_with_the_example_questions(self):

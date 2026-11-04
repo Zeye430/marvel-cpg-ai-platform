@@ -457,13 +457,17 @@ class Module2Service:
                                "action_stores": sum(1 for r in base if (r["urgency"] or 0) >= 2),
                                "msl_gap_skus": sum(r["msl_gap_count"] or 0 for r in base),
                                "data_check_stores": summary["verify_data"]}
-            regions = {}
-            for r in base:
-                regions.setdefault(r["region"] or "Unknown region", []).append(r)
-            totals["regions"] = [{"region": name, "stores": len(group),
-                                  "action_stores": sum(1 for r in group if (r["urgency"] or 0) >= 2),
-                                  "sales_at_risk": self._impact_total(group)}
-                                 for name, group in sorted(regions.items())]
+            def breakdown(column, unknown, label):
+                groups = {}
+                for r in base:
+                    groups.setdefault(r[column] or unknown, []).append(r)
+                return [{label: name, "stores": len(group),
+                         "action_stores": sum(1 for r in group if (r["urgency"] or 0) >= 2),
+                         "msl_gap_skus": sum(r["msl_gap_count"] or 0 for r in group),
+                         "sales_at_risk": self._impact_total(group)}
+                        for name, group in sorted(groups.items())]
+            totals["regions"] = breakdown("region", "Unknown region", "region")
+            totals["channels"] = breakdown("channel", "Unknown channel", "channel")
         status = "Empty" if not rows else ("Stale" if self._stale(scoring) else "Ok")
         return self._base(status, rows=page, totals=totals, scope_identity=fingerprint,
                           next_cursor=str(start + page_size) if start + page_size < len(filtered) else None,

@@ -185,7 +185,10 @@ def _topbar():
         ui.div(ui.span(icon("search", 16), class_="m2-search-icon"),
                ui.input_text("m2_f_search", None, placeholder="Search stores by ID or name"),
                class_="m2-search", role="search"),
-        ui.div(_placeholder("spark", "Copilot", "Copilot"), _placeholder("mail", "Messages"),
+        ui.div(ui.tags.button(icon("spark"), ui.tags.span("Copilot", class_="m2-ph-text"), type="button",
+                              class_="m2-icon-btn m2-copilot", title="Open the Copilot", onclick="m2Go('copilot')",
+                              **{"aria-label": "Open the Copilot"}),
+               _placeholder("mail", "Messages"),
                _placeholder("bell", "Notifications"), _placeholder("calendar", "Calendar"),
                ui.span(class_="m2-topbar-sep", **{"aria-hidden": "true"}),
                ui.output_ui("m2_user_block"), class_="m2-topbar-actions"),
@@ -210,6 +213,7 @@ def _business_pages():
         "overview",
         ui.output_ui("m2_kpis"),
         ui.div(ui.output_ui("m2_focus"), ui.output_ui("m2_overview_oos"), class_="m2-grid m2-grid-2"),
+        ui.output_ui("m2_ask_cards"),
         ui.output_ui("m2_top10"),
         ui.output_ui("m2_regions"))
     ranking = ui.nav_panel(
@@ -275,7 +279,9 @@ def _business_pages():
             ui.nav_panel("Shelf execution", ui.div(ui.output_ui("m2_shelf"), class_="m2-card"), value="shelf"),
             ui.nav_panel("Estimate quality", ui.div(ui.output_ui("m2_quality"), class_="m2-card"), value="quality"),
             id="m2_detail_tabs", selected="skus"))
-    return ui.navset_hidden(overview, ranking, analytics, detail, id="m2_pages", selected="overview")
+    from modules.module_4.ui import module_4_panel   # imported on use: module_4.ui imports this module
+    copilot = ui.nav_panel("copilot", module_4_panel("m2c"))
+    return ui.navset_hidden(overview, ranking, analytics, copilot, detail, id="m2_pages", selected="overview")
 
 
 def _operations():
@@ -295,7 +301,8 @@ def module_2_ui(dataset: Dict[str, Any] = None) -> ui.Tag:
         ui.div(
             ui.output_ui("m2_page_head"),
             ui.output_ui("m2_banners"),
-            ui.panel_conditional("output.m2_mode === 'business' && output.m2_page !== 'detail'", _filters()),
+            ui.panel_conditional("output.m2_mode === 'business' && output.m2_page !== 'detail' && "
+                                 "output.m2_page !== 'copilot'", _filters()),
             ui.panel_conditional("output.m2_mode === 'business'", _business_pages()),
             ui.panel_conditional("output.m2_mode === 'ops'", _operations()),
             class_="m2-content"),

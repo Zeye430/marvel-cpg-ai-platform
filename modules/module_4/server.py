@@ -56,7 +56,7 @@ def _chart(fig, element_id: str) -> ui.HTML:
     return ui.HTML(f'<div role="img" aria-label="Chart of the query result">{markup}</div>')
 
 
-def render_answer(answer: CopilotAnswer, index: int) -> ui.Tag:
+def render_answer(answer: CopilotAnswer, index: int, prefix: str = "m4") -> ui.Tag:
     label, kind = ROUTE_LABEL.get(answer.route, ("COPILOT", "other"))
     body = [_markdown(answer.answer)]
     if answer.status in ("unavailable", "denied", "failed"):
@@ -64,7 +64,7 @@ def render_answer(answer: CopilotAnswer, index: int) -> ui.Tag:
     if answer.route == "data" and answer.frame is not None and len(answer.frame):
         if answer.chart is not None:
             body.append(tags.div(tags.div("Chart", class_="m4-section-title"),
-                                 _chart(answer.chart, f"m4-chart-{index}"), class_="m4-section"))
+                                 _chart(answer.chart, f"{prefix}-chart-{index}"), class_="m4-section"))
         rows = len(answer.frame)
         note = f"first {TABLE_ROWS} of {rows}" if rows > TABLE_ROWS else f"{rows} row{'s' if rows != 1 else ''}"
         if answer.truncated:
@@ -100,8 +100,15 @@ def render_answer(answer: CopilotAnswer, index: int) -> ui.Tag:
                     class_="m4-turn")
 
 
-def module_4_server(input, output, session, dataset: dict, auth_state: dict):
-    """Root-app entry point; ``dataset`` is accepted for compatibility and not used."""
+def module_4_server(input, output, session, dataset: dict, auth_state: dict, prefix: str = "m4"):
+    """Root-app entry point; ``dataset`` is accepted for compatibility and not used.
+
+    ``prefix`` namespaces the input and output ids, so the copilot can sit in the root app's Module 4 tab and in
+    the Module 2 workspace at the same time ("m4" and "m2c").
+
+    Returns ``{"ask": start}`` so a host page (the Module 2 workspace) can put a question to the
+    copilot, for example from a store page. The question still runs for the signed-in principal only.
+    """
     copilot = shared_copilot()
     history = reactive.value([])
     pending = reactive.value(None)
@@ -117,7 +124,7 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
         # Document permission is a separate check from store scope (Module 4 guide, section 5).
         return "manager" if auth_state["role"]() == "Regional Manager" else "sales"
 
-    @ui.bind_task_button(button_id="m4_btn_ask")
+    @ui.bind_task_button(button_id=f"{prefix}_btn_ask")
     @reactive.extended_task
     async def ask_task(question, principal_id, role):
         return await asyncio.to_thread(copilot.ask, question, principal_id, role)
@@ -130,16 +137,16 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
         ask_task.invoke(question, principal(), doc_role())
 
     @reactive.effect
-    @reactive.event(input.m4_btn_ask)
+    @reactive.event(input[f"{prefix}_btn_ask"])
     def _ask():
-        start(input.m4_user_query())
+        start(input[f"{prefix}_user_query"]())
 
     for i, prompt in enumerate(PROMPTS):
         def make(i=i, prompt=prompt):
             @reactive.effect
-            @reactive.event(input[f"m4_ex_{i}"])
+            @reactive.event(input[f"{prefix}_ex_{i}"])
             def _example():
-                ui.update_text_area("m4_user_query", value=prompt)
+                ui.update_text_area(f"{prefix}_user_query", value=prompt)
                 start(prompt)
         make()
 
@@ -162,7 +169,7 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
             pending.set(None)
 
     @reactive.effect
-    @reactive.event(input.m4_btn_clear)
+    @reactive.event(input[f"{prefix}_btn_clear"])
     def _clear():
         history.set([])
 
@@ -173,8 +180,9 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
             history.set([])
             pending.set(None)
 
+    @output(id=f"{prefix}_status")
     @render.ui
-    def m4_status():
+    def _status_ui():
         history()  # refresh after each answer
         st = copilot.status()
         def chip(ok, text):
@@ -188,8 +196,9 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
             chip(True, "Knowledge base: 12 documents" + (f" · access: {role}" if role else "")),
             class_="m4-status", role="status")
 
+    @output(id=f"{prefix}_conversation")
     @render.ui
-    def m4_conversation():
+    def _conversation_ui():
         items = []
         question = pending()
         if question and ask_task.status() == "running":
@@ -200,8 +209,10 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
                                   class_="m4-turn", role="status", aria_live="polite"))
         turns = history()
         for n, answer in enumerate(turns):
-            items.append(render_answer(answer, len(turns) - n))
+            items.append(render_answer(answer, len(turns) - n, prefix))
         if not items:
             items.append(tags.div("Ask a question above, or start with one of the example questions.",
                                   class_="m4-empty sleek-card"))
         return TagList(*items)
+
+    return {"ask": start}

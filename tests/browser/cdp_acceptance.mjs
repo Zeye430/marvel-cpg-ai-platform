@@ -237,14 +237,14 @@ async function shellChecks(p, tag, viewport, mode) {
   if (phone) await toggleSidebar(p, true);
   const nav = await evaluate(p, "[...document.querySelectorAll('#m2_sidebar .m2-nav-item[data-page]')].map(b => b.dataset.page)");
   check(`${tag}: sidebar lists only Module 2 ${mode === "ops" ? "operations" : "business"} pages`,
-    JSON.stringify(nav) === JSON.stringify(mode === "ops" ? ["health", "monitoring"] : ["overview", "ranking", "analytics"]) &&
+    JSON.stringify(nav) === JSON.stringify(mode === "ops" ? ["health", "monitoring"] : ["overview", "ranking", "analytics", "copilot"]) &&
     !(await evaluate(p, "/Module [134]\\b/.test(document.querySelector('#m2_sidebar').innerText)")), JSON.stringify(nav));
   check(`${tag}: sign out and user card in the sidebar`, (await visible(p, "#m2_signout")) && (await visible(p, "#m2-demo-identity")));
   check(`${tag}: original placeholder logo shown`, await evaluate(p, "!!document.querySelector('#m2_sidebar svg.m2-logo-mark[aria-label]')"));
   if (phone) await toggleSidebar(p, false);
   const placeholders = await evaluate(p, "[...document.querySelectorAll('.m2-topbar [aria-disabled=\"true\"]')].map(b => b.getAttribute('aria-label'))");
-  check(`${tag}: Copilot, messages, notifications, calendar are labelled placeholders`,
-    placeholders.length === 4 && placeholders.every((l) => /coming soon/i.test(l)), JSON.stringify(placeholders));
+  check(`${tag}: messages, notifications, calendar are labelled placeholders; Copilot is live`,
+    placeholders.length === 3 && placeholders.every((l) => /coming soon/i.test(l)), JSON.stringify(placeholders));
   const before = await currentPage(p);
   await click(p, ".m2-topbar [aria-label^='Notifications']"); await sleep(400);
   check(`${tag}: placeholder click does nothing`, (await currentPage(p)) === before && !(await evaluate(p, "!!document.querySelector('.modal.show, .dropdown-menu.show')")));

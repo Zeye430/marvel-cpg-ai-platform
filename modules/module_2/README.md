@@ -187,10 +187,14 @@ original file (or reconcile manually) and keep the receipt with its backups.
 ## 7. UI and access
 
 Module 2 opens as its own workspace inside the Module 2 area (the app's navigation still switches
-modules): a collapsible Module 2 sidebar (*Overview*, *Store ranking*, *Analytics*, Help and Settings
+modules): a collapsible Module 2 sidebar (*Overview*, *Store ranking*, *Analytics*, *Copilot*, Help and Settings
 marked "coming soon", the user card and **Sign out**, which uses the host's own server-side logout),
-and a top bar with store search, the signed-in user (initials, name, title) and placeholder buttons
-for Copilot, messages, notifications and calendar (visible, labelled "coming soon", no behaviour).
+and a top bar with store search, the signed-in user (initials, name, title), a **Copilot** button and
+placeholder buttons for messages, notifications and calendar (visible, labelled "coming soon", no behaviour).
+The *Copilot* page is Module 4 (Text-to-SQL and RAG) running inside this workspace: it answers for the
+signed-in user's stores only, the overview offers role-specific one-click questions, and a store page has
+an "Ask Copilot about this store" button. The overview adds a visit plan with a "What to do" column for
+sales reps and, for managers, estimated sales at risk by region and a region and channel breakdown.
 Text uses Inter 4.1 (SIL OFL 1.1), bundled in `modules/module_2/assets/fonts` with its licence and
 registered only for Module 2. The logo is an original placeholder mark, not a client brand asset.
 

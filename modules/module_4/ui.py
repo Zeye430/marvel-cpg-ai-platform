@@ -74,5 +74,36 @@ def module_4_ui(dataset: Dict[str, Any]) -> ui.Tag:
             ui.output_ui("m4_conversation"),
             class_="app-container",
         ),
-        id="m4-root",
+        id="m4-root", class_="m4-scope",
     )
+
+
+def module_4_panel(prefix: str = "m2c") -> ui.Tag:
+    """The copilot as a page inside the Module 2 workspace (Module 2 look: no second header or sign-in).
+
+    Ids carry ``prefix``; call ``module_4_server(..., prefix=prefix)`` to drive it.
+    """
+    def chips(start, prompts):
+        return [ui.input_action_button(f"{prefix}_ex_{start + i}", SHORT[start + i], class_="m2-btn m2-chip-btn",
+                                       title=prompt) for i, prompt in enumerate(prompts)]
+
+    return ui.div(
+        ui.tags.style(_CSS),
+        ui.div(
+            ui.p("Ask in plain English. Data questions are answered from the stores you can see, with the SQL, a chart "
+                 "and the table behind the answer. Product, substitute, objection and policy questions are answered "
+                 "from Marvel's authorized documents and cite them.", class_="m2-sub"),
+            ui.output_ui(f"{prefix}_status"),
+            ui.div(ui.span("Data", class_="tray-label"), *chips(0, DATA_PROMPTS), class_="m4-tray"),
+            ui.div(ui.span("Knowledge", class_="tray-label"), *chips(3, KNOWLEDGE_PROMPTS), class_="m4-tray"),
+            ui.div(
+                ui.input_text_area(f"{prefix}_user_query", None, rows=2, width="100%",
+                                   placeholder="Ask about sales, stock-outs, shelf share, deliveries, products or "
+                                               "commercial policies…"),
+                ui.input_task_button(f"{prefix}_btn_ask", "Ask Copilot", label_busy="Thinking…",
+                                     class_="m2-btn primary"),
+                ui.input_action_button(f"{prefix}_btn_clear", "Clear", class_="m2-btn"),
+                class_="m4-ask"),
+            class_="m2-card"),
+        ui.output_ui(f"{prefix}_conversation"),
+        id=f"{prefix}-root", class_="m4-scope m4-embedded")

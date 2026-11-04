@@ -177,10 +177,26 @@ def _day(d):
 
 MSL_COLORS = {"MSL": "#b41824", "Non-MSL": "#8a7f80", "Unknown": "#d9cfcf"}
 SKU_COLORS = ["#b41824", "#2b2526", "#c26a00", "#5f6f7f", "#7a1fa2"]
-BUSINESS_PAGES = {"overview": "Overview", "ranking": "Store ranking", "analytics": "Analytics"}
+BUSINESS_PAGES = {"overview": "Overview", "ranking": "Store ranking", "analytics": "Analytics",
+                  "copilot": "Copilot"}
 OPS_PAGES = {"health": "Model health", "monitoring": "Monitoring"}
-NAV_ICONS = {"overview": "home", "ranking": "list", "analytics": "chart", "health": "gauge", "monitoring": "pulse"}
+NAV_ICONS = {"overview": "home", "ranking": "list", "analytics": "chart", "copilot": "spark", "health": "gauge",
+             "monitoring": "pulse"}
 ROLE_TITLES = {"sales": "Sales Representative", "manager": "Regional Manager"}
+# One-click Copilot questions on the overview, per role. Each is answered by Module 4 for the signed-in user's
+# stores only (data questions) or from the authorized documents (knowledge questions).
+ASK_PROMPTS = {
+    "sales": [("Which of my stores are out of stock on mandatory SKUs?",
+               "Which of my stores have the most Marvel SKUs out of stock right now? Show the top 5 stores."),
+              ("Top SKUs out of stock in my stores",
+               "Which are the 5 SKUs that are out of stock in the most of my stores right now?"),
+              ("Substitute when a SKU is out",
+               "Which SKU can I substitute for Marvel Power Clean Lemon 1L if it's out of stock?")],
+    "manager": [("Which regions have the most stockouts?",
+                 "Which regions have the most SKUs out of stock right now? Show the top 5 regions."),
+                ("Channels with the lowest shelf share",
+                 "What is the average shelf share by channel across my stores?"),
+                ("What can reps offer without approval?", "What discount can I offer without manager approval?")]}
 SKU_SORTS = {"sku": "SKU", "status": "Status now", "inventory": "Inventory", "oos_days": "OOS days · 28",
              "risk": "Stockout risk · 7 days", "units_short": "Units short", "sales": "Sales at risk"}
 
@@ -334,6 +350,42 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         if target in BUSINESS_PAGES:
             current_page.set(target)
             ui.update_navset("m2_pages", selected=target)
+
+    # ---- Module 4 copilot inside this workspace. The principal and document role come from this session.
+    copilot = {}
+    try:
+        from modules.module_4.server import module_4_server
+        copilot = module_4_server(input, output, session, {}, {
+            "principal_id": lambda: who().principal_id if who() is not None else None,
+            "authenticated": lambda: who() is not None and mode() == "business",
+            "role": lambda: "Regional Manager" if role() == "manager" else "Field Rep"},
+            prefix="m2c") or {}
+    except Exception:  # noqa: BLE001 - the workspace still works without the copilot
+        copilot = {}
+
+    def ask_copilot(question):
+        """Open the Copilot page with the question typed in and start the answer."""
+        go("copilot")
+        ui.update_text_area("m2c_user_query", value=question)
+        if copilot.get("ask"):
+            copilot["ask"](question)
+
+    @reactive.effect
+    @reactive.event(input.m2_ask_prompt)
+    def _ask_prompt():
+        prompts = ASK_PROMPTS.get(role() or "sales", ASK_PROMPTS["sales"])
+        try:
+            ask_copilot(prompts[int(input.m2_ask_prompt())][1])
+        except (ValueError, IndexError):
+            pass
+
+    @reactive.effect
+    @reactive.event(input.m2_ask_store)
+    def _ask_store():
+        store = selected_store.get()
+        if store:
+            ask_copilot(f"On the latest reported day, which products are out of stock in store {store}? "
+                        "List each product once.")
 
     @reactive.effect
     def _session_change():
@@ -550,7 +602,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             return None
         roles = (scope() or {}).get("roles") or []
         titles = {"overview": "Team risk overview" if roles == ["manager"] else "Store risk overview",
-                  "ranking": "Store ranking", "analytics": "Out-of-stock analytics"}
+                  "ranking": "Store ranking", "analytics": "Out-of-stock analytics", "copilot": "Commercial Copilot"}
         if service is None:
             return tags.div(tags.h1(titles[current_page()], class_="m2-title"), tags.p("Unavailable", class_="m2-meta"))
         sc = scope() or {}
@@ -666,6 +718,24 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             **{"aria-label": "Today's focus", **{f"data-{k.replace('_', '-')}": str(v)
                                                  for k, v in data["totals"]["summary"].items()}})
 
+    @render.ui
+    @safe
+    def m2_ask_cards():
+        if mode() != "business" or not copilot or (scope() or {}).get("stores") in (None, 0):
+            return None
+        prompts = ASK_PROMPTS.get(role() or "sales", ASK_PROMPTS["sales"])
+        who_text = "your team's stores" if role() == "manager" else "your stores"
+        return tags.section(
+            tags.div(tags.div(tags.h2("Ask the Copilot", class_="m2-h"),
+                              tags.p(f"Plain-English answers about {who_text}, with the data behind them. "
+                                     "Runs on this computer.", class_="m2-meta")),
+                     tags.button("Open Copilot →", type="button", class_="btn m2-btn", onclick="m2Go('copilot')"),
+                     class_="m2-card-head"),
+            tags.div(*[tags.button(label, type="button", class_="m2-focus-item m2-ask-item",
+                                   onclick=f"Shiny.setInputValue('m2_ask_prompt', {i}, {{priority: 'event'}})")
+                       for i, (label, _) in enumerate(prompts)], class_="m2-focus-row"),
+            class_="m2-card m2-focus", id="m2-ask")
+
     def _top_rows(rows, compact=False):
         body = []
         for r in rows:
@@ -681,7 +751,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                         **{"data-label": "Sales at risk"}),
                 tags.td(_urgency_tag(r["urgency"]), **{"data-label": "Urgency"}),
                 None if compact else tags.td(_category(r.get("risk_category")), class_="m2-category",
-                                             **{"data-label": "Risk category"})))
+                                             **{"data-label": "Risk category"}),
+                None if compact else tags.td(r.get("visit_objective") or "—", class_="m2-objective",
+                                             **{"data-label": "What to do"})))
         return body
 
     @render.ui
@@ -690,8 +762,12 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         data = overview()
         if data["status"] not in ("Ok", "Stale", "Empty"):
             return None
-        head = tags.div(tags.div(tags.h2("Highest-priority stores", class_="m2-h"),
-                                 tags.p("Top 10 by the proposed overall priority score · select a store to open it",
+        mine = role() == "sales"
+        head = tags.div(tags.div(tags.h2("Your visit plan: visit these first" if mine else "Highest-priority stores",
+                                         class_="m2-h"),
+                                 tags.p("Top 10 by the proposed overall priority score, in the order to visit · "
+                                        "select a store to open it" if mine else
+                                        "Top 10 by the proposed overall priority score · select a store to open it",
                                         class_="m2-meta")),
                         tags.button("View all stores →", type="button", class_="btn m2-btn",
                                     onclick="m2Go('ranking')"), class_="m2-card-head")
@@ -701,7 +777,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         table = tags.div(tags.table(
             tags.thead(tags.tr(*[tags.th(h, scope="col", class_="num" if h in ("Overall rank", "Score", "Sales at risk")
                                          else None) for h in ("Overall rank", "Store", "Score", "Sales at risk",
-                                                              "Urgency", "Risk category")])),
+                                                              "Urgency", "Risk category", "What to do")])),
             tags.tbody(*_top_rows(data["rows"])), class_="m2-table m2-cards m2-clickable", id="m2-top10-table"),
             class_="m2-table-wrap")
         return tags.section(head, table, class_="m2-card", id="m2-top10")
@@ -757,28 +833,62 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                                  "No store in these filters reported a SKU out of stock on the as-of "
                                                  "date."), note, class_="m2-card", id="m2-overview-oos")
 
+    def _breakdown_table(groups, label, table_id):
+        rows = [tags.tr(tags.td(g[label.lower()], class_="m2-cell-store"),
+                        tags.td(fmt_int(g["stores"]), class_="num", **{"data-label": "Stores"}),
+                        tags.td(fmt_int(g["action_stores"]), class_="num", **{"data-label": "Needing action"}),
+                        tags.td(fmt_int(g["msl_gap_skus"]), class_="num", **{"data-label": "Current MSL gaps"}),
+                        tags.td(_usd(g["sales_at_risk"]["value"], g["sales_at_risk"]["status"]), class_="num",
+                                **{"data-label": "Est. sales at risk"}))
+                for g in groups]
+        return tags.div(tags.table(tags.thead(tags.tr(tags.th(label, scope="col"),
+                                                      *[tags.th(h, scope="col", class_="num") for h in
+                                                        ("Stores", "Needing action", "Current MSL gaps",
+                                                         "Est. sales at risk")])),
+                                   tags.tbody(*rows), class_="m2-table m2-cards", id=table_id),
+                        class_="m2-table-wrap")
+
+    def _risk_bar(groups, label, element_id):
+        """Estimated sales at risk per group (a lower bound where inputs are incomplete); bars carry text values."""
+        import plotly.graph_objects as go_
+        points = [(g[label.lower()], g["sales_at_risk"]["value"], g["sales_at_risk"]["status"], g["action_stores"])
+                  for g in groups if g["sales_at_risk"]["value"] is not None]
+        if not points:
+            return None
+        points.sort(key=lambda p: p[1])
+        fig = go_.Figure(go_.Bar(y=[p[0] for p in points], x=[p[1] for p in points], orientation="h",
+                                 marker_color="#b41824", text=[_usd(p[1], p[2]) for p in points],
+                                 textposition="outside", cliponaxis=False,
+                                 customdata=[p[3] for p in points],
+                                 hovertemplate="%{y}<br>%{text} at risk<br>%{customdata} stores need action"
+                                               "<extra></extra>"))
+        fig.update_layout(height=max(180, 44 * len(points) + 70), xaxis=dict(tickprefix="$", tickformat=",d",
+                                                                              rangemode="tozero"),
+                          margin=dict(l=100, r=110, t=16, b=40), showlegend=False)
+        return plot(fig, element_id)
+
     @render.ui
     @safe
     def m2_regions():
         data = overview()
         if role() != "manager" or data["status"] not in ("Ok", "Stale") or not data["totals"].get("regions"):
             return None
-        rows = [tags.tr(tags.td(g["region"], class_="m2-cell-store"),
-                        tags.td(fmt_int(g["stores"]), class_="num", **{"data-label": "Stores"}),
-                        tags.td(fmt_int(g["action_stores"]), class_="num", **{"data-label": "Needing action"}),
-                        tags.td(_usd(g["sales_at_risk"]["value"], g["sales_at_risk"]["status"]), class_="num",
-                                **{"data-label": "Est. sales at risk"}))
-                for g in data["totals"]["regions"]]
+        regions, channels = data["totals"]["regions"], data["totals"].get("channels") or []
+        chart = _risk_bar(regions, "Region", "m2-region-risk")
         return tags.section(
             tags.div(tags.div(tags.h2("Territory overview", class_="m2-h"),
-                              tags.p("By region in the published store data. Sales-rep territories are not in the "
-                                     "published data, so no rep owner is shown.", class_="m2-meta")),
+                              tags.p("Where the risk is: by region and by channel in the published store data. "
+                                     "Sales-rep territories are not in the published data, so no rep owner is "
+                                     "shown.", class_="m2-meta")),
                      class_="m2-card-head"),
-            tags.div(tags.table(tags.thead(tags.tr(tags.th("Region", scope="col"),
-                                                   *[tags.th(h, scope="col", class_="num") for h in
-                                                     ("Stores", "Needing action", "Est. sales at risk")])),
-                                tags.tbody(*rows), class_="m2-table m2-cards", id="m2-region-table"),
-                     class_="m2-table-wrap"),
+            tags.div(tags.div(tags.h3("Estimated sales at risk by region", class_="m2-h"), chart,
+                              class_="m2-subcard") if chart else None,
+                     tags.div(tags.h3("By region", class_="m2-h"), _breakdown_table(regions, "Region",
+                                                                                    "m2-region-table"),
+                              tags.h3("By channel", class_="m2-h", style="margin-top:16px"),
+                              _breakdown_table(channels, "Channel", "m2-channel-table") if channels else None,
+                              class_="m2-subcard"),
+                     class_="m2-grid m2-grid-2"),
             class_="m2-card", id="m2-regions")
 
     # -------------------------------------------------------------- ranking
@@ -1156,7 +1266,12 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                    else "", f"Policy {bp.POLICY_VERSION}: weights and cut-offs are proposals, not approved rules.",
                    class_="m2-meta"),
             class_="m2-card", id="m2-why")
-        return tags.div(actions, why, class_="m2-grid m2-grid-2")
+        ask = tags.button(icon("spark", 16), "Ask Copilot about this store", type="button", class_="btn m2-btn",
+                          id="m2-ask-store",
+                          onclick="Shiny.setInputValue('m2_ask_store', Date.now(), {priority: 'event'})") \
+            if copilot else None
+        return tags.div(tags.div(ask, class_="m2-ask-row") if ask else None,
+                        tags.div(actions, why, class_="m2-grid m2-grid-2"))
 
     def _sku_rows():
         """One row per published SKU: reported now (as-of report) and next 7 days kept as separate groups."""

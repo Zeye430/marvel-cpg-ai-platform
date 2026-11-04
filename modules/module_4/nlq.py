@@ -58,7 +58,8 @@ METRICS = """METRICS (shared team definitions; use exactly these):
 - MSL compliance % = 100.0 * SUM(msl_compliant) / NULLIF(SUM(msl_assessable), 0) on store_daily.
 - Trade discount % = 100.0 * SUM(gross_sales - net_sales) / NULLIF(SUM(gross_sales), 0) on sell_in.
 - Invoiced revenue = SUM(net_sales) on sell_in.
-- Fill rate % = 100.0 * SUM(units_delivered) / NULLIF(SUM(units_ordered), 0) on deliveries. Late: delay_days > 0.
+- Fill rate % = 100.0 * SUM(units_delivered) / NULLIF(SUM(units_ordered), 0) on deliveries.
+  Late (only when the question asks about late or delayed deliveries): delay_days > 0.
 - Never average a percentage column across groups (except shelf_share_pct, which is already per audit)."""
 
 RULES = """RULES:
@@ -72,6 +73,8 @@ RULES = """RULES:
 - "Top N", "highest", "lowest", "best", "worst": ORDER BY the measure and LIMIT N (5 if N is not given).
   For "which stores/products ..." lists, return every matching row (no LIMIT), sorted by the key measure.
 - For a rate per group, also return its denominator (e.g. known_sku_days) so the answer can be checked.
+- Return one row per item asked about (store, product, region, ...; use GROUP BY or a single day), never one
+  row per day, unless the question asks for a trend over time ("by day", "by week", "trend", "over time").
 - Reply with the SQL only, inside ```sql ... ```."""
 
 EXAMPLES = [
@@ -101,6 +104,12 @@ FROM shelf_audits
 WHERE audit_date BETWEEN DATE '{this_month_start}' AND DATE '{as_of}'
 GROUP BY channel
 ORDER BY channel"""),
+    ("Which products are out of stock right now in store S001?",
+     """SELECT sku_id, product_name, is_msl, inventory_units
+FROM sku_daily
+WHERE store_id = 'S001' AND is_oos
+  AND date = (SELECT MAX(date) FROM sku_daily WHERE store_id = 'S001' AND is_oos IS NOT NULL)
+ORDER BY is_msl DESC, product_name"""),
     ("Weekly sell-out units of Dishwashing products over the last 4 weeks",
      """SELECT week_start, SUM(units_sold) AS sell_out_units
 FROM sku_daily
@@ -134,7 +143,9 @@ def date_ranges(as_of: date) -> dict:
 
 def dates_block(r: dict) -> str:
     return f"""DATES: the data ends on {r['as_of']} ("today"); there is no later data. Use these exact ranges:
-- today / latest day: date = DATE '{r['as_of']}'
+- today / latest day / right now / currently / at the moment: date = DATE '{r['as_of']}'
+  (for one named store, use that store's latest reported day instead:
+  date = (SELECT MAX(date) FROM sku_daily WHERE store_id = '...' AND is_oos IS NOT NULL))
 - this week / last 7 days: date BETWEEN DATE '{r['this_week_start']}' AND DATE '{r['as_of']}'
 - last week: date BETWEEN DATE '{r['last_week_start']}' AND DATE '{r['last_week_end']}'
 - last 4 weeks / last 28 days: date BETWEEN DATE '{r['last_28_start']}' AND DATE '{r['as_of']}';
@@ -144,7 +155,10 @@ def dates_block(r: dict) -> str:
 - this quarter (Q{(r['quarter_start'].month - 1) // 3 + 1} {r['quarter_start'].year}): BETWEEN DATE '{r['quarter_start']}' AND DATE '{r['as_of']}';
   last quarter (the previous one, Q{(r['last_quarter_start'].month - 1) // 3 + 1} {r['last_quarter_start'].year}): BETWEEN DATE '{r['last_quarter_start']}' AND DATE '{r['last_quarter_end']}'
 - this year / year to date: BETWEEN DATE '{r['year_start']}' AND DATE '{r['as_of']}'; last year: BETWEEN DATE '{r['last_year_start']}' AND DATE '{r['last_year_end']}'
-- no period in the question: use all data ({r['data_start']} to {r['as_of']})."""
+- no period in the question: use all data ({r['data_start']} to {r['as_of']}).
+The ranges are written for sku_daily / store_daily `date`; on other tables apply them to that table's own date
+column: sell_in invoice_date, shelf_audits audit_date, deliveries actual_delivery (arrived or delivered) or
+order_date (ordered), weekly_flow week_start, monthly_flow month_start, promotions start_date."""
 
 
 def values_block(sandbox: Sandbox) -> str:
@@ -161,6 +175,8 @@ def values_block(sandbox: Sandbox) -> str:
 - brand: {listed("SELECT DISTINCT brand FROM products ORDER BY 1")}
 - delivery_status: {listed("SELECT DISTINCT delivery_status FROM deliveries ORDER BY 1")}
 - promo_type: {listed("SELECT DISTINCT promo_type FROM promotions ORDER BY 1")}
+- promo_name (names repeat every year; a year in the question is a start_date filter, not part of the name):
+  {listed("SELECT DISTINCT promo_name FROM promotions ORDER BY 1")}
 - products: {products}"""
 
 
@@ -177,8 +193,12 @@ Rules:
 - Start with the direct answer to the question. Use 2 to 4 short sentences.
 - Use only numbers that appear in the result table. Do not calculate new figures and never invent any.
 - Name the time period and filters used (they are in the SQL).
-- If there are more rows than you name, name the top few and give the total number of rows.
+- Every row in the result matches the question's filters (for example, every listed product is out of stock).
+  Never say that a listed row does not match, and copy names and numbers exactly as they appear.
+- With 8 rows or fewer, name every row. With more, name the top few and give the total number of rows.
   Do not mention the row count otherwise.
+- is_msl = True means a must-stock (MSL) product. If the question asks what to do first, say only what the
+  table supports (for example: the must-stock products first) and nothing more.
 - If the result is empty, say that no data matched for this scope and period.
 - Do not guess causes or give advice that the data does not show."""
 

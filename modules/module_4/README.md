@@ -105,12 +105,21 @@ are always computed on the full scoped input; only the displayed rows are capped
 scope, the team's KPI formulas from `metric_definitions` (for example OOS rate = OOS SKU-days / SKU-days with
 known stock, unknown days excluded; never an average of percentages), fixed date ranges relative to the data
 cutoff (2026-06-30: "this week" = 24-30 Jun, "last 4 weeks" = the 4 latest complete weeks for weekly flows,
-and so on) and four worked examples that are not the brief's questions. If the SQL is rejected or fails, the
-error goes back to the model for up to two corrections; an empty result gets one check of its filters.
+"right now" / "currently" = the latest day, or for one named store that store's latest reported day, and so
+on) and five worked examples that are not the brief's questions. Results have one row per item asked about,
+never one row per day unless the question asks for a trend. If the SQL is rejected or fails, the error goes
+back to the model for up to two corrections; an empty result gets one check of its filters.
 
-**Answer.** The model explains the result using only numbers in the table. The UI adds the chart
-([charts.py](charts.py): line for dates, bars for rankings, grouped bars for comparisons), the table, the SQL
-and a provenance line (publication, data cutoff, scope, metric version, model).
+**Answer.** The model explains the result using only the names and numbers in the table: with 8 rows or fewer
+it names every row, and it never says a listed row does not match the question. The UI adds the chart
+([charts.py](charts.py): line for dates, bars for rankings, grouped bars for comparisons; measures that are all
+zero are not plotted, and every bar needs its own label, so a result with repeated labels shows no chart), the
+table, the SQL and a provenance line (publication, data cutoff, scope, metric version, model).
+
+**Inside Module 2.** The copilot also runs as the *Copilot* page of the Module 2 workspace
+(`module_4_panel("m2c")` driven by `module_4_server(..., prefix="m2c")`). The prefix keeps its input and
+output ids separate from the Module 4 tab, so both can be on the same page. Store scope and document role come
+from the Module 2 session, exactly as in the tab.
 
 ## 4. Component B: RAG pipeline
 
@@ -134,7 +143,7 @@ file read, off-topic). Data answers are graded against reference SQL recomputed 
 (right keys in the right order or the right values, and the written answer must state them); knowledge
 answers must cite an expected document and contain the key facts.
 
-Latest run (local `qwen2.5:7b`, publication `20261029T030859-c5b2e820650f`, data through 2026-06-30), full
+Latest run (local `qwen2.5:7b`, publication `20261104T162142-721c43c0d246`, data through 2026-06-30), full
 table in [eval_results.md](eval_results.md):
 
 | | Result |
@@ -142,14 +151,19 @@ table in [eval_results.md](eval_results.md):
 | **Core 20 questions** | **18/20 (90%)**: NLQ 9/10, RAG 9/10 |
 | Brief's five example questions | 5/5 |
 | Safety checks | 5/5: manager guide not leaked to sales, rep sees only their 37 stores, `DROP`/`information_schema` and file reads blocked, off-topic declined |
-| Median answer time | 15 s (first question about 35-50 s while the model and sandbox load) |
+| Median answer time | 6 s (first question about 20-35 s while the model and sandbox load) |
 
-The two misses: **D07** (lowest fill rate "last quarter"): the model read last quarter as April-June and added
-a delivery-lateness filter the question did not ask for. **K04** (Dishwashing products on the Must-Stock
-List): retrieval ranked the product sheets above the MSL list, so the answer named three of the four SKUs.
-One knowledge question (K07, promotion dates) was answered from the promotions table instead of the
-documents; the facts agree and the answer is correct. Across the last three prompt revisions the score
-moved between 16 and 18 of 20, so treat roughly 80-90% as the expected range on unseen questions.
+The two misses: **D07** (lowest fill rate "last quarter"): the model filters the right column
+(`actual_delivery`) but still reads last quarter as April-June instead of January-March. **K04** (Dishwashing
+products on the Must-Stock List): retrieval ranked the product sheets above the MSL list, so the answer named
+three of the four SKUs. One knowledge question (K07, promotion dates) is answered from the promotions table
+instead of the documents; the facts agree and the answer is correct.
+
+The 4 Nov prompt revision (current-state questions use the latest day with one row per item, exact promotion
+names, each table's own date column, summaries that name every row of a short result) was first scored 17/20:
+K07 searched for "2026 Spring Clean Blitz", a name that does not exist (the year is in `start_date`). Listing
+the promotion names fixed it. Across prompt revisions the score has moved between 16 and 18 of 20, so treat
+roughly 80-90% as the expected range on unseen questions.
 
 These questions were written by the team, so this is a regression check, not a prediction of the live
 score. Before the presentation, teammates should each add questions they did not write the code for.

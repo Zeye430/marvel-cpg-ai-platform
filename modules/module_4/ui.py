@@ -74,7 +74,7 @@ def module_4_ui(dataset: Dict[str, Any]) -> ui.Tag:
             ui.output_ui("m4_conversation"),
             class_="app-container",
         ),
-        id="m4-root", class_="m4-scope",
+        id="m4-root",
     )
 
 
@@ -106,4 +106,4 @@ def module_4_panel(prefix: str = "m2c") -> ui.Tag:
                 class_="m4-ask"),
             class_="m2-card"),
         ui.output_ui(f"{prefix}_conversation"),
-        id=f"{prefix}-root", class_="m4-scope m4-embedded")
+        id=f"{prefix}-root", class_="m4-embedded")

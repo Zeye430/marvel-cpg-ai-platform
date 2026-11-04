@@ -102,6 +102,32 @@ class ChartTests(unittest.TestCase):
         self.assertIsNone(auto_chart(pd.DataFrame({"avg": [13.4]})))
         self.assertIsNone(auto_chart(None))
 
+    def test_zero_measures_are_not_plotted(self):
+        zeros = pd.DataFrame({"product_name": ["A", "B", "C"], "units_sold": [0.0, 0.0, 0.0],
+                              "inventory_units": [0, 0, None]})
+        self.assertIsNone(auto_chart(zeros))
+        mixed = pd.DataFrame({"product_name": ["A", "B"], "units_sold": [0, 0], "sell_out_units": [5, 9]})
+        self.assertEqual([t.name for t in auto_chart(mixed).data], ["sell out units"])
+
+    def test_every_bar_has_one_distinct_label(self):
+        repeated = pd.DataFrame({"product_name": ["Soap", "Soap", "Gel"], "store_name": ["North", "South", "North"],
+                                 "oos_rate_pct": [12.0, 8.5, 3.1]})
+        bars = auto_chart(repeated).data[0]
+        self.assertEqual(list(bars.y if bars.orientation == "h" else bars.x),
+                         ["Soap · North", "Soap · South", "Gel · North"])
+        ambiguous = pd.DataFrame({"product_name": ["Soap", "Soap"], "units": [1, 2]})
+        self.assertIsNone(auto_chart(ambiguous))
+
+
+class PromptTests(unittest.TestCase):
+    def test_current_state_questions_use_one_day_and_one_row_per_item(self):
+        from modules.module_4.nlq import EXAMPLES, RULES, date_ranges, dates_block
+        block = dates_block(date_ranges(date(2026, 6, 30)))
+        self.assertIn("right now / currently", block)
+        self.assertIn("DATE '2026-06-30'", block)
+        self.assertIn("never one row per day", " ".join(RULES.split()))
+        self.assertTrue(any("right now in store" in q for q, _ in EXAMPLES))
+
 
 class UITests(unittest.TestCase):
     def test_tab_renders_with_the_example_questions(self):
@@ -123,6 +149,20 @@ class UITests(unittest.TestCase):
         self.assertNotIn("<img src=x", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertIn("<strong>carefully</strong>", html)
+
+
+class EmbeddedCopilotTests(unittest.TestCase):
+    def test_module_4_tab_and_module_2_copilot_page_share_a_page_without_id_clashes(self):
+        import re
+        from modules.module_2.ui import module_2_ui
+        from modules.module_4.ui import module_4_ui
+        html = str(module_4_ui({})) + str(module_2_ui({}))
+        ids = re.findall(r'\sid="([^"]+)"', html)
+        clashes = sorted({i for i in ids if ids.count(i) > 1})
+        self.assertEqual(clashes, [])
+        for prefix in ("m4", "m2c"):
+            for name in ("user_query", "btn_ask", "btn_clear", "status", "conversation", "ex_0"):
+                self.assertIn(f'id="{prefix}_{name}"', html)
 
 
 class KnowledgeTests(unittest.TestCase):

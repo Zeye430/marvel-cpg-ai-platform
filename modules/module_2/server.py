@@ -384,8 +384,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
     def _ask_store():
         store = selected_store.get()
         if store:
-            ask_copilot(f"On the latest reported day, which products are out of stock in store {store}? "
-                        "List each product once.")
+            ask_copilot(f"Which products are out of stock right now in store {store}?")
 
     @reactive.effect
     def _session_change():
@@ -862,9 +861,10 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                  customdata=[p[3] for p in points],
                                  hovertemplate="%{y}<br>%{text} at risk<br>%{customdata} stores need action"
                                                "<extra></extra>"))
-        fig.update_layout(height=max(180, 44 * len(points) + 70), xaxis=dict(tickprefix="$", tickformat=",d",
-                                                                              rangemode="tozero"),
-                          margin=dict(l=100, r=110, t=16, b=40), showlegend=False)
+        top = max(p[1] for p in points) or 1
+        fig.update_layout(height=max(180, 40 * len(points) + 70),
+                          xaxis=dict(tickprefix="$", tickformat=",d", range=[0, top * 1.3]),   # room for the labels
+                          margin=dict(l=100, r=24, t=16, b=40), showlegend=False)
         return plot(fig, element_id)
 
     @render.ui
@@ -881,14 +881,13 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                      "Sales-rep territories are not in the published data, so no rep owner is "
                                      "shown.", class_="m2-meta")),
                      class_="m2-card-head"),
-            tags.div(tags.div(tags.h3("Estimated sales at risk by region", class_="m2-h"), chart,
-                              class_="m2-subcard") if chart else None,
-                     tags.div(tags.h3("By region", class_="m2-h"), _breakdown_table(regions, "Region",
-                                                                                    "m2-region-table"),
-                              tags.h3("By channel", class_="m2-h", style="margin-top:16px"),
-                              _breakdown_table(channels, "Channel", "m2-channel-table") if channels else None,
-                              class_="m2-subcard"),
-                     class_="m2-grid m2-grid-2"),
+            tags.div(tags.h3("Estimated sales at risk by region", class_="m2-h"), chart,
+                     class_="m2-subcard") if chart else None,
+            tags.div(tags.h3("By region", class_="m2-h"), _breakdown_table(regions, "Region", "m2-region-table"),
+                     class_="m2-subcard"),
+            tags.div(tags.h3("By channel", class_="m2-h"),
+                     _breakdown_table(channels, "Channel", "m2-channel-table"),
+                     class_="m2-subcard") if channels else None,
             class_="m2-card", id="m2-regions")
 
     # -------------------------------------------------------------- ranking

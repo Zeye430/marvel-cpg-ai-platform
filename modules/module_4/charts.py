@@ -8,6 +8,10 @@ Picks a chart for a query result from the shape of the table:
 - a label column + one measure            -> bar chart (horizontal when long)
 - a label column + comparable measures     -> grouped bars (e.g. sell-in vs sell-out)
 - a single row                            -> no chart (the answer is a headline figure)
+
+Measures that are all zero or empty are never plotted (a row of zero bars says nothing), and bars
+need one distinct label each: a repeated label is joined with the next label column (for example
+"product · store"); if that still repeats, there is no chart and the table stands alone.
 """
 
 from __future__ import annotations
@@ -48,13 +52,31 @@ def measures(numbers: list[str]) -> list[str]:
     return (main or numbers)[:3]
 
 
+def informative(frame: pd.DataFrame, columns: list[str]) -> list[str]:
+    """Numeric columns with at least one non-zero value."""
+    return [c for c in columns if (frame[c].dropna() != 0).any()]
+
+
+def bar_labels(frame: pd.DataFrame, labels: list[str]) -> pd.Series | None:
+    """One distinct text label per row: the preferred label, joined with others until unique."""
+    ordered = [c for c in LABEL_PREFERENCE if c in labels] + [c for c in labels if c not in LABEL_PREFERENCE]
+    if not ordered:
+        return None
+    names = frame[ordered[0]].astype(str)
+    for extra in ordered[1:]:
+        if names.is_unique:
+            break
+        names = names + " · " + frame[extra].astype(str)
+    return names if names.is_unique else None
+
+
 def auto_chart(frame: pd.DataFrame | None, title: str = ""):
     if frame is None or len(frame) < 2:
         return None
     import plotly.graph_objects as go
 
     kinds = classify(frame)
-    ys = measures(kinds["numbers"])
+    ys = measures(informative(frame, kinds["numbers"]))
     if not ys:
         return None
     fig = go.Figure()
@@ -73,11 +95,10 @@ def auto_chart(frame: pd.DataFrame | None, title: str = ""):
         fig.update_xaxes(title=x.replace("_", " "))
         fig.update_yaxes(title=ys[0].replace("_", " ") if len(ys) == 1 else None)
     else:
-        if not kinds["labels"]:
-            return None
-        label = next((c for c in LABEL_PREFERENCE if c in kinds["labels"]), kinds["labels"][0])
         data = frame.head(MAX_BARS)
-        names = data[label].astype(str)
+        names = bar_labels(data, kinds["labels"])
+        if names is None:
+            return None
         horizontal = len(data) > 8 or names.str.len().max() > 14
         for i, y in enumerate(ys):
             values = data[y]

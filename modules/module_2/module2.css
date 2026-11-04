@@ -449,22 +449,23 @@
 }
 
 /* Copilot page (Module 4 inside this workspace): map its colours to the Module 2 palette. */
-.m2 .m4-scope { --border-light: var(--m2-rule); --text-primary: var(--m2-ink); --text-secondary: var(--m2-ink-2);
+.m2 #m2c-root { --border-light: var(--m2-rule); --text-primary: var(--m2-ink); --text-secondary: var(--m2-ink-2);
   --text-tertiary: var(--m2-ink-3); --accent-primary: var(--m2-data); }
-.m2 .m4-scope .sleek-card { background: var(--m2-surface); border: 1px solid var(--m2-rule); border-radius: 8px; }
-.m2 .m4-scope .m4-chip { background: var(--m2-surface); }
-.m2 .m4-scope .m4-q { background: var(--m2-red-soft); border-color: var(--m2-red-line); border-radius: 12px 12px 4px 12px; }
-.m2 .m4-scope .m4-route { background: var(--m2-data); }
-.m2 .m4-scope .m4-route.knowledge { background: var(--m2-ink-2); }
-.m2 .m4-scope .m4-marker { color: var(--m2-data); }
-.m2 .m4-scope table.m4-table th { background: var(--m2-raised); }
-.m2 .m4-scope pre.m4-sql { background: #2b2526; color: #f3eded; }
-.m2 .m4-scope .tray-label { font-size: 12px; font-weight: 700; color: var(--m2-ink-3); min-width: 76px; }
-.m2 .m4-scope .m2-card + .shiny-html-output { margin-top: 16px; }
-.m2 .m4-scope .m4-ask .m2-btn { min-height: 46px; }
+.m2 #m2c-root .sleek-card { background: var(--m2-surface); border: 1px solid var(--m2-rule); border-radius: 8px; }
+.m2 #m2c-root .m4-chip { background: var(--m2-surface); }
+.m2 #m2c-root .m4-q { background: var(--m2-red-soft); border-color: var(--m2-red-line); border-radius: 12px 12px 4px 12px; }
+.m2 #m2c-root .m4-route { background: var(--m2-data); }
+.m2 #m2c-root .m4-route.knowledge { background: var(--m2-ink-2); }
+.m2 #m2c-root .m4-marker { color: var(--m2-data); }
+.m2 #m2c-root table.m4-table th { background: var(--m2-raised); }
+.m2 #m2c-root pre.m4-sql { background: #2b2526; color: #f3eded; }
+.m2 #m2c-root .tray-label { font-size: 12px; font-weight: 700; color: var(--m2-ink-3); min-width: 76px; }
+.m2 #m2c-root .m2-card + .shiny-html-output { margin-top: 16px; }
+.m2 #m2c-root .m4-ask .m2-btn { min-height: 46px; }
 .m2 .m4-chip-btn { font-weight: 500; font-size: 13px; padding: 5px 10px; min-height: 32px; }
 .m2 .m2-ask-item { text-align: left; }
 .m2 .m2-ask-row { display: flex; justify-content: flex-end; margin: -4px 0 12px; }
 .m2 .m2-objective { font-size: 13px; color: var(--m2-ink-2); min-width: 180px; }
 .m2 .m2-subcard { min-width: 0; }
 .m2 .m2-subcard h3.m2-h { margin: 0 0 6px; }
+.m2 .m2-subcard + .m2-subcard { margin-top: 18px; }

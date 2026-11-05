@@ -226,7 +226,10 @@ def build_app(specs, runtime, *, title="Marvel CPG · Commercial workspace (demo
             active.set(specs[0].key)
             ui.update_navset("shell_module", selected=specs[0].key)
 
+        copilot_request = reactive.value(None)          # (question, sequence) from a module to the copilot
+
         auth_state = {
+            "copilot_request": copilot_request if "module_4" in keys else None,
             "authenticated": signed_in,
             "principal_id": reactive.calc(lambda: account().principal_id if account() else None),
             "role": reactive.calc(lambda: account().role if account() else None),

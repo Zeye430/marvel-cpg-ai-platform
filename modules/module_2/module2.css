@@ -458,3 +458,13 @@
 .m2 .m2-unranked { color: var(--m2-ink-3); }
 .m2 .m2-fig-muted { font-size: 0.95rem; font-weight: 600; color: var(--m2-ink-3); }
 .m2 #m2-oos-bar .bars path { cursor: pointer; }
+
+/* Rep visit plan, Copilot questions and the manager's territory breakdown. */
+.m2 .m2-objective { font-size: 13px; color: var(--m2-ink-2); min-width: 180px; }
+.m2 .m2-subcard { min-width: 0; }
+.m2 .m2-subcard h3.m2-h { margin: 0 0 6px; }
+.m2 .m2-subcard + .m2-subcard { margin-top: 18px; }
+.m2 .m2-ask-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.m2 .m2-ask-item { text-align: left; font-weight: 600; }
+.m2 .m2-ask-store-row { display: flex; justify-content: flex-end; margin: 0 0 12px; }
+@media (max-width: 760px) { .m2 .m2-ask-row { grid-template-columns: 1fr; } }

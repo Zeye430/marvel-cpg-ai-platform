@@ -207,6 +207,18 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
     def _ask():
         start(input.m4_user_query())
 
+    request = auth_state.get("copilot_request")
+    if request is not None:
+        @reactive.effect
+        @reactive.event(request)
+        def _host_question():
+            """A question from another module of the shell (Module 2's overview or store page)."""
+            question = request()[0]
+            if ask_task.status() == "running":
+                ui.update_text_area("m4_user_query", value=question)   # the earlier answer is still running
+            else:
+                start(question)
+
     for i, prompt in enumerate(PROMPTS):
         def make(i=i, prompt=prompt):
             @reactive.effect

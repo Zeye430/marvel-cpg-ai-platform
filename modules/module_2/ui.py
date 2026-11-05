@@ -173,6 +173,7 @@ def _business_pages():
         "overview",
         ui.output_ui("m2_kpis"),
         ui.div(ui.output_ui("m2_focus"), ui.output_ui("m2_overview_oos"), class_="m2-grid m2-grid-2"),
+        ui.output_ui("m2_ask_cards"),
         ui.output_ui("m2_top10"),
         ui.output_ui("m2_regions"))
     ranking = ui.nav_panel(

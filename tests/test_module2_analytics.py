@@ -284,7 +284,7 @@ class StoreHistoryTests(Base):
         self.assertEqual(len({h["date"] for h in detail["history"]}), 30)
         b = self.service.get_store_detail(self.mgr, "B").detail["business"]["oos_days"]
         self.assertIsNone(b["P1"]["current"])                          # no as-of report: not carried forward
-        self.assertEqual(b["P3"]["unknown_days"], 1)
+        self.assertEqual(b["P3"]["unreported_days"], 1)
         est = detail["business"]["skus"]["P1"]
         path = detail["business"]["projection"]["P1"]
         self.assertAlmostEqual(sum(d["short"] for d in path), est["units_short"])

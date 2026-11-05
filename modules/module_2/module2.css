@@ -1,29 +1,31 @@
 /* Module 2: visit priorities (business) and ML Operations. Every rule is scoped under .m2.
+   Module 2's design is the workspace baseline: its tokens, font and base components live in the shared
+   design (shared/ui_kit.py, shared/assets/ui_kit.css) and are read here, so every module stays in step.
    Red-and-white Marvel-inspired direction: white surfaces on a warm off-white canvas, one brand red
    for chrome, the primary action and focus; ink text; status colour used sparingly and always
-   paired with text. Type: Inter (bundled locally as "M2 Inter"), system UI fallback.
-   Layout: a Module 2 workspace (own sidebar + top bar) inside the Module 2 area; cards on a grid. */
+   paired with text. Type: Inter (bundled locally as "Workspace Inter"), system UI fallback.
+   Layout: standalone, a Module 2 workspace (own sidebar + top bar); hosted, the shell's sidebar. */
 .m2 {
-  --m2-ink: #211b1c;
-  --m2-ink-2: #4a3f40;
-  --m2-ink-3: #65595a;
-  --m2-rule: #ece4e4;
-  --m2-rule-strong: #dfd4d4;
-  --m2-surface: #ffffff;
-  --m2-canvas: #f7f4f4;
-  --m2-raised: #f3eded;
-  --m2-data: #b41824;           /* brand red: chrome, primary action, focus, charts */
-  --m2-red-dark: #86121c;
-  --m2-red-soft: #fff0f0;
-  --m2-red-line: #e6bec1;
-  --m2-warn: #7a4300;
-  --m2-warn-soft: #fff6e8;
-  --m2-bad: #86121c;
-  --m2-bad-soft: #fff0f0;
-  --m2-info: #4a3f40;
-  --m2-info-soft: #f3eded;
-  --m2-ok: #1d6b45;
-  font-family: 'M2 Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --m2-ink: var(--ws-ink);
+  --m2-ink-2: var(--ws-ink-2);
+  --m2-ink-3: var(--ws-ink-3);
+  --m2-rule: var(--ws-rule);
+  --m2-rule-strong: var(--ws-rule-strong);
+  --m2-surface: var(--ws-surface);
+  --m2-canvas: var(--ws-canvas);
+  --m2-raised: var(--ws-raised);
+  --m2-data: var(--ws-red);     /* brand red: chrome, primary action, focus, charts */
+  --m2-red-dark: var(--ws-red-dark);
+  --m2-red-soft: var(--ws-red-soft);
+  --m2-red-line: var(--ws-red-line);
+  --m2-warn: var(--ws-warn);
+  --m2-warn-soft: var(--ws-warn-soft);
+  --m2-bad: var(--ws-bad);
+  --m2-bad-soft: var(--ws-bad-soft);
+  --m2-info: var(--ws-info);
+  --m2-info-soft: var(--ws-info-soft);
+  --m2-ok: var(--ws-ok);
+  font-family: var(--ws-font);
   font-feature-settings: 'cv11', 'ss01';
   font-size: 14px;
   line-height: 1.45;
@@ -213,6 +215,8 @@
 .m2 .bslib-sidebar-layout > .sidebar > .sidebar-content { display: flex; flex-direction: column; gap: 6px; padding: 16px 12px;
   min-height: 100%; }
 .m2 .bslib-sidebar-layout > .main.m2-shell { overflow: visible !important; padding: 0 !important; background: var(--m2-canvas); min-width: 0; }
+/* Page text colour as the sidebar layout sets it, also when hosted in the workspace's own sidebar layout. */
+.m2 .m2-main { color: var(--bs-body-color); }
 .m2 .bslib-sidebar-layout > .collapse-toggle { color: var(--m2-ink-2); background: var(--m2-surface); border: 1px solid var(--m2-rule-strong);
   border-radius: 6px; }
 .m2 .m2-logo { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; }
@@ -448,24 +452,9 @@
   .m2 table.m2-cards td.m2-cell-action .m2-btn { width: 100%; justify-content: center; }
 }
 
-/* Copilot page (Module 4 inside this workspace): map its colours to the Module 2 palette. */
-.m2 #m2c-root { --border-light: var(--m2-rule); --text-primary: var(--m2-ink); --text-secondary: var(--m2-ink-2);
-  --text-tertiary: var(--m2-ink-3); --accent-primary: var(--m2-data); }
-.m2 #m2c-root .sleek-card { background: var(--m2-surface); border: 1px solid var(--m2-rule); border-radius: 8px; }
-.m2 #m2c-root .m4-chip { background: var(--m2-surface); }
-.m2 #m2c-root .m4-q { background: var(--m2-red-soft); border-color: var(--m2-red-line); border-radius: 12px 12px 4px 12px; }
-.m2 #m2c-root .m4-route { background: var(--m2-data); }
-.m2 #m2c-root .m4-route.knowledge { background: var(--m2-ink-2); }
-.m2 #m2c-root .m4-marker { color: var(--m2-data); }
-.m2 #m2c-root table.m4-table th { background: var(--m2-raised); }
-.m2 #m2c-root pre.m4-sql { background: #2b2526; color: #f3eded; }
-.m2 #m2c-root .tray-label { font-size: 12px; font-weight: 700; color: var(--m2-ink-3); min-width: 76px; }
-.m2 #m2c-root .m2-card + .shiny-html-output { margin-top: 16px; }
-.m2 #m2c-root .m4-ask .m2-btn { min-height: 46px; }
-.m2 .m4-chip-btn { font-weight: 500; font-size: 13px; padding: 5px 10px; min-height: 32px; }
-.m2 .m2-ask-item { text-align: left; }
-.m2 .m2-ask-row { display: flex; justify-content: flex-end; margin: -4px 0 12px; }
-.m2 .m2-objective { font-size: 13px; color: var(--m2-ink-2); min-width: 180px; }
-.m2 .m2-subcard { min-width: 0; }
-.m2 .m2-subcard h3.m2-h { margin: 0 0 6px; }
-.m2 .m2-subcard + .m2-subcard { margin-top: 18px; }
+/* Unranked stores and screen-reader text */
+.m2 .m2-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.m2 .m2-unranked { color: var(--m2-ink-3); }
+.m2 .m2-fig-muted { font-size: 0.95rem; font-weight: 600; color: var(--m2-ink-3); }
+.m2 #m2-oos-bar .bars path { cursor: pointer; }

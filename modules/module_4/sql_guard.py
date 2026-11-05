@@ -71,6 +71,17 @@ def extract_sql(text: str) -> str:
     return sql
 
 
+def referenced_tables(sql: str) -> set:
+    """Names of the tables a (checked) query reads, excluding its own CTEs."""
+    try:
+        parsed = json.loads(_parser.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0])
+    except duckdb.Error:
+        return set()
+    found = {"tables": [], "table_functions": 0, "functions": set(), "ctes": set()}
+    _walk(parsed.get("statements") or [], found)
+    return {t.lower() for _, _, t in found["tables"]} - found["ctes"]
+
+
 def check_sql(sql: str, allowed_tables) -> str:
     """Return the cleaned SQL if it passes every rule, else raise UnsafeSQL."""
     allowed = {t.lower() for t in allowed_tables}

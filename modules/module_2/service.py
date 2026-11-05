@@ -9,6 +9,9 @@ Every public call first re-checks the principal's current scope. A failed or
 malformed check ends that request (Permission_denied / unavailable) and drops the
 principal's cached data; cached results are keyed by the verified scope
 fingerprint, so a scope change or revocation is never answered from cache.
+A request that reads several views re-checks scope, release and session
+generation after its last read: if any changed meanwhile, nothing is returned
+or cached (a logout/clear during a load is never undone by that load).
 """
 
 import csv
@@ -17,6 +20,7 @@ import json
 import re
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -54,6 +58,10 @@ def needs_data_followup(row):
 
 class PermissionDenied(PermissionError):
     pass
+
+
+class ScopeChanged(DataUnavailable):
+    """Scope, release or session changed while a request was loading; its result is discarded."""
 
 
 def _evidence_value(drivers, feature):
@@ -229,26 +237,63 @@ class Module2Service:
             skus[r["sku_id"]] = None if r["sku_id"] in skus else r      # duplicate rows are not used
         return out
 
-    def _cached(self, key, loader, fingerprint):
+    def _state_lock(self):
+        return self.__dict__.setdefault("_state_guard", threading.Lock())
+
+    def _token(self, principal_id):
+        """Request token: session generation (changes whenever clear() drops this principal or
+        everyone) and the release identity the request starts with."""
+        generations = self.__dict__.setdefault("_generations", {})
+        return (self.__dict__.get("_epoch", 0), generations.get(principal_id, 0),
+                self.reader.record.get("artifact_id"))
+
+    def _verify(self, principal, fingerprint, token):
+        """After a multi-read load: the scope, release and session must be the ones the request
+        started with. A revoked scope raises PermissionError; any other change ScopeChanged."""
+        if self._authorize(principal) != fingerprint:
+            raise ScopeChanged("Account scope changed while loading; nothing was shown. Please retry.")
+        current = self._token(principal.principal_id)
+        if current[2] != token[2]:
+            raise ScopeChanged("The data release changed while loading; nothing was shown. Please retry.")
+        if current != token:
+            raise ScopeChanged("The session ended while loading; nothing was shown.")
+
+    def _store_if_current(self, cache, key, value, principal_id, token):
+        """Insert only while the session generation is unchanged (atomic with clear())."""
+        with self._state_lock():
+            if self._token(principal_id) != token:
+                raise ScopeChanged("The session ended while loading; nothing was shown.")
+            cache[key] = value
+
+    def _cached(self, key, loader, fingerprint, principal=None):
         # key = (kind, principal_id); fingerprint was verified by _authorize for this request.
-        # The value built here is returned even if another request clears the cache meanwhile.
+        # A fresh load is re-verified (scope, release, session) before it is cached or returned.
         full = (self.record["artifact_id"], fingerprint) + key
         value = self._cache.get(full)
         if value is None:
+            token = self._token(key[1])
             value = loader()
-            self._cache[full] = value
+            if principal is not None:
+                self._verify(principal, fingerprint, token)
+            self._store_if_current(self._cache, full, value, key[1], token)
         return value
 
     def clear(self, principal_id=None):
-        """Logout/session end: drop that principal's cached data."""
-        self.clear_analytics(principal_id)
-        if principal_id is None:
-            self._cache.clear()
-            self.__dict__.get("_fingerprints", {}).clear()
-        else:
-            for key in [k for k in self._cache if principal_id in k]:
-                del self._cache[key]
-            self.__dict__.get("_fingerprints", {}).pop(principal_id, None)
+        """Logout/session end: drop that principal's cached data and invalidate its in-flight loads."""
+        with self._state_lock():
+            if principal_id is None:
+                self.__dict__["_epoch"] = self.__dict__.get("_epoch", 0) + 1
+            else:
+                generations = self.__dict__.setdefault("_generations", {})
+                generations[principal_id] = generations.get(principal_id, 0) + 1
+            self.clear_analytics(principal_id)
+            if principal_id is None:
+                self._cache.clear()
+                self.__dict__.get("_fingerprints", {}).clear()
+            else:
+                for key in [k for k in self._cache if principal_id in k]:
+                    del self._cache[key]
+                self.__dict__.get("_fingerprints", {}).pop(principal_id, None)
 
     def _stale(self, scoring_date):
         as_of = date.fromisoformat(str(self.record["as_of"]))
@@ -336,7 +381,8 @@ class Module2Service:
         computed over this whole set (never filters, pages or other principals' stores)."""
         fingerprint = self._authorize(principal)
         rows, stores, unscored, components = self._cached(("priorities", principal.principal_id),
-                                                          lambda: self._scoped_priorities(principal), fingerprint)
+                                                          lambda: self._scoped_priorities(principal), fingerprint,
+                                                          principal)
         scoring = rows[0]["scoring_date"] if rows else str(self.record.get("as_of"))
         everyone = [dict(r) for r in rows] + self._unranked(stores, unscored, scoring)
         pct = bp.impact_percentiles({r["store_id"]: r["sales_at_risk_usd"] for r in everyone})
@@ -416,6 +462,8 @@ class Module2Service:
             fingerprint, ranked, stores, unscored, _, everyone = self._business_scope(principal)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
+        except ScopeChanged as error:
+            return self._base("Unavailable", message=str(error))
         except DataUnavailable as error:
             return self._base("Unreleased", message=str(error))
         full = bool(len(stores)) and self.reader.record.get("rows", {}).get("stores") == len(stores)
@@ -489,9 +537,12 @@ class Module2Service:
         try:
             fingerprint = self._authorize(principal)
             rows, stores, unscored, _ = self._cached(("priorities", principal.principal_id),
-                                                     lambda: self._scoped_priorities(principal), fingerprint)
+                                                     lambda: self._scoped_priorities(principal), fingerprint,
+                                                     principal)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
+        except ScopeChanged as error:
+            return self._base("Unavailable", message=str(error))
         except DataUnavailable as error:
             return self._base("Unreleased", message=str(error))
         counts = [0] * RISK_BINS
@@ -512,11 +563,23 @@ class Module2Service:
             totals={"data_followup_stores": len(followups), "ranked_stores": len(rows), "scoped_stores": len(stores)})
 
     # ------------------------------------------------------------ out-of-stock analytics
+    @contextmanager
     def _analytics_lock(self, key):
+        """One in-flight build per key. Locks are reference-counted and removed when the last
+        holder or waiter leaves, so unique filter combinations do not accumulate locks."""
         locks = self.__dict__.setdefault("_analytics_locks", {})
         guard = self.__dict__.setdefault("_analytics_guard", threading.Lock())
         with guard:
-            return locks.setdefault(key, threading.Lock())
+            entry = locks.setdefault(key, [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with guard:
+                entry[1] -= 1
+                if entry[1] == 0 and locks.get(key) is entry:
+                    del locks[key]
 
     def _analytics_cache(self):
         return self.__dict__.setdefault("_analytics", OrderedDict())
@@ -548,31 +611,35 @@ class Module2Service:
             return self._base("Permission_denied", message=str(error))
         except DataUnavailable as error:
             return self._base("Unavailable", message=str(error))
+        token = self._token(principal.principal_id)
         as_of = date.fromisoformat(str(self.record["as_of"]))
         start = as_of if measure == "current" else as_of - timedelta(days=OOS_WINDOW_DAYS - 1)
         key = (type(self.reader).__name__, self.record.get("artifact_id"), principal.principal_id, fingerprint,
                measure, start.isoformat(), as_of.isoformat(), tuple(sorted((k, str(v)) for k, v in filters.items())))
         cache = self._analytics_cache()
         with self._analytics_lock(key):                      # one in-flight build per key
-            if key in cache:
-                if self._authorize(principal) != fingerprint:   # every cache use rechecks scope
-                    self.clear_analytics(principal.principal_id)
-                    return self._base("Unavailable", message="Account scope changed; please retry")
-                cache.move_to_end(key)
-                return self._base("Ok", detail=cache[key], scope_identity=fingerprint)
-            base = self._apply(everyone, filters)
             try:
+                if key in cache:
+                    self._verify(principal, fingerprint, token)    # every cache use rechecks scope and session
+                    cache.move_to_end(key)
+                    return self._base("Ok", detail=cache[key], scope_identity=fingerprint)
+                base = self._apply(everyone, filters)
                 detail = self._aggregate_oos(principal, {r["store_id"]: r for r in base}, start, as_of, measure)
-                if self._authorize(principal) != fingerprint or self.reader.record.get("artifact_id") != key[1]:
-                    raise DataUnavailable("Account scope or data release changed while loading; please retry")
+                self._verify(principal, fingerprint, token)
+                with self._state_lock():                      # atomic with clear(): a logout is never undone
+                    if self._token(principal.principal_id) != token:
+                        raise ScopeChanged("The session ended while loading; nothing was shown.")
+                    cache[key] = detail
+                    while len(cache) > ANALYTICS_CACHE_ENTRIES:
+                        cache.popitem(last=False)
             except PermissionError as error:
                 self.clear_analytics(principal.principal_id)
                 return self._base("Permission_denied", message=str(error))
+            except ScopeChanged as error:
+                self.clear_analytics(principal.principal_id)
+                return self._base("Unavailable", message=str(error))
             except (DataUnavailable, ValueError) as error:
                 return self._base("Unavailable", message=f"Out-of-stock analytics could not be completed: {error}")
-            cache[key] = detail
-            while len(cache) > ANALYTICS_CACHE_ENTRIES:
-                cache.popitem(last=False)
         return self._base("Ok", detail=detail, scope_identity=fingerprint)
 
     def _aggregate_oos(self, principal, base, start, end, measure):
@@ -610,7 +677,9 @@ class Module2Service:
                     group = "MSL" if row["is_msl"] is True else ("Non-MSL" if row["is_msl"] is False else "Unknown")
                     sku["oos"] += 1; day["oos"] += 1; totals["oos"] += 1
                     sku["msl"][group] += 1; totals["msl"][group] += 1
-                    sku["stores"][row["store_id"]] = sku["stores"].get(row["store_id"], 0) + 1
+                    # Grouped per store too, so an MSL filter selects the same population everywhere.
+                    per_store = sku["stores"].setdefault(row["store_id"], {"MSL": 0, "Non-MSL": 0, "Unknown": 0})
+                    per_store[group] += 1
             cursor = page["next_cursor"]
             if cursor is None:
                 break
@@ -621,9 +690,10 @@ class Module2Service:
             skus.append({"sku_id": sku_id, "product_name": products.get(sku_id, {}).get("product_name"),
                          "oos": s["oos"], "observed": s["observed"], "unknown": s["unknown"],
                          "msl": s["msl"], "msl_group": groups[0] if len(groups) == 1 else ("Mixed" if groups else None),
-                         "stores": [{"store_id": sid, "store_name": base[sid]["store_name"], "oos": n,
-                                     "overall_rank": base[sid]["overall_rank"]}
-                                    for sid, n in sorted(s["stores"].items(), key=lambda x: (-x[1], x[0]))]})
+                         "stores": [{"store_id": sid, "store_name": base[sid]["store_name"], "oos": sum(m.values()),
+                                     "msl": dict(m), "overall_rank": base[sid]["overall_rank"]}
+                                    for sid, m in sorted(s["stores"].items(),
+                                                         key=lambda x: (-sum(x[1].values()), x[0]))]})
         skus.sort(key=lambda s: (-s["oos"], s["sku_id"]))
         return {"measure": measure, "unit": unit, "window": [start.isoformat(), end.isoformat()],
                 "skus": skus, "totals": totals, "stores_in_filter": len(base),
@@ -641,7 +711,8 @@ class Module2Service:
         self._check(principal)
         if not isinstance(store_id, str) or not store_id:
             raise Module2Error("store_id required")
-        self._authorize(principal)                        # denied/unavailable end the request
+        fingerprint = self._authorize(principal)          # denied/unavailable end the request
+        token = self._token(principal.principal_id)
         if not self.reader.read_page("stores", principal.principal_id, store_id=store_id)["rows"]:
             raise PermissionDenied("Not available")          # no existence/row-count disclosure
         try:
@@ -653,26 +724,30 @@ class Module2Service:
         products = {p["sku_id"]: p for p in self._all("products", principal)}
         history = self._all("store_sku_daily", principal, store_id=store_id,       # 30 days ending at as-of
                             start=scoring - timedelta(days=29), end=scoring)
+        trail = [{"date": str(h["date"]), "sku_id": h["sku_id"], "units_sold_observed": h["units_sold_observed"],
+                  "inventory_observed": h["inventory_observed"], "oos_observed": h["oos_observed"],
+                  "inventory_data_status": h["inventory_data_status"], "is_msl": h.get("is_msl"),
+                  "receipt_units": h["receipt_units_from_deliveries"]} for h in history]
+        # MSL is store x SKU x day evidence: the as-of report's own value, never the product default.
+        # Without an as-of report (or with a null value) it stays unknown.
+        msl_as_of = {h["sku_id"]: h["is_msl"] for h in trail if h["date"] == scoring.isoformat()}
         skus = []
         for p in sorted(predictions, key=lambda r: (-r["probability"], r["sku_id"])):
             drivers = json.loads(p["drivers_json"])
             product = products.get(p["sku_id"], {})
             skus.append({"sku_id": p["sku_id"], "product_name": product.get("product_name"),
-                         "category": product.get("category"), "is_msl": product.get("is_msl"),
+                         "category": product.get("category"), "is_msl": msl_as_of.get(p["sku_id"]),
                          "probability": p["probability"], "threshold": p["threshold"],
                          "is_predicted_oos": p["is_predicted_oos"], "input_status": p["input_status"],
                          "threshold_route": drivers["threshold_route"], "evidence": drivers["evidence"],
                          "prediction_window": [drivers["prediction_start"], drivers["prediction_end"]]})
-        trail = [{"date": str(h["date"]), "sku_id": h["sku_id"], "units_sold_observed": h["units_sold_observed"],
-                  "inventory_observed": h["inventory_observed"], "oos_observed": h["oos_observed"],
-                  "inventory_data_status": h["inventory_data_status"], "is_msl": h.get("is_msl"),
-                  "receipt_units": h["receipt_units_from_deliveries"]} for h in history]
         latest = {}
         for h in trail:
             if h["sku_id"] not in latest or h["date"] > latest[h["sku_id"]]["date"]:
                 latest[h["sku_id"]] = h
+        # Each row keeps its own reported date and MSL value (a past row is not the as-of state).
         reported_now = [{**h, "product_name": products.get(h["sku_id"], {}).get("product_name"),
-                         "is_msl": products.get(h["sku_id"], {}).get("is_msl")}
+                         "is_as_of": h["date"] == scoring.isoformat()}
                         for h in sorted(latest.values(), key=lambda h: h["sku_id"])]
         store, business = None, None
         try:
@@ -683,6 +758,10 @@ class Module2Service:
                 business = self._business_detail(store, components.get(store_id), trail, scoring)
         except DataUnavailable:
             store = None
+        try:
+            self._verify(principal, fingerprint, token)    # nothing read under an older scope is returned
+        except ScopeChanged as error:
+            return self._base("Unavailable", message=str(error))
         status = "Stale" if self._stale(scoring) else "Ok"
         return self._base(status, detail={"store_id": store_id, "skus": skus, "history": trail,
                                           "scoring_date": scoring.isoformat(), "reported_now": reported_now,
@@ -691,35 +770,60 @@ class Module2Service:
                                        "Drivers are rule-based context, not causal attribution"])
 
     @staticmethod
-    def _business_detail(store, comp, trail, as_of=None):
-        """Store analysis for the detail page: SKU scenario estimates, latest audit, input coverage,
-        detail-only confidence and rule-based actions. Nothing here is a shelf-loss amount."""
-        if comp is None:
-            return {"available": False, "confidence": "Unavailable", "skus": {}, "audits": {}, "actions": [
-                "Verify store data: no usable model score for this store"], "coverage": {}, "oos_days": {}}
-        skus = {s["sku_id"]: s for s in comp["skus"]}
-        # Reported OOS days per SKU over the inclusive 28-day window [as_of-27, as_of]; unreported
-        # days are counted separately; "current" is the as-of report only (never carried forward).
+    def _oos_days(trail, as_of):
+        """Reported OOS days per SKU over the inclusive 28-day window [as_of-27, as_of].
+
+        Counts only rows that exist: ``unreported_days`` are rows whose stock state was not
+        reported. Days with no row at all are NOT counted as missing reports, because the
+        published data does not confirm the SKU's applicable assortment on those days; the
+        number of days with a row is shown instead. ``current`` / ``is_msl`` come from the
+        as-of row only (never carried forward); ``as_of_report`` says whether that row exists
+        ("reported"), exists without a stock state ("unreported") or is absent ("missing").
+        """
         first = (as_of - timedelta(days=OOS_WINDOW_DAYS - 1)).isoformat() if as_of else None
-        oos_days, seen = {}, set()
+        out, seen = {}, set()
         for h in sorted(trail, key=lambda r: (r["date"], r["sku_id"])):
             if first and h["date"] < first or (h["date"], h["sku_id"]) in seen:
                 continue
             seen.add((h["date"], h["sku_id"]))
-            counts = oos_days.setdefault(h["sku_id"], {"reported_oos_days": 0, "unknown_days": 0, "days": 0,
-                                                        "current": None, "is_msl": None})
-            counts["days"] += 1
+            counts = out.setdefault(h["sku_id"], {"reported_oos_days": 0, "reported_days": 0, "unreported_days": 0,
+                                                  "days_with_rows": 0, "window_days": OOS_WINDOW_DAYS,
+                                                  "current": None, "is_msl": None, "as_of_report": "missing"})
+            counts["days_with_rows"] += 1
             if h["oos_observed"] is None:
-                counts["unknown_days"] += 1
-            elif h["oos_observed"]:
-                counts["reported_oos_days"] += 1
+                counts["unreported_days"] += 1
+            else:
+                counts["reported_days"] += 1
+                counts["reported_oos_days"] += bool(h["oos_observed"])
             if as_of and h["date"] == as_of.isoformat():
                 counts["current"] = h["oos_observed"]
                 counts["is_msl"] = h.get("is_msl")
+                counts["as_of_report"] = "unreported" if h["oos_observed"] is None else "reported"
+        return out
+
+    OOS_COVERAGE_NOTE = ("Counts use the rows in the published data. Unreported = a row exists but its stock state "
+                         "was not reported. Days with no row are not counted as missing reports: whether the SKU was "
+                         "expected in the store on those days is not confirmed, so days with data are shown instead.")
+
+    @staticmethod
+    def _business_detail(store, comp, trail, as_of=None):
+        """Store analysis for the detail page: SKU scenario estimates, latest audit, input coverage,
+        detail-only confidence and rule-based actions. Nothing here is a shelf-loss amount."""
+        if comp is None:
+            first = (as_of - timedelta(days=OOS_WINDOW_DAYS - 1)).isoformat() if as_of else None
+            return {"available": False, "confidence": "Unavailable", "skus": {}, "audits": {}, "actions": [
+                "Verify store data: no usable model score for this store"], "coverage": {},
+                "oos_days": Module2Service._oos_days(trail, as_of),
+                "oos_window": [first, as_of.isoformat() if as_of else None],
+                "oos_coverage_note": Module2Service.OOS_COVERAGE_NOTE}
+        skus = {s["sku_id"]: s for s in comp["skus"]}
+        oos_days = Module2Service._oos_days(trail, as_of)
         projection = {s: bp.scenario_path(e["inventory"], e["velocity"], e["scheduled"], e["days_until_next_receipt"])
                       for s, e in skus.items()}
-        msl_now = sorted(s for s, e in skus.items() if e["is_msl"] is True and e["oos_now"] is True)
-        other_now = sorted(s for s, e in skus.items() if e["is_msl"] is not True and e["oos_now"] is True)
+        # MSL for actions = the as-of report's store x SKU value (as in the analytics view); unknown is not MSL.
+        msl_as_of = {s: d["is_msl"] for s, d in oos_days.items()}
+        msl_now = sorted(s for s, e in skus.items() if msl_as_of.get(s) is True and e["oos_now"] is True)
+        other_now = sorted(s for s, e in skus.items() if msl_as_of.get(s) is not True and e["oos_now"] is True)
         prevent = sorted(s for s, e in skus.items() if e["oos_now"] is False and e["is_predicted_oos"])
         noncompliant = sorted(s for s, a in comp["audits"].items() if a["status"] == "Fresh" and a["compliant"] is False)
         actions = []
@@ -750,7 +854,9 @@ class Module2Service:
                     "fresh_audit": comp["audit_fresh_skus"], "estimated": sum(1 for e in skus.values() if e["estimable"])}
         return {"available": True, "confidence": bp.confidence(comp), "skus": skus, "audits": comp["audits"],
                 "actions": actions, "coverage": coverage, "oos_days": oos_days, "projection": projection,
-                "oos_window": [first, as_of.isoformat() if as_of else None],
+                "oos_window": [(as_of - timedelta(days=OOS_WINDOW_DAYS - 1)).isoformat() if as_of else None,
+                               as_of.isoformat() if as_of else None],
+                "oos_coverage_note": Module2Service.OOS_COVERAGE_NOTE,
                 "price_basis": bp.PRICE_BASES[bp.PRICE_BASIS][1], "weights": dict(bp.WEIGHTS),
                 "audit_max_age_days": bp.AUDIT_MAX_AGE_DAYS, "policy_version": bp.POLICY_VERSION,
                 "assumptions": [
@@ -770,7 +876,7 @@ class Module2Service:
         try:
             fingerprint = self._authorize(principal)
             rows = self._cached(("health", principal.principal_id), lambda: self._all("model_health", principal),
-                                fingerprint)
+                                fingerprint, principal)
         except PermissionError as error:
             return self._base("Permission_denied", message=str(error))
         except DataUnavailable as error:

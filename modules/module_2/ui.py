@@ -1,10 +1,11 @@
 """
 modules/module_2/ui.py
 ======================
-Module 2 layout: a modular workspace inside the Module 2 area (it does not replace the app's
-own navigation). A collapsible Module 2 sidebar switches Module 2 pages (Overview, Store
-ranking, Analytics; or Model health / Monitoring in the separate ML Operations demo entry) and
-holds Help, Settings, the user card and Sign out. The top bar has store search, placeholder
+Module 2 layout. Standalone, a collapsible Module 2 sidebar switches Module 2 pages (Overview,
+Store ranking, Analytics; or Model health / Monitoring in the separate ML Operations demo entry)
+and holds Help, Settings, the user card and Sign out. Hosted in the workspace shell
+(``hosted`` option), the shell's single app sidebar holds those and shows Module 2's pages
+(``pages_nav_ui``) under the module; Module 2 renders only its top bar and pages. The top bar has store search, placeholder
 buttons (Copilot, messages, notifications, calendar: visible, no behaviour) and the user.
 Every number is rendered by the server from the published serving data; nothing here is fixed.
 """
@@ -12,13 +13,14 @@ Every number is rendered by the server from the published serving data; nothing 
 from pathlib import Path
 from typing import Any, Dict
 
-from htmltools import HTML, HTMLDependency
+from htmltools import HTML
 from shiny import ui
+
+from shared import ui_kit as kit
 
 from .service import VIEW_LABELS
 
 _CSS = (Path(__file__).with_name("module2.css")).read_text()
-_ASSETS = Path(__file__).with_name("assets")
 
 _SORT_NAMES = {"score": "Priority score", "sales_at_risk": "Sales at risk", "shelf_risk": "Shelf risk",
                "msl_risk": "MSL risk", "urgency": "Urgency"}
@@ -32,58 +34,14 @@ _SKU_SORT_NAMES = {"sales": "Sales at risk", "risk": "Stockout risk", "oos_days"
 SKU_SORT_CHOICES = {f"{k}:{d}": f"{name} — {'A to Z' if k == 'sku' and d == 'asc' else 'Z to A' if k == 'sku' else ('high to low' if d == 'desc' else 'low to high')}"
                     for k, name in _SKU_SORT_NAMES.items() for d in ("desc", "asc")}
 
-# Simple line icons (drawn for this module; 24x24, stroke = currentColor).
-_ICON_PATHS = {
-    "home": '<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/>',
-    "list": '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/>'
-            '<circle cx="4.5" cy="18" r="1"/>',
-    "chart": '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16v-5M12 16V8M16 16v-8"/>',
-    "pulse": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
-    "gauge": '<path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/>',
-    "help": '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/>'
-            '<circle cx="12" cy="17.5" r=".6"/>',
-    "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3'
-                'l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
-    "logout": '<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/>',
-    "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
-    "spark": '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8'
-             'L19 21l-.8-2.2L16 18l2.2-.8z"/>',
-    "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
-    "bell": '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
-    "calendar": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
-    "back": '<path d="M15 6l-6 6 6 6"/>',
-}
-
-
 def icon(name, size=18):
-    return HTML(f'<svg class="m2-icon" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" '
-                f'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '
-                f'aria-hidden="true" focusable="false">{_ICON_PATHS[name]}</svg>')
+    return kit.icon(name, size, class_="m2-icon")
 
 
-# Original placeholder mark for Marvel CPG (not a third-party logo): a red tile with a white
-# shelf-and-peak monogram. To be replaced by the client's brand assets.
-LOGO = HTML(
-    '<svg class="m2-logo-mark" width="32" height="32" viewBox="0 0 32 32" role="img" '
-    'aria-label="Marvel CPG placeholder mark">'
-    '<rect width="32" height="32" rx="8" fill="#b41824"/>'
-    '<path d="M8 21V11.5l4.6 5.2L16 12l3.4 4.7 4.6-5.2V21" fill="none" stroke="#fff" stroke-width="2.6" '
-    'stroke-linecap="round" stroke-linejoin="round"/>'
-    '<path d="M8 24.5h16" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".7"/></svg>')
-
-
-def plotly_dependency():
-    """Serve plotly.min.js from the installed plotly package (no CDN)."""
-    import plotly
-    source = Path(plotly.__file__).parent / "package_data"
-    return HTMLDependency("m2-plotly", plotly.__version__, source={"subdir": str(source)},
-                          script={"src": "plotly.min.js"})
-
-
-def font_dependency():
-    """Inter 4.1 (SIL OFL 1.1), bundled locally; registered under a Module 2-only family name."""
-    return HTMLDependency("m2-inter", "4.1", source={"subdir": str(_ASSETS / "fonts")},
-                          stylesheet={"href": "inter.css"})
+# The workspace's placeholder mark, plotly.js and the bundled Inter font + design tokens (shared/ui_kit).
+LOGO = kit.logo("m2-logo-mark")
+plotly_dependency = kit.plotly_dependency
+font_dependency = kit.kit_dependency
 
 
 _SCRIPT = """
@@ -179,16 +137,18 @@ def _sidebar():
         id="m2_sidebar", open="desktop", width=248, class_="m2-sidebar", title=None)
 
 
-def _topbar():
+def _topbar(copilot=False):
+    """``copilot``: the host app has a copilot module; the button opens it (otherwise a placeholder)."""
+    copilot_button = ui.input_action_button(
+        "m2_open_copilot", HTML(f"{icon('spark')}<span class=\"m2-ph-text\">Copilot</span>"),
+        class_="m2-icon-btn m2-copilot", title="Open the Commercial Copilot") if copilot else \
+        _placeholder("spark", "Copilot", "Copilot")
     return ui.div(
         ui.div(ui.output_ui("m2_crumb"), class_="m2-crumb-wrap"),
         ui.div(ui.span(icon("search", 16), class_="m2-search-icon"),
                ui.input_text("m2_f_search", None, placeholder="Search stores by ID or name"),
                class_="m2-search", role="search"),
-        ui.div(ui.tags.button(icon("spark"), ui.tags.span("Copilot", class_="m2-ph-text"), type="button",
-                              class_="m2-icon-btn m2-copilot", title="Open the Copilot", onclick="m2Go('copilot')",
-                              **{"aria-label": "Open the Copilot"}),
-               _placeholder("mail", "Messages"),
+        ui.div(copilot_button, _placeholder("mail", "Messages"),
                _placeholder("bell", "Notifications"), _placeholder("calendar", "Calendar"),
                ui.span(class_="m2-topbar-sep", **{"aria-hidden": "true"}),
                ui.output_ui("m2_user_block"), class_="m2-topbar-actions"),
@@ -213,7 +173,6 @@ def _business_pages():
         "overview",
         ui.output_ui("m2_kpis"),
         ui.div(ui.output_ui("m2_focus"), ui.output_ui("m2_overview_oos"), class_="m2-grid m2-grid-2"),
-        ui.output_ui("m2_ask_cards"),
         ui.output_ui("m2_top10"),
         ui.output_ui("m2_regions"))
     ranking = ui.nav_panel(
@@ -279,9 +238,7 @@ def _business_pages():
             ui.nav_panel("Shelf execution", ui.div(ui.output_ui("m2_shelf"), class_="m2-card"), value="shelf"),
             ui.nav_panel("Estimate quality", ui.div(ui.output_ui("m2_quality"), class_="m2-card"), value="quality"),
             id="m2_detail_tabs", selected="skus"))
-    from modules.module_4.ui import module_4_panel   # imported on use: module_4.ui imports this module
-    copilot = ui.nav_panel("copilot", module_4_panel("m2c"))
-    return ui.navset_hidden(overview, ranking, analytics, copilot, detail, id="m2_pages", selected="overview")
+    return ui.navset_hidden(overview, ranking, analytics, detail, id="m2_pages", selected="overview")
 
 
 def _operations():
@@ -294,15 +251,22 @@ def _operations():
         class_="m2-ops", id="m2-ops-root")
 
 
+def pages_nav_ui():
+    """Module 2's page navigation for the host's sidebar (rendered by the Module 2 server)."""
+    return ui.output_ui("m2_nav")
+
+
 def module_2_ui(dataset: Dict[str, Any] = None) -> ui.Tag:
-    """Module 2 tab. ``dataset`` is accepted for app compatibility and not used."""
+    """Module 2 tab. ``dataset`` may carry host options: ``copilot_nav`` (the host has a copilot
+    module the top-bar button can open) and ``hosted`` (the host's sidebar replaces Module 2's
+    own); data never comes from it."""
+    hosted = bool((dataset or {}).get("hosted"))
     main = ui.div(
-        _topbar(),
+        _topbar(copilot=bool((dataset or {}).get("copilot_nav"))),
         ui.div(
             ui.output_ui("m2_page_head"),
             ui.output_ui("m2_banners"),
-            ui.panel_conditional("output.m2_mode === 'business' && output.m2_page !== 'detail' && "
-                                 "output.m2_page !== 'copilot'", _filters()),
+            ui.panel_conditional("output.m2_mode === 'business' && output.m2_page !== 'detail'", _filters()),
             ui.panel_conditional("output.m2_mode === 'business'", _business_pages()),
             ui.panel_conditional("output.m2_mode === 'ops'", _operations()),
             class_="m2-content"),
@@ -315,6 +279,7 @@ def module_2_ui(dataset: Dict[str, Any] = None) -> ui.Tag:
         ui.div(ui.output_text("m2_mode"), ui.output_text("m2_page"), class_="m2-hidden", id="m2-mode-flag"),
         ui.panel_conditional("output.m2_mode === 'none'", ui.output_ui("m2_signed_out")),
         ui.panel_conditional("output.m2_mode !== 'none'",
+                             main if hosted else
                              ui.layout_sidebar(_sidebar(), main, fillable=False, border=False, border_radius=False,
                                                class_="m2-shell")),
         class_="m2", id="m2-root")

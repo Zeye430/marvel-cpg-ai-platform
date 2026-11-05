@@ -6,7 +6,7 @@ Conversational assistant: Text-to-SQL over the signed-in user's scoped business 
 and cited answers from the authorized knowledge base (RAG). See README.md.
 """
 
-from .ui import module_4_panel, module_4_ui
+from .ui import module_4_ui
 from .server import module_4_server
 
-__all__ = ["module_4_ui", "module_4_panel", "module_4_server"]
+__all__ = ["module_4_ui", "module_4_server"]

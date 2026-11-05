@@ -186,17 +186,20 @@ original file (or reconcile manually) and keep the receipt with its backups.
 
 ## 7. UI and access
 
-Module 2 opens as its own workspace inside the Module 2 area (the app's navigation still switches
-modules): a collapsible Module 2 sidebar (*Overview*, *Store ranking*, *Analytics*, *Copilot*, Help and Settings
+Standalone (`demo_app.py`), Module 2 opens as its own workspace: a collapsible Module 2 sidebar (*Overview*, *Store ranking*, *Analytics*, Help and Settings
 marked "coming soon", the user card and **Sign out**, which uses the host's own server-side logout),
 and a top bar with store search, the signed-in user (initials, name, title), a **Copilot** button and
-placeholder buttons for messages, notifications and calendar (visible, labelled "coming soon", no behaviour).
-The *Copilot* page is Module 4 (Text-to-SQL and RAG) running inside this workspace: it answers for the
-signed-in user's stores only, the overview offers role-specific one-click questions, and a store page has
-an "Ask Copilot about this store" button. The overview adds a visit plan with a "What to do" column for
-sales reps and, for managers, estimated sales at risk by region and a region and channel breakdown.
-Text uses Inter 4.1 (SIL OFL 1.1), bundled in `modules/module_2/assets/fonts` with its licence and
-registered only for Module 2. The logo is an original placeholder mark, not a client brand asset.
+placeholder buttons for messages, notifications and calendar (visible, labelled "coming soon", no
+behaviour). In an app that also hosts the Commercial Copilot (`integrated_app.py`, see
+[the integrated app guide](../../docs/integrated-app.md)) the Copilot button opens it; no question or
+store context is passed along. Elsewhere it stays a "coming soon" placeholder.
+Hosted in the integrated app (`hosted` option), the app's single sidebar replaces Module 2's own: it
+lists Module 2's pages under **Stockout Risk** and holds the user card and the one **Sign out**; the
+breadcrumb reads "Stockout Risk / page". Module 2's design is the baseline for every module: its
+tokens, Inter font, icons, logo and base components are in the shared workspace design
+(`shared/ui_kit.py`, `shared/assets/ui_kit.css`), which Module 2 reads, so its pages look the same
+standalone and hosted. Text uses Inter 4.1 (SIL OFL 1.1), bundled in `shared/assets/fonts` with its
+licence and registered as "Workspace Inter". The logo is an original placeholder mark, not a client brand asset.
 
 - **Overview**: key figures (stores needing action, act urgently, prevent stockouts, verify data,
   estimated Marvel sales at risk, current MSL-gap SKUs; no period-over-period arrows), Today's focus,
@@ -212,13 +215,20 @@ registered only for Module 2. The logo is an original placeholder mark, not a cl
   store x SKU x day observations in [as-of − 27, as-of]); split MSL / non-MSL / unknown from each
   observation; a donut of that split; daily out-of-stock observations with the number of reports per
   day (counts, not rates, because the applicable assortment is not confirmed); and the stores behind
-  a SKU. Unreported observations are listed as unknown, never as in stock.
+  a SKU (choose it in the list or select its bar). The MSL filter applies to the bars, the SKU list
+  and the store list alike (each observation keeps its own store x SKU x day MSL value); the totals
+  and the donut always cover all observations and say so. Unreported observations are listed as
+  unknown, never as in stock.
 - **Store**: key figures incl. the estimate confidence, recommended actions, why the store ranks where
   it does, then tabs: *SKUs* (reported now and next 7 days, sortable, filterable, 10 / 50 / 100 rows),
   *Inventory trend* (30 days of reported inventory and units sold with gaps for unreported days,
   joined to the 7-day scenario used for sales at risk — not a model forecast), *Out-of-stock SKUs*
-  (reported OOS days per SKU in the past 28 days, unknown days separate), *Shelf execution* and
-  *Estimate quality*.
+  (reported OOS days per SKU in the past 28 days, rows without a reported state counted separately
+  as *unreported*, and the number of days with data; days without any row are not counted as
+  missing reports because the SKU's applicable assortment on those days is not confirmed),
+  *Shelf execution* and *Estimate quality*. MSL on the store page is the as-of report's own
+  store x SKU value; without an as-of report, or with a blank value, it is *Unknown* (never the
+  product default), and actions name MSL SKUs only when that value is known.
 
 The 28-day analysis is computed on request from the paged daily view, page by page, over your
 scope and filters; it is discarded (never shown partially) if a page fails or your scope or the data
@@ -239,7 +249,9 @@ approval:
 - *Shelf risk* is the share of SKUs non-compliant at the latest audit within 28 days; it has no
   dollar value. *MSL risk* averages current MSL stockouts and the model risk of in-stock MSL SKUs.
 - Score = 80% sales-at-risk position among the stores you can see + 10% shelf + 10% MSL. Scores and
-  ranks never use stores outside your scope.
+  ranks never use stores outside your scope. Stores without a score (sales at risk unavailable, or
+  no usable model score) are *Not ranked*: they stay visible, are listed last in stored visit order
+  in every sort, and export an empty rank.
 
 `get_oos_analytics(principal, store_filters, "current" | "28d")` returns the analysis. The
 service API accepts `filters={"view": "all" | "current_msl" | "prevention" |
@@ -256,7 +268,10 @@ production authentication and cannot train, change thresholds, publish or approv
 Health/monitoring data remain enforced manager-only with full-population scope in
 the shared reader (both backends). Every request re-checks the principal's current
 scope, so a changed or revoked assignment is never answered from cache; if that check
-fails (denied or the data service is unavailable) the request ends without data. Demo identities (`demo:rep-a` … `demo:rep-f`, `demo:manager`)
+fails (denied or the data service is unavailable) the request ends without data. Requests that
+read several views (priorities, store detail, analytics) check scope, data release and session
+again after their last read: if anything changed, the result is discarded and not cached, and a
+sign-out during a load is never undone by that load. Demo identities (`demo:rep-a` … `demo:rep-f`, `demo:manager`)
 use a generated round-robin store assignment, not customer territories, and are
 not production authentication.
 

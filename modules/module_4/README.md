@@ -51,8 +51,17 @@ uv run --extra app --extra module4 shiny run modules.module_4.demo_app:app --por
 | `MODULE4_LLM_TIMEOUT_S` | `120` | Per-call timeout |
 | `MODULE4_RAG_DENSE` | `1` | `0` = BM25-only retrieval (no embedding model) |
 
-If the model, the data or the knowledge base is missing, the tab shows that state (red status chip and an
-explanation) instead of an answer. With the model stopped, a knowledge question still lists the permitted
+The page uses the shared workspace design (Module 2's design, `shared/ui_kit.py`) as a conversation:
+suggested questions on the home screen while the conversation is empty (your data, stockout predictions,
+Marvel documents), questions and answers oldest first, and the question box fixed at the bottom (Enter
+sends). Each data answer starts with the summary and offers Chart | Table | SQL tabs; prediction notes stay
+visible, source tags (reported data date, scope, prediction status and window, document access) close the
+answer, and the full provenance is under "How this was answered". A "Data scope" panel beside the
+conversation (collapsed above it on narrow screens) shows the data date, the user's scope, the prediction
+release, the language model and document access. Charts use the shared multi-hue palette, one axis only. Questions about the future are answered only from Module 2's published predictions (the
+executed query must read them), never from observed history; probabilities are shown as percentages
+(`formatting.py`), so a small nonzero risk never reads as zero. If the model, the data or the knowledge base is missing, the tab shows that state (a red
+status marker and an explanation) instead of an answer. With the model stopped, a knowledge question still lists the permitted
 passages.
 
 **Hardware.** The 7B model needs about 5 GB of free memory and answers in roughly 7-20 s on an Apple M-series
@@ -83,8 +92,30 @@ them, and signing out or switching user clears the conversation.
 ## 3. Component A: NLQ / Text-to-SQL
 
 **Data source.** The same accepted `business.duckdb` publication the other modules read, pinned through
-`examples.read_shared_data.open_reader` (integrity and quality checks included). Module 4 never reads raw
-CSVs, `build.duckdb`, features or labels.
+`examples.read_shared_data.open_reader` (integrity and quality checks included), or the shared PostgreSQL
+release when `SHARED_DATA_BACKEND=postgres`. In the [integrated app](../../docs/integrated-app.md) the
+copilot uses the app's single shared source. Module 4 never reads raw CSVs, `build.duckdb`, features or
+labels.
+
+**Module 2 predictions and rankings.** When the publication's model outputs are released
+(`model_outputs_status = Available`) and every scoped prediction and ranking row comes from the publication's
+selected scoring run and model version, the sandbox also has:
+
+| Table | From | Notes |
+| --- | --- | --- |
+| `sku_risk` | `oos_predictions` | `predicted_oos_probability`, `alert_threshold`, `is_alert`, scoring date and the 7-day window. A prediction, not observed stock (`is_oos`). Driver details are not copied. |
+| `store_priority` | `visit_priority` | Stored v1 ranking. `stored_rank_in_scope` renumbers it within the asker's stores; the chain-wide `priority_rank` is not copied, so a rep cannot see other stores' positions. `risk_index` is the highest SKU probability, not a store probability. |
+| `business_priority` | Module 2 service | Integrated app only. Module 2's business rank and score for the same scope and run, read from the Module 2 service (proposed policy, not recomputed here). Copied only if its scope fingerprint, run and stores match the sandbox. |
+
+Answers that use these tables carry fixed notes (model status such as "synthetic demo" or "review
+candidate", run, scoring date and window; which ranking it is; blank = unknown) and provenance. If the outputs
+are not released, or runs or model versions are mixed, the tables are absent and prediction questions get an
+explicit "unavailable, not zero risk" answer without generating SQL. Business-data questions are unaffected.
+
+**Access changes while answering.** After a data answer is computed, the copilot re-checks the asker's
+account scope and the pinned release; if either changed (or access was revoked), the answer is discarded
+and the user is asked to try again. Signing out or switching identity cancels a question still being
+answered, and its answer is never shown to the next user.
 
 **Scoped sandbox** ([sandbox.py](sandbox.py)). For each principal, trusted code copies only that principal's
 stores from the serving views into a compressed in-memory DuckDB with ten analyst-friendly tables
@@ -96,7 +127,7 @@ about 1.5 s and uses about 280 MB; a rep sandbox (37 stores) about 0.2 s.
 
 **SQL check** ([sql_guard.py](sql_guard.py)). DuckDB's own parser (`json_serialize_sql`) checks every query
 before it runs: exactly one `SELECT` (so `ATTACH`, `COPY`, `SET`, `PRAGMA`, writes and a second statement
-hidden after a comment are rejected), only the ten sandbox tables or the query's own CTEs, no schema prefixes
+hidden after a comment are rejected), only this sandbox's tables or the query's own CTEs, no schema prefixes
 (`information_schema`, attached databases), no table functions (`read_csv`, `query`, ...) and no denied
 functions (`getenv`, `read_*`, ...). Queries are interrupted after 20 s and return at most 200 rows (totals
 are always computed on the full scoped input; only the displayed rows are capped, and the cap is reported).
@@ -105,21 +136,12 @@ are always computed on the full scoped input; only the displayed rows are capped
 scope, the team's KPI formulas from `metric_definitions` (for example OOS rate = OOS SKU-days / SKU-days with
 known stock, unknown days excluded; never an average of percentages), fixed date ranges relative to the data
 cutoff (2026-06-30: "this week" = 24-30 Jun, "last 4 weeks" = the 4 latest complete weeks for weekly flows,
-"right now" / "currently" = the latest day, or for one named store that store's latest reported day, and so
-on) and five worked examples that are not the brief's questions. Results have one row per item asked about,
-never one row per day unless the question asks for a trend. If the SQL is rejected or fails, the error goes
-back to the model for up to two corrections; an empty result gets one check of its filters.
+and so on) and four worked examples that are not the brief's questions. If the SQL is rejected or fails, the
+error goes back to the model for up to two corrections; an empty result gets one check of its filters.
 
-**Answer.** The model explains the result using only the names and numbers in the table: with 8 rows or fewer
-it names every row, and it never says a listed row does not match the question. The UI adds the chart
-([charts.py](charts.py): line for dates, bars for rankings, grouped bars for comparisons; measures that are all
-zero are not plotted, and every bar needs its own label, so a result with repeated labels shows no chart), the
-table, the SQL and a provenance line (publication, data cutoff, scope, metric version, model).
-
-**Inside Module 2.** The copilot also runs as the *Copilot* page of the Module 2 workspace
-(`module_4_panel("m2c")` driven by `module_4_server(..., prefix="m2c")`). The prefix keeps its input and
-output ids separate from the Module 4 tab, so both can be on the same page. Store scope and document role come
-from the Module 2 session, exactly as in the tab.
+**Answer.** The model explains the result using only numbers in the table. The UI adds the chart
+([charts.py](charts.py): line for dates, bars for rankings, grouped bars for comparisons), the table, the SQL
+and a provenance line (publication, data cutoff, scope, metric version, model).
 
 ## 4. Component B: RAG pipeline
 
@@ -143,7 +165,7 @@ file read, off-topic). Data answers are graded against reference SQL recomputed 
 (right keys in the right order or the right values, and the written answer must state them); knowledge
 answers must cite an expected document and contain the key facts.
 
-Latest run (local `qwen2.5:7b`, publication `20261104T162142-721c43c0d246`, data through 2026-06-30), full
+Latest run (local `qwen2.5:7b`, publication `20261029T030859-c5b2e820650f`, data through 2026-06-30), full
 table in [eval_results.md](eval_results.md):
 
 | | Result |
@@ -151,19 +173,14 @@ table in [eval_results.md](eval_results.md):
 | **Core 20 questions** | **18/20 (90%)**: NLQ 9/10, RAG 9/10 |
 | Brief's five example questions | 5/5 |
 | Safety checks | 5/5: manager guide not leaked to sales, rep sees only their 37 stores, `DROP`/`information_schema` and file reads blocked, off-topic declined |
-| Median answer time | 6 s (first question about 20-35 s while the model and sandbox load) |
+| Median answer time | 15 s (first question about 35-50 s while the model and sandbox load) |
 
-The two misses: **D07** (lowest fill rate "last quarter"): the model filters the right column
-(`actual_delivery`) but still reads last quarter as April-June instead of January-March. **K04** (Dishwashing
-products on the Must-Stock List): retrieval ranked the product sheets above the MSL list, so the answer named
-three of the four SKUs. One knowledge question (K07, promotion dates) is answered from the promotions table
-instead of the documents; the facts agree and the answer is correct.
-
-The 4 Nov prompt revision (current-state questions use the latest day with one row per item, exact promotion
-names, each table's own date column, summaries that name every row of a short result) was first scored 17/20:
-K07 searched for "2026 Spring Clean Blitz", a name that does not exist (the year is in `start_date`). Listing
-the promotion names fixed it. Across prompt revisions the score has moved between 16 and 18 of 20, so treat
-roughly 80-90% as the expected range on unseen questions.
+The two misses: **D07** (lowest fill rate "last quarter"): the model read last quarter as April-June and added
+a delivery-lateness filter the question did not ask for. **K04** (Dishwashing products on the Must-Stock
+List): retrieval ranked the product sheets above the MSL list, so the answer named three of the four SKUs.
+One knowledge question (K07, promotion dates) was answered from the promotions table instead of the
+documents; the facts agree and the answer is correct. Across the last three prompt revisions the score
+moved between 16 and 18 of 20, so treat roughly 80-90% as the expected range on unseen questions.
 
 These questions were written by the team, so this is a regression check, not a prediction of the live
 score. Before the presentation, teammates should each add questions they did not write the code for.
@@ -175,7 +192,8 @@ score. Before the presentation, teammates should each add questions they did not
   send questions and results outside the machine, which needs the team's and client's agreement). The
   Docker image does not yet copy `knowledge_base/` or `data_platform/`.
 - **Scope.** Reported data only (unknown days are excluded, never treated as zero). Candidate estimates,
-  Module 2 predictions and visit priorities are not exposed to the copilot yet.
+  price/audit context, metric definitions, model evaluation reports and Module 2's sales-at-risk scenario
+  are not exposed to the copilot.
 - **Multi-agent system (planned).** The router already separates a data agent and a knowledge agent; the
   next step is a coordinator that can call both in one answer and add Module 2 (OOS risk) and Module 3
   (deal check) tools.

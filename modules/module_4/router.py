@@ -25,6 +25,8 @@ DATA_PATTERNS = [
     r"\b(in|for) (the )?(northeast|southeast|midwest|west|modern trade|traditional trade|distributors?)\b",
     r"\b(shelf share|planogram compliance|msl compliance|fill rate|deliver(y|ies)|delay\w*|audits?)\b",
     r"\bby (store|sku|product|region|channel|category|week|month|tier)\b", r"\b(highest|lowest|best|worst)\b",
+    r"\b(predicted|prediction|predictions|probabilit\w*|stock ?out risk|oos risk|risk index|alerts?)\b",
+    r"\b(priority|priorities|visit (list|plan|order))\b", r"\b(rank|ranks|ranking|ranked)\b",
 ]
 KNOWLEDGE_PATTERNS = [
     r"\b(argument|arguments|pitch|convince|persuade|objection|refus\w*|push ?back|reluctant|hesitant)\b",
@@ -47,7 +49,8 @@ OTHER_PATTERNS = [r"^\s*(hi|hello|hey|thanks?|thank you)\b[\s!.]*$",
 
 ROUTER_PROMPT = """Classify a question for Marvel CPG's commercial copilot. Reply with JSON only: {"route": "..."}.
 - "data": needs numbers computed from sales, stock, out-of-stock, shelf audit, delivery, invoice or promotion records
-  (rates, totals, rankings, trends, comparisons for stores, products, regions, channels, periods).
+  (rates, totals, rankings, trends, comparisons for stores, products, regions, channels, periods), or Module 2's
+  published stockout predictions, alerts and visit priority ranking.
 - "knowledge": needs Marvel's documents: product facts, substitutes, selling arguments, objection handling,
   pricing/discount policy, MSL and execution standards, promotion rules, KPI definitions, deal approvals, safety.
 - "other": unrelated to Marvel CPG's commercial work."""

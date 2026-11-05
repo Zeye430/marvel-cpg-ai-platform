@@ -102,31 +102,29 @@ class ChartTests(unittest.TestCase):
         self.assertIsNone(auto_chart(pd.DataFrame({"avg": [13.4]})))
         self.assertIsNone(auto_chart(None))
 
-    def test_zero_measures_are_not_plotted(self):
-        zeros = pd.DataFrame({"product_name": ["A", "B", "C"], "units_sold": [0.0, 0.0, 0.0],
-                              "inventory_units": [0, 0, None]})
-        self.assertIsNone(auto_chart(zeros))
-        mixed = pd.DataFrame({"product_name": ["A", "B"], "units_sold": [0, 0], "sell_out_units": [5, 9]})
-        self.assertEqual([t.name for t in auto_chart(mixed).data], ["sell out units"])
+    def test_one_axis_only_and_long_labels_shortened_but_distinct(self):
+        mixed = pd.DataFrame({"channel": ["A", "B"], "stores": [3, 4], "reported_units": [20000.0, 17000.0]})
+        self.assertEqual([t.name for t in auto_chart(mixed).data], ["reported units"])   # 3 vs 20,000: not one axis
+        comparable = pd.DataFrame({"channel": ["A", "B"], "sell_in_units": [900.0, 700.0],
+                                   "sell_out_units": [800.0, 750.0]})
+        self.assertEqual(len(auto_chart(comparable).data), 2)
+        names = pd.DataFrame({"product_name": ["Marvel Dish Soap Antibacterial 28oz"] * 2,
+                              "store_name": ["Nashville Neighborhood Grocery #94", "Raleigh SuperCenter"],
+                              "units": [5.0, 6.0]})
+        bar = auto_chart(names).data[0]
+        self.assertTrue(all(len(n) <= 30 for n in bar.y))
+        self.assertEqual(len(set(bar.y)), 2)
+        self.assertIn("Nashville Neighborhood Grocery #94", bar.hovertext[0])           # full name on hover
 
-    def test_every_bar_has_one_distinct_label(self):
-        repeated = pd.DataFrame({"product_name": ["Soap", "Soap", "Gel"], "store_name": ["North", "South", "North"],
-                                 "oos_rate_pct": [12.0, 8.5, 3.1]})
-        bars = auto_chart(repeated).data[0]
-        self.assertEqual(list(bars.y if bars.orientation == "h" else bars.x),
-                         ["Soap · North", "Soap · South", "Gel · North"])
-        ambiguous = pd.DataFrame({"product_name": ["Soap", "Soap"], "units": [1, 2]})
-        self.assertIsNone(auto_chart(ambiguous))
-
-
-class PromptTests(unittest.TestCase):
-    def test_current_state_questions_use_one_day_and_one_row_per_item(self):
-        from modules.module_4.nlq import EXAMPLES, RULES, date_ranges, dates_block
-        block = dates_block(date_ranges(date(2026, 6, 30)))
-        self.assertIn("right now / currently", block)
-        self.assertIn("DATE '2026-06-30'", block)
-        self.assertIn("never one row per day", " ".join(RULES.split()))
-        self.assertTrue(any("right now in store" in q for q, _ in EXAMPLES))
+    def test_repeated_labels_are_never_stacked_into_one_bar(self):
+        # The same product in two stores: one bar per row (product · store), each its own probability.
+        rows = pd.DataFrame({"store_name": ["North", "South", "North"], "product_name": ["Soap", "Soap", "Wipes"],
+                             "predicted_oos_probability": [0.9, 0.8, 0.7]})
+        bar = auto_chart(rows).data[0]
+        self.assertEqual(list(bar.x), ["Soap · North", "Soap · South", "Wipes · North"])
+        self.assertEqual(list(bar.y), [0.9, 0.8, 0.7])
+        twins = pd.DataFrame({"product_name": ["Soap", "Soap"], "units": [1, 2]})
+        self.assertIsNone(auto_chart(twins))                          # indistinguishable rows: no chart
 
 
 class UITests(unittest.TestCase):
@@ -149,20 +147,6 @@ class UITests(unittest.TestCase):
         self.assertNotIn("<img src=x", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertIn("<strong>carefully</strong>", html)
-
-
-class EmbeddedCopilotTests(unittest.TestCase):
-    def test_module_4_tab_and_module_2_copilot_page_share_a_page_without_id_clashes(self):
-        import re
-        from modules.module_2.ui import module_2_ui
-        from modules.module_4.ui import module_4_ui
-        html = str(module_4_ui({})) + str(module_2_ui({}))
-        ids = re.findall(r'\sid="([^"]+)"', html)
-        clashes = sorted({i for i in ids if ids.count(i) > 1})
-        self.assertEqual(clashes, [])
-        for prefix in ("m4", "m2c"):
-            for name in ("user_query", "btn_ask", "btn_clear", "status", "conversation", "ex_0"):
-                self.assertIn(f'id="{prefix}_{name}"', html)
 
 
 class KnowledgeTests(unittest.TestCase):

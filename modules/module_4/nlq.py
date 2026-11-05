@@ -18,8 +18,9 @@ from datetime import date, timedelta
 import duckdb
 import pandas as pd
 
-from .sandbox import TABLES, Sandbox
-from .sql_guard import UnsafeSQL, check_sql, extract_sql
+from .formatting import display_frame
+from .sandbox import Sandbox
+from .sql_guard import UnsafeSQL, check_sql, extract_sql, referenced_tables
 
 MAX_REPAIRS = 2
 
@@ -58,8 +59,7 @@ METRICS = """METRICS (shared team definitions; use exactly these):
 - MSL compliance % = 100.0 * SUM(msl_compliant) / NULLIF(SUM(msl_assessable), 0) on store_daily.
 - Trade discount % = 100.0 * SUM(gross_sales - net_sales) / NULLIF(SUM(gross_sales), 0) on sell_in.
 - Invoiced revenue = SUM(net_sales) on sell_in.
-- Fill rate % = 100.0 * SUM(units_delivered) / NULLIF(SUM(units_ordered), 0) on deliveries.
-  Late (only when the question asks about late or delayed deliveries): delay_days > 0.
+- Fill rate % = 100.0 * SUM(units_delivered) / NULLIF(SUM(units_ordered), 0) on deliveries. Late: delay_days > 0.
 - Never average a percentage column across groups (except shelf_share_pct, which is already per audit)."""
 
 RULES = """RULES:
@@ -73,8 +73,6 @@ RULES = """RULES:
 - "Top N", "highest", "lowest", "best", "worst": ORDER BY the measure and LIMIT N (5 if N is not given).
   For "which stores/products ..." lists, return every matching row (no LIMIT), sorted by the key measure.
 - For a rate per group, also return its denominator (e.g. known_sku_days) so the answer can be checked.
-- Return one row per item asked about (store, product, region, ...; use GROUP BY or a single day), never one
-  row per day, unless the question asks for a trend over time ("by day", "by week", "trend", "over time").
 - Reply with the SQL only, inside ```sql ... ```."""
 
 EXAMPLES = [
@@ -104,18 +102,62 @@ FROM shelf_audits
 WHERE audit_date BETWEEN DATE '{this_month_start}' AND DATE '{as_of}'
 GROUP BY channel
 ORDER BY channel"""),
-    ("Which products are out of stock right now in store S001?",
-     """SELECT sku_id, product_name, is_msl, inventory_units
-FROM sku_daily
-WHERE store_id = 'S001' AND is_oos
-  AND date = (SELECT MAX(date) FROM sku_daily WHERE store_id = 'S001' AND is_oos IS NOT NULL)
-ORDER BY is_msl DESC, product_name"""),
     ("Weekly sell-out units of Dishwashing products over the last 4 weeks",
      """SELECT week_start, SUM(units_sold) AS sell_out_units
 FROM sku_daily
 WHERE category = 'Dishwashing' AND date BETWEEN DATE '{w4_start}' AND DATE '{w4_end}'
 GROUP BY week_start
 ORDER BY week_start"""),
+]
+
+# Module 2's published outputs: in the prompt only when this sandbox has them (released, one selected run).
+MODEL_SCHEMA = """sku_risk: Module 2's published stockout PREDICTIONS, one row per store x product for one scoring run.
+  scoring_run_id, scoring_date, window_start, window_end (the predicted period), store cols, product cols, is_msl,
+  predicted_oos_probability (0-1 model estimate of a stockout in the window), alert_threshold, is_alert (BOOLEAN,
+  the published alert decision), model_version, input_status
+store_priority: Module 2's STORED v1 visit ranking, one row per scored store. scoring_run_id, scoring_date,
+  stored_rank_in_scope (1 = first visit among the user's stores), store cols, risk_index (highest SKU probability
+  in the store, 0-1), priority_bucket, alert_sku_count, msl_gap_count, msl_unknown_count, inventory_unknown_count,
+  scored_sku_count, ranking_policy_version"""
+BUSINESS_SCHEMA = """business_priority: Module 2's computed BUSINESS-PRIORITY ranking (a proposed policy, different from the
+  stored v1 rank), one row per store in the user's scope. store_id, store_name, channel, region, business_rank
+  (1 = highest; NULL = not ranked), priority_score (0-100; NULL = unavailable), urgency, risk_category,
+  score_missing (secondary components left out of a computed score), stored_rank_in_scope, scoring_run_id, scoring_date, ranking_policy_version, policy_status"""
+MODEL_METRICS = """- Predicted stockout probability = predicted_oos_probability on sku_risk; alerts = is_alert. This is a model
+  prediction for window_start..window_end, NOT observed stock: observed out-of-stock is is_oos on sku_daily.
+  Never call a prediction "out of stock" and never use is_oos to answer a risk or prediction question.
+- Store risk index = risk_index on store_priority (highest SKU probability, not a store-level probability).
+- Stored priority / visit ranking = stored_rank_in_scope on store_priority (ORDER BY stored_rank_in_scope).
+- Do not compute your own ranking or score from probabilities, sales or shelf data.
+- Return predicted_oos_probability, alert_threshold and risk_index unrounded (the app shows them as percentages;
+  rounding can turn a small risk into 0).
+- Questions about what will happen (next days, upcoming stockouts, what will run out) are prediction questions:
+  answer them only from sku_risk / store_priority, never from is_oos or sales history.
+- sku_risk holds ONE published window (window_start..window_end, the 7 days after the scoring date): "next 7 days",
+  "next week", "soon" all mean that window, so do NOT filter sku_risk on dates. "Will run out" / "at risk" = is_alert
+  (order by predicted_oos_probability DESC)."""
+BUSINESS_METRICS = """- Module 2 business ranking / priority score = business_rank and priority_score on business_priority
+  (ORDER BY business_rank NULLS LAST). Use it only when the question asks for the business or Module 2 ranking;
+  "priority ranking" or "visit ranking" alone means stored_rank_in_scope."""
+MODEL_EXAMPLES = [
+    ("Which SKUs in my stores have a stockout alert?",
+     """SELECT store_id, store_name, sku_id, product_name, predicted_oos_probability,
+       alert_threshold, window_start, window_end
+FROM sku_risk
+WHERE is_alert
+ORDER BY predicted_oos_probability DESC"""),
+    ("Which SKUs will run out in the next 7 days?",
+     """SELECT store_id, store_name, sku_id, product_name, predicted_oos_probability, alert_threshold,
+       window_start, window_end
+FROM sku_risk
+WHERE is_alert
+ORDER BY predicted_oos_probability DESC"""),
+    ("Top 5 stores in the visit priority ranking",
+     """SELECT stored_rank_in_scope, store_id, store_name, risk_index, alert_sku_count,
+       msl_gap_count, scoring_date
+FROM store_priority
+ORDER BY stored_rank_in_scope
+LIMIT 5"""),
 ]
 
 
@@ -143,9 +185,7 @@ def date_ranges(as_of: date) -> dict:
 
 def dates_block(r: dict) -> str:
     return f"""DATES: the data ends on {r['as_of']} ("today"); there is no later data. Use these exact ranges:
-- today / latest day / right now / currently / at the moment: date = DATE '{r['as_of']}'
-  (for one named store, use that store's latest reported day instead:
-  date = (SELECT MAX(date) FROM sku_daily WHERE store_id = '...' AND is_oos IS NOT NULL))
+- today / latest day: date = DATE '{r['as_of']}'
 - this week / last 7 days: date BETWEEN DATE '{r['this_week_start']}' AND DATE '{r['as_of']}'
 - last week: date BETWEEN DATE '{r['last_week_start']}' AND DATE '{r['last_week_end']}'
 - last 4 weeks / last 28 days: date BETWEEN DATE '{r['last_28_start']}' AND DATE '{r['as_of']}';
@@ -155,10 +195,7 @@ def dates_block(r: dict) -> str:
 - this quarter (Q{(r['quarter_start'].month - 1) // 3 + 1} {r['quarter_start'].year}): BETWEEN DATE '{r['quarter_start']}' AND DATE '{r['as_of']}';
   last quarter (the previous one, Q{(r['last_quarter_start'].month - 1) // 3 + 1} {r['last_quarter_start'].year}): BETWEEN DATE '{r['last_quarter_start']}' AND DATE '{r['last_quarter_end']}'
 - this year / year to date: BETWEEN DATE '{r['year_start']}' AND DATE '{r['as_of']}'; last year: BETWEEN DATE '{r['last_year_start']}' AND DATE '{r['last_year_end']}'
-- no period in the question: use all data ({r['data_start']} to {r['as_of']}).
-The ranges are written for sku_daily / store_daily `date`; on other tables apply them to that table's own date
-column: sell_in invoice_date, shelf_audits audit_date, deliveries actual_delivery (arrived or delivered) or
-order_date (ordered), weekly_flow week_start, monthly_flow month_start, promotions start_date."""
+- no period in the question: use all data ({r['data_start']} to {r['as_of']})."""
 
 
 def values_block(sandbox: Sandbox) -> str:
@@ -167,6 +204,8 @@ def values_block(sandbox: Sandbox) -> str:
     products = "; ".join(f"{sku} = {name}" for sku, name in zip(
         sandbox.values("SELECT sku_id FROM products ORDER BY sku_id"),
         sandbox.values("SELECT product_name FROM products ORDER BY sku_id")))
+    buckets = (f"\n- priority_bucket: {listed('SELECT DISTINCT priority_bucket FROM store_priority ORDER BY 1')}"
+               if "store_priority" in sandbox.tables else "")
     return f"""VALUES:
 - channel: {listed("SELECT DISTINCT channel FROM stores ORDER BY 1")}
 - region: {listed("SELECT DISTINCT region FROM stores ORDER BY 1")}
@@ -175,16 +214,26 @@ def values_block(sandbox: Sandbox) -> str:
 - brand: {listed("SELECT DISTINCT brand FROM products ORDER BY 1")}
 - delivery_status: {listed("SELECT DISTINCT delivery_status FROM deliveries ORDER BY 1")}
 - promo_type: {listed("SELECT DISTINCT promo_type FROM promotions ORDER BY 1")}
-- promo_name (names repeat every year; a year in the question is a start_date filter, not part of the name):
-  {listed("SELECT DISTINCT promo_name FROM promotions ORDER BY 1")}
-- products: {products}"""
+- products: {products}{buckets}"""
 
 
 def system_prompt(sandbox: Sandbox) -> str:
     ranges = date_ranges(sandbox.as_of)
-    examples = "\n\n".join(f"Question: {q}\n```sql\n{sql.format(**ranges)}\n```" for q, sql in EXAMPLES)
+    model = sandbox.model or {}
+    schema, metrics, examples = SCHEMA, METRICS, list(EXAMPLES)
+    if model.get("available"):
+        schema += "\n" + MODEL_SCHEMA
+        metrics += "\n" + MODEL_METRICS
+        examples += MODEL_EXAMPLES
+        if model["business_ranking"]["available"]:
+            schema += "\n" + BUSINESS_SCHEMA
+            metrics += "\n" + BUSINESS_METRICS
+    else:
+        schema += ("\nNo stockout predictions or visit ranking are available: do not answer prediction or "
+                   "ranking questions from is_oos or sales.")
+    examples = "\n\n".join(f"Question: {q}\n```sql\n{sql.format(**ranges)}\n```" for q, sql in examples)
     return ("You translate questions about Marvel CPG's commercial data into one DuckDB SQL query.\n\n"
-            f"{SCHEMA}\n\n{values_block(sandbox)}\n\n{METRICS}\n\n{dates_block(ranges)}\n\n{RULES}\n\n"
+            f"{schema}\n\n{values_block(sandbox)}\n\n{metrics}\n\n{dates_block(ranges)}\n\n{RULES}\n\n"
             f"EXAMPLES:\n\n{examples}")
 
 
@@ -193,14 +242,12 @@ Rules:
 - Start with the direct answer to the question. Use 2 to 4 short sentences.
 - Use only numbers that appear in the result table. Do not calculate new figures and never invent any.
 - Name the time period and filters used (they are in the SQL).
-- Every row in the result matches the question's filters (for example, every listed product is out of stock).
-  Never say that a listed row does not match, and copy names and numbers exactly as they appear.
-- With 8 rows or fewer, name every row. With more, name the top few and give the total number of rows.
+- If there are more rows than you name, name the top few and give the total number of rows.
   Do not mention the row count otherwise.
-- is_msl = True means a must-stock (MSL) product. If the question asks what to do first, say only what the
-  table supports (for example: the must-stock products first) and nothing more.
 - If the result is empty, say that no data matched for this scope and period.
-- Do not guess causes or give advice that the data does not show."""
+- Do not guess causes or give advice that the data does not show.
+- A predicted probability or alert is a model estimate, never an observed stockout. Blank values are unknown,
+  not zero. A stored rank and a business rank are different orderings; never say they agree unless the table shows it."""
 
 
 @dataclass
@@ -240,10 +287,8 @@ def ungrounded_filters(sql: str, question: str) -> list[str]:
 
 
 def _markdown(frame: pd.DataFrame, limit: int = 15) -> str:
-    shown = frame.head(limit).copy()
-    for column in shown.columns:
-        if pd.api.types.is_float_dtype(shown[column]):
-            shown[column] = shown[column].round(2)
+    # The values exactly as the table shows them: probabilities as percentages (0.004 -> 0.4%, never 0.0).
+    shown = display_frame(frame.head(limit))
     try:
         return shown.to_markdown(index=False)
     except ImportError:  # tabulate is optional
@@ -254,15 +299,19 @@ class NLQEngine:
     def __init__(self, llm):
         self.llm = llm
 
-    def generate(self, question: str, sandbox: Sandbox) -> NLQResult:
+    def generate(self, question: str, sandbox: Sandbox, required=None) -> NLQResult:
+        """``required``: published tables the question needs (predictions / rankings); a query that reads none of
+        them gets one correction request. The caller still enforces it on the final query."""
         messages = [{"role": "system", "content": system_prompt(sandbox)},
                     {"role": "user", "content": f"Question: {question}"}]
-        attempts, result, sql, checked_filters = [], None, None, False
+        attempts, result, sql, checked_filters, checked_tables = [], None, None, False, False
+        order = ("sku_risk", "store_priority", "business_priority")          # predictions first
+        needed = sorted(set(required or ()) & set(sandbox.tables), key=lambda t: (order + (t,)).index(t))
         for attempt in range(MAX_REPAIRS + 1):
             reply = self.llm.chat(messages, max_tokens=500)
             sql = extract_sql(reply)
             try:
-                sql = check_sql(sql, TABLES)
+                sql = check_sql(sql, sandbox.tables)
                 result = sandbox.run(sql)
             except UnsafeSQL as error:
                 attempts.append({"sql": sql, "error": str(error)})
@@ -274,7 +323,13 @@ class NLQEngine:
             else:
                 attempts.append({"sql": sql, "error": None, "rows": len(result.frame)})
                 extra = [] if checked_filters or attempt == MAX_REPAIRS else ungrounded_filters(sql, question)
-                if extra:
+                if needed and not checked_tables and attempt < MAX_REPAIRS and \
+                        not referenced_tables(sql) & set(needed):
+                    checked_tables = True
+                    feedback = ("The question asks for Module 2's predictions or ranking. Observed is_oos and sales "
+                                "are history, not predictions, and cannot answer it. Use " + " or ".join(needed) +
+                                ". Return only the SQL.")
+                elif extra:
                     checked_filters = True
                     feedback = ("The question does not mention " + "; ".join(extra) + ". Remove filters the question "
                                 "does not ask for. Keep one only if the question clearly means it (for example by an "
@@ -303,8 +358,8 @@ class NLQEngine:
         return self.llm.chat([{"role": "system", "content": SUMMARY_PROMPT}, {"role": "user", "content": user}],
                              max_tokens=300)
 
-    def answer(self, question: str, sandbox: Sandbox) -> NLQResult:
-        result = self.generate(question, sandbox)
+    def answer(self, question: str, sandbox: Sandbox, required=None) -> NLQResult:
+        result = self.generate(question, sandbox, required)
         if result.status == "ok":
             result.answer = self.explain(question, result, sandbox)
         return result

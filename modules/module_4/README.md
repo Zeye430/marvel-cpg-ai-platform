@@ -197,7 +197,8 @@ score. Before the presentation, teammates should each add questions they did not
 - **Deployment.** The model runs on the presenter's laptop. The Render site has no model server; Module 4
   shows "model not running" there unless `MODULE4_LLM_*` points at a reachable server (a hosted model would
   send questions and results outside the machine, which needs the team's and client's agreement). The
-  Docker image does not yet copy `knowledge_base/` or `data_platform/`.
+  Docker image uses keyword-only document retrieval (`MODULE4_RAG_DENSE=0`), which is lighter than the hybrid
+  retrieval the practice set scores.
 - **Scope.** Reported data only (unknown days are excluded, never treated as zero). Candidate estimates,
   price/audit context, metric definitions and model evaluation reports are not exposed to the copilot.
   Module 2's sales-at-risk scenario reaches it only with the business ranking, in the integrated app; without

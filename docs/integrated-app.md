@@ -29,6 +29,25 @@ local delivery pointer `outputs/v3/platform/delivery/serving/published/serving.j
 uv run --extra app --extra module4 --extra postgres python tests/browser/run_integrated_acceptance.py --serve --port 8000
 ```
 
+## Run it in Docker
+
+The image starts this app. It holds no business data, so give it a source with the settings below:
+
+```bash
+docker build -t marvel-cpg-dashboard .
+# <serving build> is the folder named by "directory" in published/serving.json. Use SHARED_DATA_ARTIFACT_DIR here:
+# serving.json holds that absolute path from the machine that built it, so it does not resolve inside the container.
+docker run --rm -p 127.0.0.1:8000:8000 -v <serving build>:/data:ro \
+  -e SHARED_DATA_ARTIFACT_DIR=/data \
+  -e MODULE4_LLM_BASE_URL=http://host.docker.internal:11434 \
+  marvel-cpg-dashboard
+```
+
+The container runs as user 1000, which must be able to read that folder (its `run.json` and `quality.json`
+are private to their owner). Without a source the app still starts and shows "unavailable". Without a reachable model the copilot says
+so and Module 2 keeps working. The image has no model server and uses keyword-only document retrieval
+(`MODULE4_RAG_DENSE=0`). Sign-in is demo-only, so do not expose a container holding client data publicly.
+
 ## Settings
 
 | Setting | Meaning |

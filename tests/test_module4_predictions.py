@@ -598,7 +598,9 @@ class PredictionSemanticsTests(PredictionCase):
             with self.subTest(question=question):
                 out = self.ask(self.copilot(runtime, [fenced(sql), "Ranked from reported data."]), question)
                 self.assertEqual(out.status, "ok", out.answer)
-                self.assertTrue(out.answer.startswith("Ranked from reported data."), out.answer)
+                summary, _, added = out.answer.partition("\n\n")
+                self.assertEqual(summary, "Ranked from reported data.")
+                self.assertTrue(not added or added.startswith("Also in the result: "), out.answer)
                 self.assertNotIn("model_outputs", out.provenance)
         for question in ("Show the visit priority ranking of my stores",
                          "What is the business priority ranking in Module 2?"):

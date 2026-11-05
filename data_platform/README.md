@@ -1,8 +1,127 @@
 # Shared V3 data-platform package
 
+**The shared business data is published to Aiven.** Module developers should
+start with the [Aiven connection tutorial](../docs/aiven-connection.md) to configure
+their read-only connection and test the existing views. No raw-data rebuild or
+new upload is needed. This page is mainly the maintainer's package reference;
+module developers own their backend data reads and UI integration.
+
 For **all four modules**, start with the [shared-data guide](../docs/data/README.md):
 architecture, source provisioning, complete build, scoped reads and module routing.
-This page is the package command reference, not a second onboarding guide.
+This page maps the implementation to its responsibilities and provides command
+reference. Setup and per-module instructions remain in the shared-data guide.
+
+## Start here: reuse the pipeline, integrate your module
+
+The shared implementation already covers **CSV extraction, Bronze/Silver/Gold
+transformation, validation, local business snapshots and optional PostgreSQL
+publication**. Module developers do not need to build another ETL pipeline.
+One shared implementation keeps dates, missing-data handling, KPI denominators
+and field meanings consistent across all four modules.
+
+**Alternative local data path:** obtain a verified
+serving directory and approved account scope from the data maintainer. The
+directory contains `business.duckdb`, `run.json` and `quality.json` from the same
+accepted build. Git checkout supplies code, not these ignored data artifacts.
+No Aiven account, database URL, Docker or PostgreSQL server is needed for this
+local data-reading path; install additional application dependencies from your
+module's guide.
+
+```python
+from data_platform.readers import open_business_reader
+
+# Replace with the accepted serving directory supplied by the maintainer.
+reader = open_business_reader(artifact_dir="/YOUR/accepted/serving/directory")
+schema = reader.schema()
+# Business-row reads require a principal_id from the authenticated session.
+# An unconfigured build denies access until account scope is assigned.
+```
+
+For a publication pointer or copied artifact, use the runnable
+[local read example](../examples/read_shared_data.py). Read your module guide
+below for view names and business caveats. Choose a model-output snapshot when
+predictions/ranking are required: `build-all` alone does not train a model or
+create those outputs.
+
+The first shared Aiven release is active and its TLS, reader permissions and
+scoped reads have been checked. Future publications remain explicit operator
+work, not a prerequisite for each developer's module work. Aiven and self-managed
+PostgreSQL use the same shared publication contract; there is no second ETL.
+Database availability does not certify app deployment or production auth. The supplied
+PostgreSQL Compose file is **test-only**, not a finished production deployment
+or backup configuration.
+
+## How the existing pieces fit together
+
+```text
+audit-data                                  separate input/version preflight
+build-all -> workflow.build_all()
+  -> pipeline.build()                       raw snapshot + Bronze/Silver/internal Gold
+  -> build_features() + build_labels()      isolated development artifacts
+  -> build_features(purpose="scoring")      latest point-in-time scoring inputs
+  -> serving.build_serving()                verified business.duckdb package
+       -> shared reader -> module services / UI
+
+Separately verified Module 2 outputs
+  -> model_outputs                           new business snapshot with model outputs
+
+Later, for the selected verified business snapshot:
+postgres_cli -> postgres_publisher           inspect / import / validate / activate
+  -> PostgreSQL shared release -> shared reader -> module services / UI
+```
+
+`build-all` does not call `audit-data`, open a cloud connection or unlock test
+labels. Local `--publish` selects a local serving snapshot; it does **not** upload
+anything to PostgreSQL. Cloud publication has separate explicit commands below.
+
+## Code map: which script does what?
+
+Paths below are relative to `data_platform/` unless stated otherwise. These are
+existing building blocks, not scripts every module developer must run separately.
+
+| Responsibility | File and main entry | Input -> output / boundary |
+| --- | --- | --- |
+| Command routing | [__main__.py](__main__.py): `main()` | Parses `python -m data_platform ...` and calls existing functions |
+| Input audit | [version_audit.py](version_audit.py): `audit_data()` | Local files + source contract -> header/hash report; inspect the report, not only exit code; does not clean data |
+| Full orchestration | [workflow.py](workflow.py): `build_all()` | Approved sources -> component artifacts and workflow `run.json`; no training/cloud publication |
+| Internal build | [pipeline.py](pipeline.py): `BuildConfig`, `build()` | Coordinates ingestion, Silver and requested internal Gold -> `build.duckdb`, quality report and provenance |
+| Extract / Bronze | [ingestion.py](ingestion.py): `snapshot_inputs()`, `load_bronze()` | Eight CSVs -> immutable raw snapshot, original Bronze records and source lineage |
+| Silver | [silver.py](silver.py): `typed_sources()`, `source_business_checks()`, `shared_relations()` | Bronze -> typed facts, checked relationships, assortment/calendar and receipt foundations |
+| Daily state / KPI Gold | [estimation.py](estimation.py): `build_daily_state()`; [marts.py](marts.py): `build_kpi_marts()` | Silver -> daily states, coverage/Unknown handling, separate candidate estimates and shared KPI/period/audit marts |
+| ML feature preparation | [feature_handoff.py](feature_handoff.py), [feature_runner.py](feature_runner.py): `build_features()` | Allowlisted projections -> isolated development or latest-scoring `features.duckdb`; no future outcomes as predictors |
+| ML outcomes | [labels.py](labels.py): `build_labels()` | Observed outcomes -> isolated `labels.duckdb`; development and controlled test access are separate; never an app input |
+| Local business delivery | [serving.py](serving.py): `build_serving()`; [negotiation.py](negotiation.py): `build_negotiation_context()` | Matching accepted source/scoring artifacts -> curated `business.duckdb`, including negotiation context; base prediction/ranking outputs are unreleased |
+| Artifact / quality verification | [artifacts.py](artifacts.py), [quality.py](quality.py) | Check identity, integrity and quality; directory existence or a familiar table name is not verification |
+| Model-output delivery | [model_outputs.py](model_outputs.py): `build_serving_with_model_outputs()` | Matching base snapshot + verified scoring/ranking/evidence packages -> new business snapshot; no model training or estimator approval |
+| Module read interface | [readers.py](readers.py): `open_business_reader()`, `open_configured_reader()`; [access.py](access.py): `ServingReader` | Verified DuckDB artifact or published PostgreSQL release -> bounded, principal-scoped reads; not arbitrary SQL |
+| PostgreSQL operator entry | [postgres_cli.py](postgres_cli.py): `main()` | Explicit publisher commands -> operator results; not called on page/chat requests |
+| PostgreSQL publication / Load | [postgres_publisher.py](postgres_publisher.py): `inspect_serving_source()`, `load_postgres_candidate()`, `validate_postgres_release()`, `activate_postgres_release()` | Selected verified business package -> isolated PostgreSQL candidate and explicit publication; no raw-data transformation |
+| PostgreSQL read / support | [postgres_reader.py](postgres_reader.py): `PostgresServingReader`; [postgres_config.py](postgres_config.py), [postgres_schema.py](postgres_schema.py), [SQL definitions](sql/postgres_serving.sql) | Fixed release + explicit configuration/type mapping -> compatible shared reads; app and publisher credentials are separate |
+
+Read examples: [examples/read_shared_data.py](../examples/read_shared_data.py)
+(local pointer/artifact), [examples/read_postgres_data.py](../examples/read_postgres_data.py)
+(shared PostgreSQL reads). These are trusted development tools, not login APIs.
+
+### What teammates should reuse versus develop
+
+| Role / task | Reuse | Develop or configure |
+| --- | --- | --- |
+| Data maintainer | `audit-data`, `build-all`, shared contracts and quality checks | Approved inputs/scopes; deliver one identified accepted snapshot |
+| Module developer | Shared business views, reader and module guide | Data adapter, UI, scoped queries and module-specific behavior; no independent raw-to-Gold ETL |
+| Offline Module 2 developer | Isolated features/labels, temporal policy and existing model workflow | Authorized model work and verified output delivery, separate from UI connections |
+| Database operator | Existing PostgreSQL publisher and reader | Approved target, CA, capacity, credentials, scopes, publication and consumer checks; not new Silver/Gold SQL |
+
+Joining/renaming published fields, building a reviewed scoped SQL sandbox, and
+calculating labeled hypothetical negotiation scenarios are application work.
+Preserve shared metric definitions, data status and provenance; do not overwrite
+shared facts. Store scenario/chat/action records outside immutable snapshots.
+
+If a wrapper is useful, call existing entry points rather than copy their SQL
+into `ETL/` or a module. Similarly named Silver/Gold tables are not automatically
+compatible with the shared reader. The shared cloud path publishes approved
+business views into `platform_*` namespaces, not every internal table. Extend
+shared contracts/tests for new requirements; do not use `--drop-schemas` or a
+legacy raw-table loader to publish a shared release.
 
 ## Entry points
 
@@ -55,7 +174,8 @@ It remains `Temporal_only` / `test_access=Locked`: not model approval, a complet
 evaluation release or observed-label coverage. `build-labels --temporal-plan FILE`
 can consume a saved canonical plan for development labels/partitions. Its
 explicit `--as-of` must equal the plan's validation outcome end and its source
-must match exactly. Plan-aware test release is rejected. `build-features` and
+must match exactly. Controlled plan-aware test access is separate and requires
+its own release evidence and exposure-ledger checks. `build-features` and
 `export-feature-input` also accept `--temporal-plan FILE`, enforcing the exact
 purpose cutoff/source. Default calls retain the fixed V3 profile. To build all
 components with one plan:

@@ -4,6 +4,34 @@ Read this page, then **only your module's guide**. The dictionary is a lookup,
 not required first reading. The shared layer serves all four modules; it does
 not replace their application/model development.
 
+## Module developers: connect to the published Aiven data
+
+The shared V3 business tables are **already published to Aiven PostgreSQL**.
+Start with the [Aiven connection tutorial](../aiven-connection.md): obtain the
+private read-only connection pack, configure TLS, inspect the schema and make a
+small scoped read. Then read only your module's guide below.
+
+You do not need your own Aiven account, raw CSVs, a local database, another ETL
+pipeline or another upload to consume this release. Each module developer owns
+its data reads, field mapping and UI/business integration. A database publication
+does not automatically migrate existing module code.
+
+Current release: `r439c038733973c0547655802`, business date **2026-06-30**,
+18 serving views. Model outputs retain their local-review candidate status;
+estimated views remain opt-in candidates. This is a shared data-service delivery,
+not acceptance of the integrated application or production authentication.
+
+Local DuckDB remains an alternative for maintainers/offline work; sections 2–4
+below explain that path. Module developers connecting to Aiven can skip those
+raw-data/build steps.
+
+For the exact scripts, functions and responsibilities, see the
+[code map and reuse boundaries](../../data_platform/README.md#code-map-which-script-does-what).
+For commands, see the [package reference](../../data_platform/README.md#commands).
+An `ETL/` wrapper may call these existing entry points, but should not maintain
+a second copy of the shared transformations. A raw-table loader or independent
+set of similarly named Gold tables is not a verified shared serving release.
+
 Choose your workflow:
 
 - **Data maintainers** provision V3 inputs, run DuckDB processing and validate
@@ -32,28 +60,30 @@ flowchart TD
     Silver --> Labels["Restricted observed future labels"]
     Gold --> Serving["Verified business.duckdb snapshot"]
     Features -->|matching latest-scoring context| Serving
-    Serving --> Reader["Current: scoped DuckDB reader"]
+    Serving --> Reader["Alternative: scoped local DuckDB reader"]
     Reader --> Apps["Module 1 / Module 2 UI / Module 3 / Module 4"]
     Features --> ML["Restricted offline model development and evaluation"]
     Labels -->|controlled outcome access only| ML
     ML -->|separately qualified model| Score["Module 2 scoring and visit ranking"]
     Features -->|point-in-time scoring inputs| Score
     Score -->|verified model-output publication| Serving
-    Serving -.-> Publisher["Opt-in: one-shot PostgreSQL publisher"]
-    Publisher -.-> PG["Shared PostgreSQL (target: team Aiven service)"]
-    PG -.-> PGReader["Opt-in: shared PostgreSQL reader"]
-    PGReader -.-> Apps
+    Serving --> Publisher["Maintainer: one-shot PostgreSQL publisher"]
+    Publisher --> PG["Published shared Aiven PostgreSQL"]
+    PG --> PGReader["Scoped shared PostgreSQL reader"]
+    PGReader --> Apps
 ```
 
-Solid paths describe existing data/model components, not proof that every module
-UI has migrated. The dashed PostgreSQL path is **implemented and opt-in**: the
-publisher and reader are tested against a disposable local PostgreSQL with
-synthetic data only. **Nothing has been published to Aiven yet** and no module
-has been cut over by default. The target is local DuckDB processing followed by
-explicit publication of curated business tables to the team's shared PostgreSQL database.
-Only the selected package's model outputs/statuses are published; a database
-copy does not qualify a model or approve an estimator. The legacy Module 1/Aiven
-source-table loader is a separate path, not the shared Gold publisher.
+The shared PostgreSQL path is published and has been checked on the actual
+Aiven service: verify-full TLS, a read-only application role, 18 views and scoped
+reads. It uses the existing publisher/reader; no second transformation pipeline
+is needed. Local DuckDB remains available as a separate reading path.
+
+This diagram describes data delivery, not proof that every module UI has been
+migrated. Each module developer wires the shared reader into its own backend.
+Only the selected package's model outputs/statuses are published; copying a
+database does not qualify a model or approve an estimator. The legacy
+Module 1/Aiven raw-table loader is a different interface and cannot be switched
+to the shared serving release just by replacing its URL.
 
 | File | Consumer / boundary |
 | --- | --- |
@@ -97,9 +127,10 @@ rewrites these shared rules.
 Module 2 model comparison, training/evaluation, scoring/ranking and a standalone
 dashboard are implemented. Candidate/synthetic status and the complete root-app
 integration limits remain explicit; this is not production release certification.
-The shared layer does not implement Module 3's simulator or Module 4's NLQ/RAG
-runtime. PostgreSQL publication/reads exist as an opt-in path (section 5); no
-Aiven deployment, other-module cutover or daily automation is claimed here.
+The shared layer supplies business data; module developers own their application
+interfaces, simulator, NLQ/RAG and UI behavior. Shared business tables are
+published to Aiven; completed end-to-end app integration/deployment is separate.
+No future data feed or daily automation is delivered by this publication.
 
 ## 2. Set up and verify inputs — data maintainers
 
@@ -222,7 +253,12 @@ must derive identity from the verified session, never a URL, prompt or LLM.
 
 ## 5. Connect your module — module developers
 
-**Current local mode:** obtain one approved business artifact/publication and
+**Aiven users:** follow the [connection tutorial](../aiven-connection.md).
+Use the already published release; do not rerun the build or publication commands
+to develop a module. The read example below and per-module guides describe the
+same shared data interface.
+
+**Alternative local mode:** obtain one approved business artifact/publication and
 account scope from the data maintainer. Raw CSVs and training labels are not
 required to develop business views. Install the relevant module dependencies
 using that module's guide; `uv sync --frozen` alone installs the data layer only.
@@ -258,9 +294,14 @@ If privately sharing an accepted serving artifact, copy `business.duckdb`,
 edit manifests or reuse another machine's absolute publication paths. This
 serving-only copy cannot rebuild internal features/labels.
 
-**Shared PostgreSQL mode (opt-in):** the maintainer processes data locally and
+**Shared PostgreSQL mode (published on Aiven):** the maintainer processes data locally and
 publishes one verified snapshot to PostgreSQL with the
 [publisher commands](../../data_platform/README.md#shared-postgresql-publication-opt-in).
+The publisher reads the selected verified business package; it does not reread
+raw CSVs or recompute Gold metrics. It does not export Bronze/Silver, ML features,
+future labels or model binaries. Cloud publication is not required for the local
+module-integration steps above. Local `build-all --publish` only selects a local
+snapshot and must not be confused with PostgreSQL `load` / `activate`.
 Modules then read the same release with the same API as the local reader —
 `read`, `read_page`, `principal_scope`, `schema` and identical limits, scope
 rules and errors — by opening it explicitly:
@@ -291,8 +332,10 @@ activated one. Errors never fall back to local files or another backend.
 | Module 3 | Not migrated: use the shared reader for `negotiation_context` and keep its review caveats |
 | Module 4 | Not migrated: use the bounded reader only; database credentials are never available to the LLM |
 
-First publication to the team's Aiven service (not yet performed; needs separate
-approval of client-data storage there):
+**Maintainers only — future publication checklist.** The first Aiven release is
+already active. The steps below are for a separately approved new release or
+target; module developers must not rerun them to obtain read access. Capacity,
+target, scopes and rollback still require explicit operator/owner coordination.
 
 1. Inventory with the database owner: PostgreSQL version, existing schemas/roles,
    free capacity and backup owner; confirm client data may be stored in that
@@ -317,7 +360,7 @@ Module 2 training/evaluation remains isolated from the application database.
 | Source hash/header mismatch | Obtain the approved V3 set; stop before building |
 | No `serving.json` | Build with `--publish`, select a local `--publication`, or use an accepted `--artifact-dir` |
 | Artifact integrity failure | Restore/rebuild the complete artifact; never bypass checks |
-| No configured account scope | Obtain approved assignments and build a new serving snapshot |
+| No configured account scope | Ask the maintainer to configure your Aiven principal; cloud scopes are managed separately from release payloads. For a local artifact, obtain its approved scope configuration |
 | Prediction/ranking unavailable | Expected in base serving and when no qualified model output is published; never replace with 0% risk |
 | Unknown metric / Requires review | Preserve the state; do not invent business approval |
 | Wrong cutoff | Use the source-bound rolling plan; for this snapshot, June business/scoring is separate from May development artifacts |

@@ -12,6 +12,7 @@ The platform is structured into four decoupled, independent business modules orc
 marvel-cpg-ai-platform/
 │
 ├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
+├── integrated_app.py           # Module 2 + Module 4 on one shared publication (demo sign-in); the app the Docker image starts
 ├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
 ├── Dockerfile                  # Production container definition for local & Render deployments
 ├── docker-compose.yml          # Container service definition with environment variable injection
@@ -131,9 +132,15 @@ The common Bronze/Silver/Gold layer supplies reported business data through June
    ```
    Open [http://localhost:8000](http://localhost:8000) in your browser.
 
+   To run only Module 2 (stockout risk) and Module 4 (Commercial Copilot) on one shared publication,
+   see the [integrated app guide](docs/integrated-app.md).
+
 ---
 
 ### Option 2: Run with Docker Compose
+
+The image starts `integrated_app.py` (Modules 2 and 4). It holds no business data: set the source in `.env`,
+as described in the [integrated app guide](docs/integrated-app.md#run-it-in-docker).
 
 1. **Build and Run**:
    ```bash
@@ -163,11 +170,16 @@ This repository is optimized for one-click deployment as a **Render Web Service*
 2. **Configure Environment Variables in Render Dashboard**:
    | Variable | Value / Description |
    | :--- | :--- |
-   | `DATABASE_URL` | Your secure Aiven PostgreSQL connection URI with `sslmode=require` |
+   | `SHARED_DATA_BACKEND` | `postgres` |
+   | `SHARED_DATA_DATABASE_URL` | Read-only application account on the shared PostgreSQL release |
+   | `SHARED_DATA_SSLROOTCERT` | Path to the CA file for verified TLS |
    | `PYTHONUNBUFFERED` | `1` (automatically set in Dockerfile) |
    | `PORT` | Set automatically by Render (`10000`) |
 
-3. **How Port Scanning & Startup Optimization Works**:
+   Sign-in is demo-only, so do not expose a site holding client data publicly. The Copilot needs a reachable
+   model (`MODULE4_LLM_*`); see the [Module 4 README](modules/module_4/README.md).
+
+3. **How Port Scanning & Startup Optimization Works** (the four-module `app.py`; `integrated_app.py` opens nothing at import):
    - `shared/data.py` uses an asynchronous preloading thread (`start_background_preload()`).
    - The web server binds to `$PORT` in **under 2 seconds**, immediately passing Render's port-scanning health check and eliminating `"No open ports detected"` timeouts.
    - High-cardinality facts (`fact_sell_out`) stream into memory using server-side cursors and categorical dtype encodings to stay comfortably below Render's 512 MB RAM ceiling.

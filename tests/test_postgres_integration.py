@@ -554,12 +554,23 @@ class ReaderTests(PgCase):
                              lambda s: s.get_population(principal), lambda s: s.get_model_health(principal),
                              lambda s: s.get_monitoring(principal)):
                     self.assertEqual(call(pg).to_dict(), call(duck).to_dict())
+                for view in ("all", "current_msl", "prevention", "verify_data"):     # business views and summary
+                    self.assertEqual(pg.get_priorities(principal, {"view": view}, page_size=200).to_dict(),
+                                     duck.get_priorities(principal, {"view": view}, page_size=200).to_dict())
+                for measure in ("current", "28d"):                                 # out-of-stock analytics
+                    self.assertEqual(pg.get_oos_analytics(principal, {}, measure).to_dict(),
+                                     duck.get_oos_analytics(principal, {}, measure).to_dict())
+                for sort in (("sales_at_risk", "asc"), ("shelf_risk", "desc"), ("urgency", "desc")):  # business priority
+                    self.assertEqual(pg.get_priorities(principal, {"view": "all"}, page_size=3, sort=sort).to_dict(),
+                                     duck.get_priorities(principal, {"view": "all"}, page_size=3, sort=sort).to_dict())
                 stores = duck.reader.read_page("stores", pid, page_size=2)["rows"] if pid != "demo:nobody" else []
                 for store in stores:
                     self.assertEqual(pg.get_store_detail(principal, store["store_id"]).to_dict(),
                                      duck.get_store_detail(principal, store["store_id"]).to_dict())
                 if stores:
                     self.assertEqual(pg.export_visit_plan(principal), duck.export_visit_plan(principal))
+                    self.assertEqual(pg.export_visit_plan(principal, {"view": "verify_data"}),
+                                     duck.export_visit_plan(principal, {"view": "verify_data"}))
         with self.assertRaises(Exception):
             Module2Service(self.sources["model"], reader=self.reader())          # exactly one source
 
@@ -1307,11 +1318,11 @@ class R06ExportTests(_Base):
         """Transparent wrapper: same service method, page size 1 so the small fixture spans many pages."""
         real, calls = service.get_priorities, {"n": 0}
 
-        def paged(principal, filters=None, cursor=None, page_size=50):
+        def paged(principal, filters=None, cursor=None, page_size=50, sort=None):
             calls["n"] += 1
             if calls["n"] == 2 and before_second_page:
                 before_second_page()
-            return real(principal, filters, cursor=cursor, page_size=1)
+            return real(principal, filters, cursor=cursor, page_size=1, sort=sort)
         service.get_priorities = paged
         return calls
 
@@ -1453,8 +1464,8 @@ class R06bConcurrentExportTests(_Base):
         from concurrent.futures import ThreadPoolExecutor
         real, seen = service.get_priorities, {"pages": [], "second": None, "excluded": None}
 
-        def page(p, filters=None, cursor=None, page_size=50):
-            out = real(p, filters, cursor=cursor, page_size=1)
+        def page(p, filters=None, cursor=None, page_size=50, sort=None):
+            out = real(p, filters, cursor=cursor, page_size=1, sort=sort)
             seen["pages"].append([r["store_id"] for r in out.rows])
             if len(seen["pages"]) == after_page:
                 if narrow:
@@ -1510,8 +1521,8 @@ class R06bConcurrentExportTests(_Base):
         service = self.service()
         real = service.get_priorities
 
-        def unverified(p, filters=None, cursor=None, page_size=50):
-            out = real(p, filters, cursor=cursor, page_size=1)
+        def unverified(p, filters=None, cursor=None, page_size=50, sort=None):
+            out = real(p, filters, cursor=cursor, page_size=1, sort=sort)
             out.scope_identity = None
             return out
         service.get_priorities = unverified

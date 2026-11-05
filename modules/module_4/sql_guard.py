@@ -71,6 +71,60 @@ def extract_sql(text: str) -> str:
     return sql
 
 
+def _column_names(node, names):
+    if isinstance(node, dict):
+        if node.get("type") == "STAR":
+            names.add("*")
+        elif node.get("class") == "COLUMN_REF" and node.get("column_names"):
+            names.add(node["column_names"][-1].lower())
+        for value in node.values():
+            _column_names(value, names)
+    elif isinstance(node, list):
+        for value in node:
+            _column_names(value, names)
+
+
+def _sources(node, ctes, tables, columns):
+    """Follow a query's FROM clauses and CTEs only, not subqueries in WHERE or SELECT."""
+    if not isinstance(node, dict):
+        return
+    kind = node.get("type")
+    ctes = {**ctes, **{entry["key"].lower(): entry["value"]["query"]["node"]
+                       for entry in (node.get("cte_map") or {}).get("map") or []}}
+    if kind == "SET_OPERATION_NODE":
+        for side in [node.get("left"), node.get("right"), *(node.get("children") or [])]:
+            _sources(side, ctes, tables, columns)
+    elif kind == "SELECT_NODE":
+        for item in node.get("select_list") or []:
+            if item.get("class") != "SUBQUERY":
+                _column_names(item, columns)
+        _sources(node.get("from_table"), ctes, tables, columns)
+    elif kind == "JOIN":
+        _sources(node.get("left"), ctes, tables, columns)
+        _sources(node.get("right"), ctes, tables, columns)
+    elif kind == "SUBQUERY":
+        _sources((node.get("subquery") or {}).get("node"), ctes, tables, columns)
+    elif kind == "BASE_TABLE":
+        name = (node.get("table_name") or "").lower()
+        if name in ctes:      # inside its own body the name means the real table
+            _sources(ctes[name], {k: v for k, v in ctes.items() if k != name}, tables, columns)
+        else:
+            tables.add(name)
+
+
+def answer_sources(sql: str) -> tuple:
+    """(tables the result rows come from, columns the result selects). A table used only to filter
+    (``WHERE store_id IN (SELECT store_id FROM sku_risk)``) is not a source of the answer."""
+    try:
+        parsed = json.loads(_parser.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0])
+    except duckdb.Error:
+        return set(), set()
+    tables, columns = set(), set()
+    for statement in parsed.get("statements") or []:
+        _sources(statement.get("node"), {}, tables, columns)
+    return tables, columns
+
+
 def check_sql(sql: str, allowed_tables) -> str:
     """Return the cleaned SQL if it passes every rule, else raise UnsafeSQL."""
     allowed = {t.lower() for t in allowed_tables}

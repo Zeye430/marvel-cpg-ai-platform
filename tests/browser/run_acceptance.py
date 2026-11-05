@@ -46,6 +46,33 @@ def start_app(serving_root, env=None):
     raise RuntimeError("Demo app did not start")
 
 
+def start_root_app(candidate_root):
+    """The integrated app with SYNTHETIC raw CSVs (temporary data link, removed afterwards) and the Module 2
+    candidate; no database URL is given, so nothing outside this machine is contacted."""
+    raw = next(candidate_root.glob("synthetic-platform/raw"), None)
+    link = ROOT / "data"
+    if raw is None or link.exists() or link.is_symlink():
+        raise RuntimeError("Root-app check needs synthetic-platform/raw and no existing ./data path")
+    (ROOT / "data").symlink_to(candidate_root / "synthetic-platform", target_is_directory=True)
+    port = free_port()
+    env = {**os.environ, "DATABASE_URL": "", "SHARED_DATA_DATABASE_URL": "", "SHARED_DATA_BACKEND": "duckdb",
+           "MODULE2_SERVING_ROOT": str(candidate_root / "serving")}
+    log = open(Path(tempfile.gettempdir()) / f"m2-root-app-{port}.log", "w")       # kept for blocker evidence
+    process = subprocess.Popen([sys.executable, "-m", "shiny", "run", "app.py", "--host", "127.0.0.1", "--port", str(port)],
+                               cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    process.log_path = log.name
+    url = f"http://127.0.0.1:{port}/"
+    for _ in range(300):
+        try:
+            urllib.request.urlopen(url, timeout=1)
+            return process, url, link
+        except OSError:
+            time.sleep(0.3)
+    process.terminate()
+    link.unlink()
+    raise RuntimeError("Root app did not start")
+
+
 def stop(process):
     process.terminate()
     try:
@@ -150,6 +177,15 @@ def main():
         finally:
             stop(process)
         summary["runs"].append({"scenario": "state:error", "exit": code, "summary": line})
+        process, url, link = start_root_app(candidate)
+        try:
+            code, line = node("root", url, out / "root")
+        finally:
+            stop(process)
+            if link.is_symlink():
+                link.unlink()
+            shutil.copy(process.log_path, out / "root" / "root-app.log")
+        summary["runs"].append({"scenario": "root", "exit": code, "summary": line})
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     summary["passed"] = all(r["exit"] == 0 for r in summary["runs"])

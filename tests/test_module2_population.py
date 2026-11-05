@@ -33,7 +33,8 @@ class StubReader:
                         for s in unscored]
 
     def read_page(self, name, principal_id, *, after=None, page_size=1000, **filters):
-        rows = {"visit_priority": self.priorities, "stores": self.stores}[name]
+        # Predictions are not needed by these population checks; an empty published set is valid.
+        rows = {"visit_priority": self.priorities, "stores": self.stores, "oos_predictions": []}[name]
         start = int(after or 0)
         page = rows[start:start + min(page_size, 1000)]
         nxt = str(start + len(page)) if start + len(page) < len(rows) else None

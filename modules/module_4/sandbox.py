@@ -123,7 +123,8 @@ MODEL_TABLE_SQL = OrderedDict([
 BUSINESS_RANKING_COLUMNS = (
     ("store_id", "VARCHAR"), ("store_name", "VARCHAR"), ("channel", "VARCHAR"), ("region", "VARCHAR"),
     ("business_rank", "BIGINT"), ("priority_score", "DOUBLE"), ("urgency", "VARCHAR"), ("risk_category", "VARCHAR"),
-    ("score_missing", "VARCHAR"), ("stored_rank_in_scope", "BIGINT"), ("scoring_run_id", "VARCHAR"),
+    ("score_missing", "VARCHAR"), ("sales_at_risk_usd", "DOUBLE"), ("sales_at_risk_status", "VARCHAR"),
+    ("stored_rank_in_scope", "BIGINT"), ("scoring_run_id", "VARCHAR"),
     ("scoring_date", "DATE"), ("ranking_policy_version", "VARCHAR"), ("policy_status", "VARCHAR"))
 
 UNRELEASED = ("Stockout predictions and the stored visit ranking are not released in this publication "
@@ -249,7 +250,7 @@ def _business_ranking_table(con, model: dict, provider, principal_id, scope_fing
         business["reason"] = ("Module 2's business-priority ranking did not match this data scope or scoring run, "
                               "so it is not shown; only the stored v1 visit ranking is available.")
         return False
-    frame = pd.DataFrame([[r[c] for c, _ in BUSINESS_RANKING_COLUMNS] for r in rows],
+    frame = pd.DataFrame([[r.get(c) for c, _ in BUSINESS_RANKING_COLUMNS] for r in rows],
                          columns=[c for c, _ in BUSINESS_RANKING_COLUMNS], dtype=object)
     con.register("_business", frame)
     try:

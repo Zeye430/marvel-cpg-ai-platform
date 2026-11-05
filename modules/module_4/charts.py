@@ -11,6 +11,9 @@ Picks a chart for a query result from the shape of the table:
 - a label column + comparable measures     -> grouped bars (e.g. sell-in vs sell-out); measures on a
                                              different scale (>10x) stay in the table (one axis only)
 - a single row                            -> no chart (the answer is a headline figure)
+
+A date column with one value is not a time axis (for example the scoring date on a ranking), and a
+measure that is all zero or empty is never plotted (a row of zero bars says nothing).
 """
 
 from __future__ import annotations
@@ -41,11 +44,17 @@ def _is_date(series: pd.Series) -> bool:
 
 
 def classify(frame: pd.DataFrame) -> dict:
-    dates = [c for c in frame.columns if _is_date(frame[c])]
-    numbers = [c for c in frame.columns if c not in dates and pd.api.types.is_numeric_dtype(frame[c])
+    all_dates = [c for c in frame.columns if _is_date(frame[c])]
+    dates = [c for c in all_dates if frame[c].nunique() > 1]
+    numbers = [c for c in frame.columns if c not in all_dates and pd.api.types.is_numeric_dtype(frame[c])
                and not pd.api.types.is_bool_dtype(frame[c])]
-    labels = [c for c in frame.columns if c not in dates and c not in numbers]
+    labels = [c for c in frame.columns if c not in all_dates and c not in numbers]
     return {"dates": dates, "numbers": numbers, "labels": labels}
+
+
+def informative(frame: pd.DataFrame, columns: list[str]) -> list[str]:
+    """Numeric columns with at least one non-zero value."""
+    return [c for c in columns if (frame[c].dropna() != 0).any()]
 
 
 def _is_count(column: str) -> bool:
@@ -93,7 +102,7 @@ def auto_chart(frame: pd.DataFrame | None, title: str = ""):
     import plotly.graph_objects as go
 
     kinds = classify(frame)
-    ys = comparable(frame, measures(kinds["numbers"]))
+    ys = comparable(frame, measures(informative(frame, kinds["numbers"])))
     if not ys:
         return None
     fig = go.Figure()

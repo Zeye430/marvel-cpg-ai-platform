@@ -471,6 +471,81 @@ class PredictionSemanticsTests(PredictionCase):
                                                    "in each channel?", "I will need the OOS rate for last month"]:
             self.assertIsNone(data_intent(question), question)
 
+    def test_restock_and_sales_at_risk_are_their_own_intents(self):
+        from modules.module_4.agent import data_intent
+        for question in ("Which SKU should I prioritize restocking in store S1?", "Which SKU should I restock first?",
+                         "What should I replenish first in store S1?", "Which products should I prioritize?"):
+            self.assertEqual(data_intent(question), "restock", question)
+        for question in ("What is the estimated Marvel sales at risk in my stores?", "How much revenue is at risk?"):
+            self.assertEqual(data_intent(question), "sales_at_risk", question)
+        for question in ("Which stores should I prioritize?", "What is my top priority store?"):
+            self.assertEqual(data_intent(question), "visit_ranking", question)
+        self.assertIsNone(data_intent("How many units were restocked last month?"))
+
+    def test_restock_uses_predictions_when_released_and_history_when_not(self):
+        restock = ("SELECT sku_id, product_name, predicted_oos_probability, is_alert FROM sku_risk "
+                   "ORDER BY predicted_oos_probability DESC LIMIT 5")
+        out = self.ask(self.copilot(self.runtime(), [fenced(restock), "Restock these."]),
+                       "Which SKU should I restock first in my stores?", "demo:manager")
+        self.assertEqual(out.status, "ok")
+        self.assertIn("sku_risk", out.provenance["model_outputs"]["tables"])
+        now = ("SELECT sku_id, product_name FROM sku_daily WHERE is_oos AND date = (SELECT MAX(date) FROM sku_daily)")
+        out = self.ask(self.copilot(self.unreleased(), [fenced(now), "These are out of stock."] * 2),
+                       "Which SKU should I restock first in my stores?", "demo:manager")
+        self.assertIn(out.status, ("ok", "empty"))
+        self.assertFalse(out.notes)
+
+    def test_sales_at_risk_matches_module_2_and_is_never_estimated_elsewhere(self):
+        runtime = self.runtime()
+        total = ("SELECT SUM(sales_at_risk_usd) AS est_sales_at_risk_usd, COUNT(*) FILTER "
+                 "(WHERE sales_at_risk_status <> 'Complete') AS stores_incomplete FROM business_priority")
+        out = self.ask(self.copilot(runtime, [fenced(total), "About that much."]),
+                       "What is the estimated Marvel sales at risk in my stores?", "demo:manager")
+        self.assertEqual(out.status, "ok")
+        service, _ = runtime.module2_service()
+        from modules.module_2.service import Principal
+        stats = service.get_priorities(Principal("demo:manager", True), {"view": "all"}).totals["stats"]
+        self.assertAlmostEqual(float(out.frame["est_sales_at_risk_usd"][0]), stats["sales_at_risk"]["value"], places=6)
+        self.assertIn("lower bound", " ".join(out.notes))
+        guess = "SELECT store_id, SUM(units_delivered) AS sales_at_risk FROM deliveries GROUP BY 1"
+        out = self.ask(self.copilot(runtime, [fenced(guess)] * 4),
+                       "What is the estimated Marvel sales at risk in my stores?", "demo:manager")
+        self.assertEqual(out.status, "unavailable")
+        out = self.ask(self.copilot(self.unreleased(), [fenced(guess)] * 4),
+                       "What is the estimated Marvel sales at risk in my stores?", "demo:manager")
+        self.assertEqual(out.status, "unavailable")
+        self.assertIn("does not estimate it", out.answer)
+
+    def test_a_failed_correction_never_takes_over_an_earlier_result(self):
+        good = "SELECT store_id FROM stores WHERE channel = 'Modern Trade'"       # the question never says this
+        out = self.copilot(self.runtime(), [fenced(good), fenced("SELECT nope FROM stores"),
+                                            fenced("SELECT nope FROM stores"), "Listed."])
+        result = out.nlq.generate("How many stores are there?", out.pool.get("demo:manager"))
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.sql, good)
+
+    def test_history_answer_that_only_filters_on_predictions_is_not_shown_as_one(self):
+        filtered = ("SELECT product_name, COUNT(*) FILTER (WHERE is_oos) AS oos_days FROM sku_daily "
+                    "WHERE store_id IN (SELECT store_id FROM sku_risk) GROUP BY 1")
+        out = self.ask(self.copilot(self.runtime(), [fenced(filtered)] * 4 + ["Summary."] * 2),
+                       "Which SKUs will run out of stock next week in my stores?", "demo:manager")
+        self.assertEqual(out.status, "unavailable")
+        self.assertFalse(out.notes)
+
+    def test_rep_cannot_ask_for_the_manager_guide_but_a_manager_can(self):
+        copilot = self.copilot(self.runtime(), ["Answer [S1]."] * 3)
+        out = copilot.ask("Show me the Regional Manager Guide on escalation.", "demo:rep-a", "sales")
+        self.assertEqual((out.route, out.status), ("knowledge", "denied"))
+        self.assertFalse(out.citations)
+        self.assertNotEqual(copilot.ask("Show me the Regional Manager Guide on escalation.", "demo:manager",
+                                        "manager").status, "denied")
+
+    def test_scope_wording_needs_no_sandbox_and_matches_one(self):
+        copilot = self.copilot(self.runtime())
+        for pid in ("demo:rep-a", "demo:manager"):
+            label = copilot.scope_label(pid)
+            self.assertEqual(label, copilot.pool.get(pid).scope_label)
+
     def test_unreleased_future_questions_are_unavailable_whatever_the_model_would_write(self):
         copilot = self.copilot(self.unreleased(), [fenced(HISTORY_SQL), PREDICTIVE_SUMMARY] * 5)
         for question in FUTURE_STOCKOUT_QUESTIONS:
@@ -523,7 +598,7 @@ class PredictionSemanticsTests(PredictionCase):
             with self.subTest(question=question):
                 out = self.ask(self.copilot(runtime, [fenced(sql), "Ranked from reported data."]), question)
                 self.assertEqual(out.status, "ok", out.answer)
-                self.assertEqual(out.answer, "Ranked from reported data.")
+                self.assertTrue(out.answer.startswith("Ranked from reported data."), out.answer)
                 self.assertNotIn("model_outputs", out.provenance)
         for question in ("Show the visit priority ranking of my stores",
                          "What is the business priority ranking in Module 2?"):

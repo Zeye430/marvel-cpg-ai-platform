@@ -177,6 +177,8 @@ class SharedRuntime:
                 "rows": [{"store_id": r["store_id"], "store_name": r["store_name"], "channel": r["channel"],
                           "region": r["region"], "business_rank": r["overall_rank"],
                           "priority_score": r["priority_score"], "urgency": r["urgency_label"],
+                          "sales_at_risk_usd": r["sales_at_risk_usd"],
+                          "sales_at_risk_status": r["sales_at_risk_status"],
                           "risk_category": r["risk_category"],
                           "score_missing": ", ".join(r["score_missing_components"]) or None,
                           "stored_rank_in_scope": r["display_rank"],

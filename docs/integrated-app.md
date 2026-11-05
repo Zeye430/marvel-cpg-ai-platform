@@ -67,7 +67,9 @@ uv run --extra app --extra module4 --extra postgres python tests/browser/run_int
 - **The copilot can query Module 2's published outputs.** When the publication has released
   predictions, the copilot can answer questions about predicted stockout probability and alerts
   (`sku_risk`), the stored visit ranking (`store_priority`) and, in this app, Module 2's business
-  ranking (`business_priority`), all limited to the signed-in identity's stores. Questions about what will
+  ranking (`business_priority`), all limited to the signed-in identity's stores. In this app "visit first" and
+  "priority ranking" mean the business ranking shown in Stockout Risk, so both modules give the same order; the
+  stored v1 rank is used only when the question asks for it. Questions about what will
   happen (for example "Which SKUs will run out next week?") are answered only from these published
   predictions: if they are not released, or the generated query reads only observed history, the
   copilot says so instead of answering, and other forecasts (for example next month's sales) are not
@@ -85,12 +87,13 @@ uv run --extra app --extra module4 --extra postgres python tests/browser/run_int
 - The copilot answers from the shared business views (sales, stock, shelf audits, deliveries,
   promotions), Module 2's published predictions and rankings, and the knowledge base. Other published
   views (price/audit context, metric definitions, candidate estimates, model evaluation reports) are not
-  in its sandbox, so not every business question can be answered. Module 2's estimated sales at risk is
-  not exposed to the copilot.
+  in its sandbox, so not every business question can be answered. Module 2's estimated sales at risk reaches
+  the copilot with the business ranking, so both show the same figure; without that ranking the copilot says it
+  is unavailable and never estimates it from other data.
 - The business ranking needs the Module 2 service; the standalone copilot (`python -m modules.module_4`)
   has only the stored ranking and says so.
-- Switching modules does not carry context (for example a selected store) from one module to the
-  other.
+- Module 2's overview questions and its "Ask Copilot about this store" button pass a question to the copilot.
+  Switching modules from the sidebar carries no context.
 - Copilot conversations last for the browser session; they are not saved.
 - The same shell (`shared/shell.py`) is meant to host Modules 1 and 3 once they read the shared
   publication; until then use the root `app.py` for those modules.

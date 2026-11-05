@@ -136,12 +136,15 @@ are always computed on the full scoped input; only the displayed rows are capped
 scope, the team's KPI formulas from `metric_definitions` (for example OOS rate = OOS SKU-days / SKU-days with
 known stock, unknown days excluded; never an average of percentages), fixed date ranges relative to the data
 cutoff (2026-06-30: "this week" = 24-30 Jun, "last 4 weeks" = the 4 latest complete weeks for weekly flows,
-and so on) and four worked examples that are not the brief's questions. If the SQL is rejected or fails, the
+and so on), each table's own date column, the exact promotion names and worked examples that are not the
+brief's questions. Results have one row per item asked about, never one row per day unless the question asks
+for a trend; a current-state question about one named store uses that store's latest reported day. If the SQL is rejected or fails, the
 error goes back to the model for up to two corrections; an empty result gets one check of its filters.
 
-**Answer.** The model explains the result using only numbers in the table. The UI adds the chart
-([charts.py](charts.py): line for dates, bars for rankings, grouped bars for comparisons), the table, the SQL
-and a provenance line (publication, data cutoff, scope, metric version, model).
+**Answer.** The model explains the result using only the names and numbers in the table. With 8 rows or fewer it
+names every row, and code adds any row it left out. The UI adds the chart ([charts.py](charts.py): line for dates,
+bars for rankings, grouped bars for comparisons; a date with one value is not a time axis and an all-zero measure
+is not plotted), the table, the SQL and a provenance line (publication, data cutoff, scope, metric version, model).
 
 ## 4. Component B: RAG pipeline
 
@@ -165,22 +168,26 @@ file read, off-topic). Data answers are graded against reference SQL recomputed 
 (right keys in the right order or the right values, and the written answer must state them); knowledge
 answers must cite an expected document and contain the key facts.
 
-Latest run (local `qwen2.5:7b`, publication `20261029T030859-c5b2e820650f`, data through 2026-06-30), full
+Latest run (local `qwen2.5:7b`, publication `20261104T162142-721c43c0d246`, data through 2026-06-30), full
 table in [eval_results.md](eval_results.md):
 
 | | Result |
 | --- | --- |
 | **Core 20 questions** | **18/20 (90%)**: NLQ 9/10, RAG 9/10 |
-| Brief's five example questions | 5/5 |
 | Safety checks | 5/5: manager guide not leaked to sales, rep sees only their 37 stores, `DROP`/`information_schema` and file reads blocked, off-topic declined |
-| Median answer time | 15 s (first question about 35-50 s while the model and sandbox load) |
+| Median answer time | 15 s on a 16 GB laptop; much slower while it is short of memory (first question 40-110 s) |
 
-The two misses: **D07** (lowest fill rate "last quarter"): the model read last quarter as April-June and added
-a delivery-lateness filter the question did not ask for. **K04** (Dishwashing products on the Must-Stock
-List): retrieval ranked the product sheets above the MSL list, so the answer named three of the four SKUs.
-One knowledge question (K07, promotion dates) was answered from the promotions table instead of the
-documents; the facts agree and the answer is correct. Across the last three prompt revisions the score
-moved between 16 and 18 of 20, so treat roughly 80-90% as the expected range on unseen questions.
+The two misses: **D07** (lowest fill rate "last quarter"): the model filters the right column
+(`actual_delivery`) but reads last quarter as April-June instead of January-March. **K04** (Dishwashing products
+on the Must-Stock List): retrieval ranked the product sheets above the MSL list, so the answer named three of the
+four SKUs.
+
+**What the score does not catch.** A pass checks the table and key facts, not every sentence. K07 (promotion dates)
+passes with a correct table, but its summary gives 12% for Dishwashing in Traditional Trade where the table says
+10%. D03 passed on a product-name filter that missed half the Laundry audits, because the average rounded to the
+same figure; code now corrects that filter. The small local model can still misread a row of a longer table, so
+treat the table as the answer. Across prompt revisions the score has moved between 16 and 18 of 20, so expect
+roughly 80-90% on unseen questions.
 
 These questions were written by the team, so this is a regression check, not a prediction of the live
 score. Before the presentation, teammates should each add questions they did not write the code for.
@@ -192,8 +199,9 @@ score. Before the presentation, teammates should each add questions they did not
   send questions and results outside the machine, which needs the team's and client's agreement). The
   Docker image does not yet copy `knowledge_base/` or `data_platform/`.
 - **Scope.** Reported data only (unknown days are excluded, never treated as zero). Candidate estimates,
-  price/audit context, metric definitions, model evaluation reports and Module 2's sales-at-risk scenario
-  are not exposed to the copilot.
+  price/audit context, metric definitions and model evaluation reports are not exposed to the copilot.
+  Module 2's sales-at-risk scenario reaches it only with the business ranking, in the integrated app; without
+  that ranking the copilot says it is unavailable and never estimates it.
 - **Multi-agent system (planned).** The router already separates a data agent and a knowledge agent; the
   next step is a coordinator that can call both in one answer and add Module 2 (OOS risk) and Module 3
   (deal check) tools.

@@ -293,9 +293,9 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
         if st["data_ready"]:
             rows.append(row(True, "Business data", f"Data through {st['as_of']}", st["artifact_id"]))
             scope = None
-            if pid is not None and copilot.pool is not None:
+            if pid is not None and copilot.reader is not None:
                 try:
-                    scope = copilot.pool.get(pid).scope_label
+                    scope = copilot.scope_label(pid)
                 except Exception:  # noqa: BLE001 - no scope: the answer path says so
                     scope = "no configured scope"
             if scope:

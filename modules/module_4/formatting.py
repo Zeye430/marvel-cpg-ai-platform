@@ -70,5 +70,10 @@ def display_frame(frame):
     """A copy of ``frame`` with every value rendered as text by ``value`` (``tolist`` gives Python scalars)."""
     shown = frame.copy()
     for column in shown.columns:
-        shown[column] = [value(column, v) for v in shown[column].tolist()]
+        values = shown[column].tolist()
+        known = [v for v in values if isinstance(v, float) and not _missing(v)]
+        if known and not is_probability(column) and all(v.is_integer() for v in known):
+            # Whole numbers stored as floats because a value is blank (a rank column): 1, not 1.00.
+            values = [int(v) if isinstance(v, float) and not _missing(v) else v for v in values]
+        shown[column] = [value(column, v) for v in values]
     return shown

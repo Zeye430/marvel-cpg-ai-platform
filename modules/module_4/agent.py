@@ -24,8 +24,8 @@ from .llm import ChatModel, LLMUnavailable
 from .nlq import NLQEngine
 from .rag import KnowledgeAssistant, KnowledgeUnavailable
 from .router import DATA, KNOWLEDGE, OTHER, route
-from .sandbox import MODEL_TABLE_SQL, SandboxPool, ScopeDenied
-from .sql_guard import referenced_tables
+from .sandbox import MODEL_TABLE_SQL, TABLES, SandboxPool, ScopeDenied
+from .sql_guard import answer_sources
 
 MAX_QUESTION_CHARS = 1000
 OUT_OF_SCOPE = ("I can answer questions about Marvel CPG's sales, stock, shelf execution and deliveries, and about "
@@ -49,10 +49,29 @@ VISIT_RANKING = re.compile(r"\b(visit (priorit\w*|list|plan|order|rank\w*|first|
                            r"priorit(y|ies))\b", re.I)
 BUSINESS_RANKING_QUESTION = re.compile(r"\b(business[- ]priorit\w*|business rank\w*|priority score|overall rank\w*|"
                                        r"optimi[sz]ed rank\w*|module ?2'?s? (rank\w*|order|list))\b", re.I)
+# Questions about one SKU's priority, not a store visit. Answered from the predictions when released.
+RESTOCK = re.compile(r"\b(which|what)\b.*\b(restock|replenish|reorder)(ing)?\b|"
+                     r"\b(restock|replenish|reorder)(ing)?\b.*\b(first|next|priorit\w*)\b|"
+                     r"\b(skus?|products?|items?)\b.*\bpriorit\w*|\bpriorit\w*\b.*\b(skus?|products?|items?)\b", re.I)
+SALES_AT_RISK = re.compile(r"\b(sales|revenue)\s+(are\s+|is\s+)?at\s+risk\b|\bat[- ]risk\s+(sales|revenue)\b", re.I)
+RESTRICTED_DOCUMENT = re.compile(r"\bmanager'?s?\s+guide\b|\bMCPG-09\b", re.I)
 MODEL_TABLES = frozenset(MODEL_TABLE_SQL) | {"business_priority"}
+# Fact tables: an answer whose values come from these is history, whatever else the query joins.
+HISTORY_TABLES = frozenset(TABLES) - {"stores", "products", "promotions"}
+MODEL_COLUMNS = frozenset({"predicted_oos_probability", "alert_threshold", "is_alert", "window_start", "window_end",
+                           "stored_rank_in_scope", "risk_index", "priority_bucket", "alert_sku_count", "business_rank",
+                           "priority_score", "urgency", "risk_category", "sales_at_risk_usd", "sales_at_risk_status"})
 # Intent -> the published tables an answer must read.
 REQUIRED_TABLES = {"prediction": MODEL_TABLES, "visit_ranking": frozenset({"store_priority", "business_priority"}),
-                   "business_ranking": frozenset({"business_priority"})}
+                   "business_ranking": frozenset({"business_priority"}), "restock": frozenset({"sku_risk"}),
+                   "sales_at_risk": frozenset({"business_priority"})}
+SALES_AT_RISK_UNAVAILABLE = ("The estimated sales at risk comes from Module 2's business ranking, which is not "
+                             "available here, and the copilot does not estimate it from other data. {reason}")
+NOT_FROM_SALES_AT_RISK = ("This question asks for Module 2's estimated sales at risk, but the generated query did not "
+                          "read it, so no answer is shown. Ask for the estimated sales at risk in your stores.")
+RESTRICTED = ("The Regional Manager Guide is limited to managers, so it cannot be shown for your account. You can "
+              "still ask about escalation and discounts from the documents your role can open.")
+NO_BUSINESS_MATCH = "No store in your scope matches this in Module 2's business ranking."
 FORECAST_UNAVAILABLE = ("There is no forecast for this. The copilot answers from reported history and, for stockouts "
                         "only, from Module 2's published predictions. Ask about a past period (for example \"last 4 "
                         "weeks\") or about predicted stockouts.")
@@ -69,9 +88,14 @@ MODEL_STATUS = {"Synthetic_demo": "Synthetic demo predictions (generated test da
 
 
 def data_intent(question: str) -> str | None:
-    """'business_ranking' | 'visit_ranking' | 'prediction' | 'forecast' (of anything else) | None (history)."""
+    """'sales_at_risk' | 'business_ranking' | 'restock' | 'visit_ranking' | 'prediction' | 'forecast' (of anything
+    else) | None (history)."""
+    if SALES_AT_RISK.search(question):
+        return "sales_at_risk"
     if BUSINESS_RANKING_QUESTION.search(question):
         return "business_ranking"
+    if RESTOCK.search(question):
+        return "restock"
     if VISIT_RANKING.search(question):
         return "visit_ranking"
     if MODEL_TERMS.search(question) or (FUTURE.search(question) and STOCKOUT.search(question)):
@@ -81,13 +105,23 @@ def data_intent(question: str) -> str | None:
     return None
 
 
+def tables_behind_answer(sql: str) -> set:
+    """Module 2 tables the result's values really come from. A prediction table used only to filter or
+    joined under history columns does not make the answer a prediction."""
+    tables, columns = answer_sources(sql)
+    used = tables & MODEL_TABLES
+    if used and tables & HISTORY_TABLES and not columns & (MODEL_COLUMNS | {"*"}):
+        return set()
+    return used
+
+
 def model_disclosure(model: dict) -> str:
     return MODEL_STATUS.get(model.get("publication_kind"),
                             f"Model release status: {model.get('publication_kind') or 'unknown'}; "
                             "not an approved production model.")
 
 
-def model_notes(model: dict, tables: set, frame, sandbox) -> list:
+def model_notes(model: dict, tables: set, frame, sandbox, sql: str = "") -> list:
     """Fixed statements for answers that used Module 2's outputs (never left to the language model)."""
     notes = [model_disclosure(model)]
     if model.get("synthetic") and model.get("publication_kind") != "Synthetic_demo":
@@ -106,6 +140,11 @@ def model_notes(model: dict, tables: set, frame, sandbox) -> list:
         notes.append(f"Business rank and score are Module 2's business-priority ranking ({business['policy_version']}, "
                      f"{business['policy_status'].lower()}), computed over {sandbox.scope_label}. It is a different "
                      "ordering from the stored v1 rank.")
+    if "sales_at_risk" in (sql or "") and "business_priority" in tables:
+        incomplete = sandbox.values("SELECT count(*) FROM business_priority WHERE sales_at_risk_status <> 'Complete'")[0]
+        notes.append("Estimated sales at risk is Module 2's 7-day scenario in USD, not lost revenue."
+                     + (f" {incomplete} of these stores have incomplete inputs, so a total is a lower bound: read it "
+                        "as at least that amount." if incomplete else ""))
     if frame is not None and len(frame) and frame.isna().to_numpy().any():
         notes.append("Blank values are unknown or not published, not zero.")
     return notes
@@ -179,6 +218,13 @@ class Copilot:
                     f"The knowledge base could not be loaded ({type(error).__name__})."
         return self._knowledge
 
+    def scope_label(self, principal_id) -> str:
+        """The scope wording of a sandbox, without building one (the status panel asks on every redraw)."""
+        scope = self.reader.principal_scope(principal_id)
+        stores = scope["stores"]
+        total = self.reader.record.get("rows", {}).get("stores", stores)
+        return f"all {total} stores" if stores == total else f"your {stores} assigned stores (of {total})"
+
     def status(self) -> dict:
         record = self.reader.record if self.reader is not None else {}
         outputs = record.get("model_outputs") or {}
@@ -218,8 +264,13 @@ class Copilot:
                       "scope": sandbox.scope_label, "metric_version": "shared_kpi.v1, reported data only",
                       "model": self.llm.name}
         intent, unavailable = data_intent(question), None
+        if intent == "restock" and not model["available"]:
+            intent = None                            # what is out of stock now is reported data, not a prediction
         if intent == "forecast":
             unavailable = FORECAST_UNAVAILABLE
+        elif intent == "sales_at_risk" and not model["business_ranking"]["available"]:
+            unavailable = SALES_AT_RISK_UNAVAILABLE.format(
+                reason=model["reason"] if not model["available"] else model["business_ranking"]["reason"])
         elif intent is not None and not model["available"]:
             unavailable = (model["reason"] + " Observed stock history is not used instead. Business data questions "
                            "(sales, stock, shelf, deliveries) still work.")
@@ -242,11 +293,12 @@ class Copilot:
             # Scope revoked or changed, or the release withdrawn, while answering: fail closed.
             out.status, out.answer = "denied", SCOPE_CHANGED
             return out
-        used = referenced_tables(result.sql) & MODEL_TABLES if result.sql else set()
+        used = tables_behind_answer(result.sql) if result.sql else set()
         if required and result.sql and not used & required:
             # Enforced on the executed query, whatever the model wrote: history never answers a prediction.
             out.status = "unavailable"
-            out.answer = NOT_FROM_BUSINESS_RANKING if intent == "business_ranking" else NOT_FROM_PREDICTIONS
+            out.answer = {"business_ranking": NOT_FROM_BUSINESS_RANKING,
+                          "sales_at_risk": NOT_FROM_SALES_AT_RISK}.get(intent, NOT_FROM_PREDICTIONS)
             out.attempts = result.attempts
             out.provenance = {**provenance, "model_outputs": {k: model[k] for k in
                                                               ("status", "publication_kind", "scoring_run_id")}}
@@ -258,9 +310,10 @@ class Copilot:
             out.answer = HISTORY_SUMMARY             # a summary of history must not read as a prediction
         if used:
             if result.status == "empty":
-                out.answer = ("No published predictions matched this question for your stores. "
-                              "That is not the same as zero risk.")
-            out.notes = model_notes(model, used, result.frame, sandbox)
+                out.answer = (NO_BUSINESS_MATCH if used == {"business_priority"} else
+                              "No rows matched this question in the published predictions for your stores. Check the "
+                              "filter in the SQL; no match is not the same as zero risk.")
+            out.notes = model_notes(model, used, result.frame, sandbox, result.sql)
             provenance["model_outputs"] = {
                 "tables": sorted(used), "status": model["status"], "publication_kind": model["publication_kind"],
                 "synthetic": model["synthetic"], "model_version": model["model_version"],
@@ -308,6 +361,10 @@ class Copilot:
             return out
         if not principal_id or doc_role not in ("sales", "manager"):
             out.status, out.answer = "denied", "Sign in to use the copilot."
+            return out
+        if doc_role != "manager" and RESTRICTED_DOCUMENT.search(question):
+            out.route, out.status, out.answer = KNOWLEDGE, "denied", RESTRICTED
+            out.elapsed_s = time.perf_counter() - started
             return out
         try:
             decision = route(question, self.llm)

@@ -203,8 +203,10 @@ licence and registered as "Workspace Inter". The logo is an original placeholder
 
 - **Overview**: key figures (stores needing action, act urgently, prevent stockouts, verify data,
   estimated Marvel sales at risk, current MSL-gap SKUs; no period-over-period arrows), Today's focus,
-  the SKUs most out of stock now (MSL / non-MSL / unknown), the 10 highest-priority stores and, for
-  managers, an overview by region. All follow the channel / region / tier / urgency filters.
+  the SKUs most out of stock now (MSL / non-MSL / unknown), the 10 highest-priority stores with what to do
+  at each (a rep's visit plan) and, for managers, estimated sales at risk by region with a region and channel
+  breakdown. All follow the channel / region / tier / urgency filters. When hosted with the copilot, the overview
+  offers one-click questions per role and a store page has "Ask Copilot about this store".
 - **Store ranking**: the full list in overall priority-score order, sortable by score, sales at risk,
   shelf risk, MSL risk and urgency in either direction (unavailable values last, ranks unchanged),
   views, 10 / 50 / 100 rows, export of the selected view, filters and sort. A store opens from its

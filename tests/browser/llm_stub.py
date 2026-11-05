@@ -22,6 +22,8 @@ PREDICTION_SQL = {
                       "FROM sku_risk WHERE is_alert ORDER BY predicted_oos_probability DESC",
     "business priority": "SELECT business_rank, store_id, store_name, ROUND(priority_score, 1) AS priority_score, "
                          "stored_rank_in_scope FROM business_priority ORDER BY business_rank NULLS LAST, store_id",
+    "restock first": "SELECT sku_id, product_name, is_msl, predicted_oos_probability, is_alert FROM sku_risk "
+                     "ORDER BY is_alert DESC, predicted_oos_probability DESC LIMIT 5",
     "visit priority": "SELECT stored_rank_in_scope, store_id, store_name, risk_index, "
                       "alert_sku_count FROM store_priority ORDER BY stored_rank_in_scope",
 }

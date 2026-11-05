@@ -127,6 +127,98 @@ class ChartTests(unittest.TestCase):
         self.assertIsNone(auto_chart(twins))                          # indistinguishable rows: no chart
 
 
+class ChartChoiceTests(unittest.TestCase):
+    def test_zero_measures_are_not_plotted(self):
+        zeros = pd.DataFrame({"product_name": ["A", "B", "C"], "units_sold": [0.0, 0.0, 0.0],
+                              "inventory_units": [0, 0, None]})
+        self.assertIsNone(auto_chart(zeros))
+        mixed = pd.DataFrame({"product_name": ["A", "B"], "units_sold": [0, 0], "sell_out_units": [5, 9]})
+        self.assertEqual([t.name for t in auto_chart(mixed).data], ["sell out units"])
+
+    def test_one_date_is_not_a_time_axis(self):
+        ranking = pd.DataFrame({"store_name": ["A", "B", "C"], "priority_score": [80.0, 60.0, 40.0],
+                                "scoring_date": [date(2026, 6, 30)] * 3})
+        self.assertEqual({t.type for t in auto_chart(ranking).data}, {"bar"})
+        trend = pd.DataFrame({"week_start": [date(2026, 6, 1), date(2026, 6, 8)], "sell_out_units": [5, 9]})
+        self.assertEqual({t.type for t in auto_chart(trend).data}, {"scatter"})
+
+
+class PromptTests(unittest.TestCase):
+    def test_current_state_questions_use_one_day_and_one_row_per_item(self):
+        from modules.module_4.nlq import EXAMPLES, RULES, date_ranges, dates_block
+        block = dates_block(date_ranges(date(2026, 6, 30)))
+        self.assertIn("right now / currently", block)
+        self.assertIn("DATE '2026-06-30'", block)
+        self.assertIn("deliveries actual_delivery", " ".join(block.split()))
+        self.assertIn("never one row per day", " ".join(RULES.split()))
+        self.assertTrue(any("right now in store" in q for q, _ in EXAMPLES))
+
+    def test_summary_rules_cover_short_lists_and_supporting_counts(self):
+        from modules.module_4.nlq import SUMMARY_PROMPT
+        text = " ".join(SUMMARY_PROMPT.split())
+        self.assertIn("With 8 rows or fewer, name every row", text)
+        self.assertIn("not days out of stock", text)
+        self.assertIn("never describe the rows you cannot see", text)
+
+    def test_invented_name_filters_are_flagged(self):
+        from modules.module_4.nlq import ungrounded_filters
+        self.assertEqual(ungrounded_filters("SELECT 1 FROM stores WHERE store_name ILIKE '%your store name%'",
+                                            "Which of my stores should I visit first?"),
+                         ["store_name LIKE '%your store name%'"])
+        self.assertEqual(ungrounded_filters("SELECT 1 FROM products WHERE product_name ILIKE '%Power Clean Lemon%'",
+                                            "What sold best, Power Clean Lemon or Original?"), [])
+
+    def test_a_short_result_names_every_row(self):
+        from modules.module_4.nlq import unnamed_rows
+        frame = pd.DataFrame({"sku_id": ["S1", "S2", "S3"], "product_name": ["Soap", "Gel", "Wipes"], "units": [1, 2, 3]})
+        self.assertEqual(unnamed_rows(frame, "Soap and S2 are out of stock."), ["Wipes"])
+        self.assertEqual(unnamed_rows(frame, "Soap, Gel and Wipes."), [])
+        self.assertEqual(unnamed_rows(pd.DataFrame({"product_name": [f"P{i}" for i in range(9)]}), "None named."), [])
+        self.assertEqual(unnamed_rows(pd.DataFrame({"avg_share": [1.0, 2.0]}), "Numbers."), [])
+
+    def test_listed_values_filter_their_column_not_a_name(self):
+        from modules.module_4.nlq import RULES
+        self.assertIn("Laundry means category = 'Laundry'", " ".join(RULES.split()))
+
+    def test_a_name_filter_that_is_really_a_category_is_corrected(self):
+        from modules.module_4.nlq import category_name_filters
+        sql = "SELECT AVG(shelf_share_pct) FROM shelf_audits WHERE product_name ILIKE '%Laundry%'"
+        self.assertEqual(category_name_filters(sql, ["Laundry", "Dishwashing"]),
+                         ["use category = 'Laundry' instead of product_name LIKE '%Laundry%'"])
+        self.assertEqual(category_name_filters("SELECT 1 FROM products WHERE product_name ILIKE '%Laundry Pods%'",
+                                               ["Laundry"]), [])
+
+    def test_a_whole_number_column_with_a_blank_is_not_shown_as_decimals(self):
+        from modules.module_4.formatting import display_frame
+        shown = display_frame(pd.DataFrame({"business_rank": [1.0, 2.0, None], "priority_score": [81.72, 80.0, None]}))
+        self.assertEqual(list(shown["business_rank"]), ["1", "2", "—"])
+        self.assertEqual(list(shown["priority_score"]), ["81.72", "80.00", "—"])
+
+
+class AnswerSourceTests(unittest.TestCase):
+    def tables(self, sql):
+        from modules.module_4.agent import tables_behind_answer
+        return tables_behind_answer(sql)
+
+    def test_prediction_tables_used_only_to_filter_do_not_make_a_prediction(self):
+        self.assertEqual(self.tables("SELECT product_name, COUNT(*) FILTER (WHERE is_oos) AS oos_days FROM sku_daily "
+                                     "WHERE store_id IN (SELECT store_id FROM sku_risk) GROUP BY 1"), set())
+        self.assertEqual(self.tables("WITH sku_risk AS (SELECT sku_id FROM sku_daily WHERE is_oos) SELECT * FROM sku_risk"),
+                         set())
+        self.assertEqual(self.tables("SELECT d.product_name, SUM(d.units_sold) AS units FROM sku_daily d JOIN sku_risk r "
+                                     "USING (store_id, sku_id) WHERE r.is_alert GROUP BY 1"), set())
+
+    def test_answers_read_from_prediction_tables_count(self):
+        self.assertEqual(self.tables("SELECT COUNT(*) FROM sku_risk WHERE is_alert"), {"sku_risk"})
+        self.assertEqual(self.tables("SELECT s.region, COUNT(*) AS alerts FROM sku_risk r JOIN stores s USING (store_id) "
+                                     "WHERE r.is_alert GROUP BY 1"), {"sku_risk"})
+        self.assertEqual(self.tables("WITH a AS (SELECT * FROM sku_risk WHERE is_alert) SELECT sku_id FROM a"), {"sku_risk"})
+        self.assertEqual(self.tables("WITH a AS (SELECT sku_id FROM sku_risk), b AS (SELECT * FROM a) SELECT * FROM b, b c"),
+                         {"sku_risk"})
+        self.assertEqual(self.tables("SELECT r.predicted_oos_probability, d.is_oos FROM sku_risk r JOIN sku_daily d "
+                                     "USING (store_id, sku_id)"), {"sku_risk"})
+
+
 class UITests(unittest.TestCase):
     def test_tab_renders_with_the_example_questions(self):
         from modules.module_4.ui import PROMPTS, module_4_ui

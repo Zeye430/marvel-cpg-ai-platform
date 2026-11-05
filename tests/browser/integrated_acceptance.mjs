@@ -317,6 +317,33 @@ async function scenarioMain() {
   await signOut(p);
   check("sidebar sign-out ends the session for both modules", !(await visible(p, "#shell-app")));
 
+  // Overview additions: the rep's visit plan, the manager's territory view, questions that open the Copilot.
+  const a = await openPage({ name: "additions", w: 1440, h: 900 });
+  await signIn(a, "manager", "demo:manager");
+  await moduleTwoReady(a);
+  await waitFor(a, "document.querySelectorAll('#m2-channel-table tbody tr').length > 0", 30000, "territory view");
+  check("manager: sales at risk by region chart and channel table", await visible(a, "#m2-region-risk") && await visible(a, "#m2-channel-table"));
+  check("manager: territory overview shows current MSL gaps", /Current MSL gaps/.test(await txt(a, "#m2-region-table")));
+  await signIn(a, "rep_a", "demo:rep-a");
+  await moduleTwoReady(a);
+  await waitFor(a, "document.querySelectorAll('#m2-top10-table tr[data-open-store]').length > 0", 30000, "visit plan");
+  check("rep: visit plan heading and What to do column", /Your visit plan/.test(await txt(a, "#m2-top10")) && /What to do/.test(await txt(a, "#m2-top10-table")));
+  check("rep: no territory view", !(await visible(a, "#m2-regions")));
+  const askAlerts = "How many stockout alerts are there in my stores?";
+  await click(a, "#m2-ask .m2-ask-item:nth-child(2)");
+  await waitFor(a, "document.querySelector('#shell-panel-module_4')?.offsetParent !== null", 20000, "copilot opened by a question");
+  const asked = await answered(a, askAlerts);
+  check("rep: an overview question opens the Copilot and is answered from the predictions", /not an observed stockout/.test(asked.note), asked.note);
+  await openModule(a, "module_2");
+  const store = await evaluate(a, "document.querySelector('#m2-top10-table tr[data-open-store]').dataset.store");
+  await click(a, "#m2-top10-table tr[data-open-store] a.m2-store-link");
+  await waitFor(a, "!!document.querySelector('#m2-ask-store') && document.querySelector('#m2-ask-store').offsetParent !== null", 30000, "store page button");
+  await click(a, "#m2-ask-store");
+  await waitFor(a, "document.querySelector('#shell-panel-module_4')?.offsetParent !== null", 20000, "copilot opened from a store");
+  const restock = await answered(a, `Which SKU should I restock first in store ${store}?`);
+  check("rep: the store button asks about that store from the predictions", /not an observed stockout/.test(restock.note), restock.note);
+  await shot(a, "6-additions");
+
   // Smaller screens: the shell bar wraps; record any horizontal overflow.
   for (const vp of [{ name: "tablet", w: 768, h: 1024 }, { name: "phone", w: 390, h: 844, mobile: true }]) {
     const q = await openPage(vp);

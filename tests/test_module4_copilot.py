@@ -162,6 +162,13 @@ class PromptTests(unittest.TestCase):
 
     def test_invented_name_filters_are_flagged(self):
         from modules.module_4.nlq import ungrounded_filters
+        question = "What was the out-of-stock rate in my stores last month?"
+        for sql, flagged in (("SELECT 1 FROM stores WHERE channel = 'My Stores'", "channel = 'My Stores'"),
+                             ("SELECT 1 FROM stores WHERE store_name ILIKE '%my stores%'",
+                              "store_name LIKE '%my stores%'")):
+            self.assertEqual(ungrounded_filters(sql, question), [flagged])
+        self.assertEqual(ungrounded_filters("SELECT 1 FROM stores WHERE store_name ILIKE '%Family Market%'",
+                                            "Sales in the Family Market store"), [])
         self.assertEqual(ungrounded_filters("SELECT 1 FROM stores WHERE store_name ILIKE '%your store name%'",
                                             "Which of my stores should I visit first?"),
                          ["store_name LIKE '%your store name%'"])

@@ -54,6 +54,13 @@ RESTOCK = re.compile(r"\b(which|what)\b.*\b(restock|replenish|reorder)(ing)?\b|"
                      r"\b(restock|replenish|reorder)(ing)?\b.*\b(first|next|priorit\w*)\b|"
                      r"\b(skus?|products?|items?)\b.*\bpriorit\w*|\bpriorit\w*\b.*\b(skus?|products?|items?)\b", re.I)
 SALES_AT_RISK = re.compile(r"\b(sales|revenue)\s+(are\s+|is\s+)?at\s+risk\b|\bat[- ]risk\s+(sales|revenue)\b", re.I)
+# A stockout question about one named day. Predictions cover a whole window, and history cannot say what a coming
+# day holds, so it gets a clear answer instead of model-written SQL. "Saturdays" and "weekends" ask about a pattern
+# in the history, and past wording or an explicit date also stays history.
+NAMED_DAY = re.compile(r"\b((mon|tues|wednes|thurs|fri|satur|sun)day|week-?end)\b", re.I)
+PAST_OR_DATED = re.compile(r"\b(last|past|previous|ago|yesterday|was|were|did|had|has been|have been|ran out|went|"
+                           r"\d{4}-\d{2}-\d{2}|\d{1,2}(st|nd|rd|th)?( of)? (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*|"
+                           r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w* \d{1,2})\b", re.I)
 RESTRICTED_DOCUMENT = re.compile(r"\bmanager'?s?\s+guide\b|\bMCPG-09\b", re.I)
 MODEL_TABLES = frozenset(MODEL_TABLE_SQL) | {"business_priority"}
 # Fact tables: an answer whose values come from these is history, whatever else the query joins.
@@ -75,6 +82,9 @@ NO_BUSINESS_MATCH = "No store in your scope matches this in Module 2's business 
 FORECAST_UNAVAILABLE = ("There is no forecast for this. The copilot answers from reported history and, for stockouts "
                         "only, from Module 2's published predictions. Ask about a past period (for example \"last 4 "
                         "weeks\") or about predicted stockouts.")
+NAMED_DAY_UNAVAILABLE = ("Stockout predictions cover a whole window, not a single day, so the copilot cannot say what "
+                         "happens on a named day. Ask \"Which SKUs may run out next week?\" for the predictions, or give "
+                         "a past date for reported data.")
 NOT_FROM_PREDICTIONS = ("This question asks for a prediction or the visit ranking, but the generated query read only "
                         "observed history, so no answer is shown: observed stock data is not a prediction. Try asking "
                         "for the predicted stockout probability, the stockout alerts or the visit priority ranking.")
@@ -88,8 +98,11 @@ MODEL_STATUS = {"Synthetic_demo": "Synthetic demo predictions (generated test da
 
 
 def data_intent(question: str) -> str | None:
-    """'sales_at_risk' | 'business_ranking' | 'restock' | 'visit_ranking' | 'prediction' | 'forecast' (of anything
-    else) | None (history)."""
+    """'named_day' | 'sales_at_risk' | 'business_ranking' | 'restock' | 'visit_ranking' | 'prediction' | 'forecast'
+    (of anything else) | None (history)."""
+    if (STOCKOUT.search(question) or MODEL_TERMS.search(question)) and NAMED_DAY.search(question) \
+            and not PAST_OR_DATED.search(question):
+        return "named_day"
     if SALES_AT_RISK.search(question):
         return "sales_at_risk"
     if BUSINESS_RANKING_QUESTION.search(question):
@@ -266,7 +279,9 @@ class Copilot:
         intent, unavailable = data_intent(question), None
         if intent == "restock" and not model["available"]:
             intent = None                            # what is out of stock now is reported data, not a prediction
-        if intent == "forecast":
+        if intent == "named_day":
+            unavailable = NAMED_DAY_UNAVAILABLE
+        elif intent == "forecast":
             unavailable = FORECAST_UNAVAILABLE
         elif intent == "sales_at_risk" and not model["business_ranking"]["available"]:
             unavailable = SALES_AT_RISK_UNAVAILABLE.format(

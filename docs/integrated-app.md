@@ -93,7 +93,8 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
   happen (for example "Which SKUs will run out next week?") are answered only from these published
   predictions: if they are not released, or the generated query reads only observed history, the
   copilot says so instead of answering, and other forecasts (for example next month's sales) are not
-  offered. Ordinary history rankings (sales, out-of-stock rate, shelf share) keep working.
+  offered. A stockout question about one named day ("on Saturday", "this weekend") gets a clear answer instead:
+  predictions cover a whole window, not a single day. Ordinary history rankings (sales, out-of-stock rate, shelf share) keep working.
   Probabilities are shown as percentages, and a small risk is never shown as zero. Each such answer
   states the model status, scoring run, scoring date and prediction window. The stored ranking is
   renumbered within the user's stores (a rep never sees chain-wide positions); the business ranking is

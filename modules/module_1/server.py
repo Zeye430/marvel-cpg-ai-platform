@@ -255,21 +255,27 @@ def display_name(name):
     return (name or "").replace("(demo)", "").strip()
 
 
-def welcome(name, clock=None, stores=None, as_of=None):
-    """Shown while the first load runs: who it is for, what is being prepared, and that it is still working."""
-    clock = clock if isinstance(clock, dict) else {}
-    hour = clock.get("hour")
-    who = display_name(name)
-    title = f"{greeting(hour if isinstance(hour, int) else None)}{', ' + who if who else ''}"
+def welcome_detail(stores=None, as_of=None):
+    """The line under the greeting; the scope summary is added once it has been read (in the background)."""
     detail = ["Getting your business performance ready"]
     if stores:
         detail.append(f" for {stores} stores")
     if as_of:
         detail.append(f", with data through {as_of}")
+    return "".join(detail) + "."
+
+
+def welcome(name, clock=None, detail=None):
+    """Shown at once while the first load runs (it reads nothing): who it is for, what is being prepared, and
+    that it is still working. ``detail``: the line under the greeting (default: without the scope summary)."""
+    clock = clock if isinstance(clock, dict) else {}
+    hour = clock.get("hour")
+    who = display_name(name)
+    title = f"{greeting(hour if isinstance(hour, int) else None)}{', ' + who if who else ''}"
     return tags.section(
         tags.p(clock.get("day") or "", class_="m1-welcome-day") if clock.get("day") else None,
         tags.h1(title, class_="m1-welcome-title"),
-        tags.p("".join(detail) + ".", class_="m1-welcome-sub"),
+        tags.div(detail if detail is not None else welcome_detail(), class_="m1-welcome-sub"),
         tags.div(tags.span(class_="m1-progress-bar"), class_="m1-progress", role="progressbar",
                  **{"aria-label": "Loading business performance"}),
         tags.p("The first visit takes a few seconds. Stockout Risk and the Copilot are ready in the sidebar "
@@ -597,21 +603,26 @@ KPI_TARGETS = {
     "gap": (lambda v: abs(v) <= 5, "within ±5%", (-5, 5)),
     "plano": (lambda v: v >= 80, "≥ 80%", 80),
 }
-KPI_TILES = (("msl", "MSL Compliance", "msl", "{:.1f}%", True), ("oos", "Reported OOS Rate", "oos", "{:.1f}%", False),
-             ("gap", "Sell-In vs Sell-Out Gap", "gap_pct", "{:+.1f}%", False),
-             ("shelf", "Shelf Allocation", "allocation", "{:.1f}%", True),
-             ("plano", "Planogram Compliance", "plano", "{:.1f}%", True))
+KPI_TILES = (("msl", "MSL Compliance", "msl", "{:.1f}%", "up"), ("oos", "Reported OOS Rate", "oos", "{:.1f}%", "down"),
+             ("gap", "Sell-In vs Sell-Out Gap", "gap_pct", "{:+.1f}%", "zero"),
+             ("shelf", "Shelf Allocation", "allocation", "{:.1f}%", "up"),
+             ("plano", "Planogram Compliance", "plano", "{:.1f}%", "up"))
 
 
-def _delta(value, prior, better_up, long=False):
-    """The change vs the prior period of equal length, as a coloured pill (text carries the direction)."""
+def _delta(value, prior, better, long=False):
+    """The change vs the prior period of equal length, as a pill: the arrow is the direction of the number;
+    the colour says whether that is better (``better``: "up", "down", or "zero" for a gap whose ideal is 0)."""
     suffix = " vs prior period" if long else ""
     if value is None or pd.isna(value) or prior is None or pd.isna(prior):
         return kit.pill("No prior value" + ("" if not long else " to compare"), "outline")
     delta = round(value - prior, 1)
     if delta == 0:
         return kit.pill("No change" + suffix, "outline")
-    return kit.pill(f"{'▲' if delta > 0 else '▼'} {abs(delta):.1f} pts{suffix}", "ok" if (delta > 0) == better_up else "bad")
+    text = f"{'▲' if delta > 0 else '▼'} {abs(delta):.1f} pts{suffix}"
+    if better == "zero":
+        closer = round(abs(value), 1) - round(abs(prior), 1)
+        return kit.pill(text, "outline" if closer == 0 else ("ok" if closer < 0 else "bad"))
+    return kit.pill(text, "ok" if (delta > 0) == (better == "up") else "bad")
 
 
 def _target(key, value, long=False):
@@ -629,13 +640,13 @@ def _target(key, value, long=False):
 def kpi_tiles(c, p, selected="msl"):
     """Five compact KPI cards (value, change, target); the selected card's detail opens below the row."""
     tiles = []
-    for key, label, field, pattern, better_up in KPI_TILES:
+    for key, label, field, pattern, better in KPI_TILES:
         value = c[field]
         on = key == selected
         tiles.append(tags.button(
             tags.span(label, class_="m1-kpi-label"),
             tags.span(_fmt(value, pattern), class_="m1-kpi-value"),
-            tags.span(_delta(value, p[field], better_up), _target(key, value), class_="m1-kpi-foot"),
+            tags.span(_delta(value, p[field], better), _target(key, value), class_="m1-kpi-foot"),
             type="button", class_="m1-kpi" + (" on" if on else ""), id=f"m1-kpi-{key}",
             onclick=f"Shiny.setInputValue('m1_kpi', '{key}', {{priority: 'event'}})",
             **{"data-key": key, "aria-pressed": "true" if on else "false",
@@ -702,7 +713,7 @@ def trend_chart(key, frame, element_id):
 def kpi_detail(key, c, p, trend, f):
     """Below the cards: the selected KPI's trend with target, what it rests on, and (collapsed) how it is computed."""
     spec = KPI_SPECS[key]
-    _, _, field, pattern, better_up = next(t for t in KPI_TILES if t[0] == key)
+    _, _, field, pattern, better = next(t for t in KPI_TILES if t[0] == key)
     label = spec["title"].replace(" %", "")                  # the full name; the card uses a short one
     period = "complete biweekly period" if key == "gap" else "week"
     how = tags.details(tags.summary("How it's calculated"),
@@ -715,7 +726,7 @@ def kpi_detail(key, c, p, trend, f):
                           tags.p(f"Trend per {period}, {pd.Timestamp(f.start):%b %d} – {pd.Timestamp(f.end):%b %d, %Y}, "
                                  "for the filtered stores and products.", class_="ws-muted m1-logic")),
                  tags.div(tags.span(_fmt(c[field], pattern), class_="m1-detail-value"),
-                          _delta(c[field], p[field], better_up, long=True), _target(key, c[field], long=True),
+                          _delta(c[field], p[field], better, long=True), _target(key, c[field], long=True),
                           class_="m1-detail-figures"),
                  class_="ws-card-head m1-detail-head"),
         trend_chart(key, trend, f"m1-trend-{key}"),
@@ -739,6 +750,7 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
     synced = reactive.value(False)          # filters received from the browser after the per-session update
     generation = reactive.value(0)          # bumped on every identity change; late results are discarded
     page = reactive.value("overview")
+    scope_summary = reactive.value(None)    # (stores, as_of) for the welcome line, read in the background
 
     def principal():
         pid, authenticated = auth_state.get("principal_id"), auth_state.get("authenticated")
@@ -779,6 +791,7 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             choice_info.set(None)
             synced.set(False)
             chosen_preset.set(DEFAULT_PRESET)
+            scope_summary.set(None)
             load_state.set(("idle", "") if pid else ("signed_out", ""))
             page.set("overview")
             ui.update_navset("m1_pages", selected="overview")
@@ -792,6 +805,28 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             with reactive.isolate():
                 load_state.set(("loading", "Loading your scoped shared data…"))
                 load_task.invoke(pid, generation())
+                scope_task.invoke(pid, generation())
+
+    @reactive.extended_task
+    async def scope_task(pid, gen):
+        """The welcome line's store count and as-of date, read off the session (a slow connection never holds
+        up the welcome itself). A failure just leaves the line without them; the load reports real problems."""
+        def work():
+            reader = runtime.reader()
+            return reader.principal_scope(pid)["stores"], reader.record.get("as_of")
+        try:
+            return gen, pid, await asyncio.to_thread(work)
+        except Exception:  # noqa: BLE001 - optional detail only
+            return gen, pid, None
+
+    @reactive.effect
+    def _scope_read():
+        if scope_task.status() != "success":
+            return
+        gen, pid, summary = scope_task.result()
+        with reactive.isolate():
+            if gen == generation() and pid == principal():
+                scope_summary.set(summary)
 
     handled = {"result": None}
 
@@ -969,6 +1004,11 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
                 kit.pill("Reported data only", "outline")]
         return kit.page_head(title, *meta, sub=sub)
 
+    @render.text
+    def m1_welcome_detail():
+        summary = scope_summary()
+        return welcome_detail(*summary) if summary else welcome_detail()
+
     @render.ui
     def m1_status():
         kind, reason = load_state()
@@ -976,15 +1016,9 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
         if kind in ("signed_out",) or item is not None:
             return None
         if kind in ("idle", "loading"):
-            stores = as_of = None
-            try:  # a scope summary only (no rows); the greeting works without it
-                reader = runtime.reader()
-                stores, as_of = reader.principal_scope(principal())["stores"], reader.record.get("as_of")
-            except Exception:  # noqa: BLE001 - the load reports any real problem
-                pass
             with reactive.isolate():
                 clock = input.m1_client_clock() if "m1_client_clock" in input else None
-            return welcome(auth_state["name"](), clock, stores, as_of)
+            return welcome(auth_state["name"](), clock, ui.output_text("m1_welcome_detail", inline=True))
         return kit.notice(tags.strong("Business Performance is unavailable. "), check_reason or reason or "",
                           kind="bad", role="alert", id="m1-unavailable")
 

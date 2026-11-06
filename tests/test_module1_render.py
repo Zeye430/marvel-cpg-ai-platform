@@ -197,13 +197,31 @@ class FilterPillAndWelcomeTests(unittest.TestCase):
         self.assertEqual(m1.display_name("Sales Rep A (demo)"), "Sales Rep A")
 
     def test_welcome_names_the_user_and_what_is_loading(self):
-        text = str(m1.welcome("Manager (demo)", {"hour": 9, "day": "Thursday, November 5"}, 221, "2026-06-30"))
+        text = str(m1.welcome("Manager (demo)", {"hour": 9, "day": "Thursday, November 5"},
+                              m1.welcome_detail(221, "2026-06-30")))
         for part in ("Good morning, Manager", "Thursday, November 5", "for 221 stores", "data through 2026-06-30",
                      'role="progressbar"'):
             self.assertIn(part, text)
         bare = str(m1.welcome(None))                       # no clock, name or scope yet: still a sensible line
         self.assertIn("Welcome", bare)
         self.assertIn("Getting your business performance ready.", bare)
+
+    def test_change_colour_says_better_or_worse_and_the_gap_aims_at_zero(self):
+        kind = lambda pill: re.search(r'ws-pill (\w+)', str(pill)).group(1)
+        self.assertEqual(kind(m1._delta(50.0, 45.0, "up")), "ok")
+        self.assertEqual(kind(m1._delta(6.0, 5.0, "down")), "bad")
+        self.assertEqual(kind(m1._delta(-3.0, -5.0, "zero")), "ok")       # up, closer to 0: better
+        self.assertEqual(kind(m1._delta(-5.0, -3.0, "zero")), "bad")      # down, further from 0: worse
+        self.assertEqual(kind(m1._delta(4.0, 2.0, "zero")), "bad")
+        self.assertEqual(kind(m1._delta(2.0, 4.0, "zero")), "ok")
+        self.assertEqual(kind(m1._delta(3.0, -3.0, "zero")), "outline")   # as far from 0 as before: neutral
+        self.assertIn("▲ 2.0 pts", str(m1._delta(-3.0, -5.0, "zero")))    # the arrow is the number's direction
+
+    def test_welcome_reads_nothing_and_gets_the_scope_line_later(self):
+        self.assertEqual(m1.welcome_detail(), "Getting your business performance ready.")
+        self.assertEqual(m1.welcome_detail(37, "2026-06-30"),
+                         "Getting your business performance ready for 37 stores, with data through 2026-06-30.")
+        self.assertIn("Getting your business performance ready.", str(m1.welcome("Sales Rep A (demo)", {"hour": 20})))
 
     def test_pill_values_say_all_one_name_or_how_many(self):
         names = {"a": "Alpha", "b": "Beta", "c": "Gamma"}

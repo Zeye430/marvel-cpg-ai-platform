@@ -12,7 +12,7 @@ The platform is structured into four decoupled, independent business modules orc
 marvel-cpg-ai-platform/
 │
 ├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
-├── integrated_app.py           # Modules 1, 2 and 4 on one shared publication (demo sign-in); the app the Docker image starts
+├── integrated_app.py           # All four modules on one shared publication (demo sign-in); the app the Docker image starts
 ├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
 ├── Dockerfile                  # Production container definition for local & Render deployments
 ├── docker-compose.yml          # Container service definition with environment variable injection
@@ -36,9 +36,10 @@ marvel-cpg-ai-platform/
 │   │   ├── ui.py               # ML benchmark scorecard, feature gain chart, and route ranking table
 │   │   └── server.py           # Supervised classification / time-series inference & priority ranking
 │   │
-│   ├── module_3/               # Module 3: Commercial Negotiation Simulator
-│   │   ├── ui.py               # Proposed deal terms, discount slider, and margin realization layout
-│   │   └── server.py           # Contractual guardrail validation (dim_guardrails) & waterfall economics
+│   ├── module_3/               # Module 3: Negotiation Simulator (runs in integrated_app.py)
+│   │   ├── ui.py, server.py    # Deal simulator (three proposals vs the guardrail) and price-change pages
+│   │   ├── calc.py             # Pure deal economics, versioned guardrail verdict, price response
+│   │   └── data.py             # Scoped reads of the shared publication (the copy Module 1 builds)
 │   │
 │   └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG), see its README
 │       ├── ui.py, server.py    # Copilot tab: question box, example questions, answers with charts and citations
@@ -80,10 +81,13 @@ marvel-cpg-ai-platform/
 ### 💼 Module 3 — Commercial Negotiation Simulator
 * **Work Type**: Pricing Scenario Modeling & Policy Guardrail Enforcement
 * **Target Users**: Field Sales Reps during buyer discussions and Regional Managers approving overrides.
-* **Contractual Guardrails (`dim_guardrails`)**:
-  - Enforces channel- and category-specific maximum discount percentages and minimum margin floors.
-  - Automatically flags policy breaches and calculates required execution trade-offs (e.g., $+15\%$ shelf share or secondary endcap placement).
-* **Output**: Instant deal status banner (Approved, Requires Manager Override, Policy Breach) and Waterfall deal economics.
+* **Deal simulator (Scenario A)**: three proposals side by side for one account and product, checked against
+  the shared negotiation context's channel × category guardrail (cap, minimum margin, required commitment):
+  APPROVED / APPROVED WITH CONDITIONS (manager review) / REJECTED, with the volume needed to pay for extra discount.
+  The rules are a proposal pending client confirmation and are switchable in the page; nothing is auto-approved.
+* **Price change (Scenario B)**: volume, revenue and gross-profit response to a list-price increase, from an
+  elasticity estimated on the user's stores (or set by the user), with the assumptions stated.
+* See [the integrated app guide](docs/integrated-app.md#negotiation-simulator-module-3).
 
 ### 🤖 Module 4 — Commercial Copilot
 * **Work Type**: Conversational Analytics (Text-to-SQL + Grounded RAG)
@@ -132,15 +136,15 @@ The common Bronze/Silver/Gold layer supplies reported business data through June
    ```
    Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-   To run Module 1 (business performance), Module 2 (stockout risk) and Module 4 (Commercial Copilot)
-   on one shared publication, see the [integrated app guide](docs/integrated-app.md). Module 1 now runs
-   only there; the root app's Module 1 tab points to it.
+   To run all four modules (business performance, stockout risk, negotiation simulator and Commercial
+   Copilot) on one shared publication, see the [integrated app guide](docs/integrated-app.md). Modules 1
+   and 3 now run only there; the root app's tabs for them point to it.
 
 ---
 
 ### Option 2: Run with Docker Compose
 
-The image starts `integrated_app.py` (Modules 1, 2 and 4). It holds no business data: set the source in `.env`,
+The image starts `integrated_app.py` (all four modules). It holds no business data: set the source in `.env`,
 as described in the [integrated app guide](docs/integrated-app.md#run-it-in-docker).
 
 1. **Build and Run**:

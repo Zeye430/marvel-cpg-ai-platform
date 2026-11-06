@@ -92,6 +92,11 @@ class Module1Data:
         frame = self._df(sql, params)
         return frame.iloc[0].to_dict() if len(frame) else {}
 
+    def query(self, sql, params=None):
+        """Fixed application SQL over this principal's scoped copy (never user or model text). Used by
+        Module 3, which reads the same scoped copy rather than building a second one."""
+        return self._df(sql, params)
+
     _STORES = "(SELECT store_id FROM stores WHERE list_contains($channels, channel) AND list_contains($regions, region))"
 
     # ------------------------------------------------------------------ choices

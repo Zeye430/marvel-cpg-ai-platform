@@ -128,6 +128,40 @@ class IntegratedPgTests(PgCase):
                         self.assertEqual(chart_payload(m1.render_chart(output_id, local, f, None, colors)),
                                          chart_payload(m1.render_chart(output_id, cloud, f, None, colors)), output_id)
 
+    def test_module3_inputs_and_verdicts_match_local_and_postgres(self):
+        from data_platform.access import ServingReader
+        from modules.module_1.data import Module1Pool
+        from modules.module_3 import calc
+        from modules.module_3.data import Module3Data
+        from modules.module_3.server import deal_from, weighted_unit
+        pg_pool, local_pool = self.runtime().module1_pool(), Module1Pool(ServingReader(self.sources["model"]))
+        for principal in ("demo:manager", "demo:rep-b"):
+            local_item, cloud_item = local_pool.get(principal), pg_pool.get(principal)
+            self.addCleanup(local_item.close)
+            self.addCleanup(cloud_item.close)
+            local, cloud = Module3Data(local_item), Module3Data(cloud_item)
+            with self.subTest(principal=principal):
+                accounts = local.accounts()
+                self.assertEqual(accounts.to_dict("records"), cloud.accounts().to_dict("records"))
+                self.assertEqual(local.categories(), cloud.categories())
+                for store in list(accounts["store_id"])[:3]:
+                    for sku in list(local.products_for(store)["sku_id"])[:2]:
+                        a, b = deal_from(local.context(store, sku)), deal_from(cloud.context(store, sku))
+                        self.assertEqual(a, b, (store, sku))
+                        for additional, commitment in ((0, None), (3, None), (3, "display")):
+                            self.assertEqual(calc.scenario(a, additional, commitment, 50)["verdict"],
+                                             calc.scenario(b, additional, commitment, 50)["verdict"])
+                category = local.categories()[0]
+                base_a, base_b = local.baseline("category", category), cloud.baseline("category", category)
+                self.assertEqual(base_a.to_dict("records"), base_b.to_dict("records"))
+                unit_a, unit_b = weighted_unit(base_a), weighted_unit(base_b)
+                for key in ("units", "unit_net", "unit_cost", "trade_discount"):
+                    self.assertAlmostEqual(unit_a[key], unit_b[key], places=9)
+                e_a, e_b = local.elasticity(category), cloud.elasticity(category)
+                self.assertEqual(e_a["n"], e_b["n"])
+                if e_a["estimate"] is not None:
+                    self.assertAlmostEqual(e_a["estimate"], e_b["estimate"], places=9)
+
     def test_module1_postgres_cache_fails_closed_after_scope_revocation(self):
         pool = self.runtime().module1_pool()
         data = pool.get("demo:rep-a")

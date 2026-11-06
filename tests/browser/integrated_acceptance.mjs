@@ -216,6 +216,51 @@ async function kpiDetailChecks(p) {
   await waitFor(p, "/Products\\s*All/.test(document.querySelector('#m1-pill-msl > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "MSL reset");
   await idle(p);
 }
+// Module 3 (Negotiation Simulator): the deal simulator's three verdicts and the price-change response.
+async function moduleThreeChecks(p, tag, stores, full) {
+  await openModule(p, "module_3");
+  await waitFor(p, "!!document.querySelector('#m3-context') || !!document.querySelector('#m3-unavailable')", 120000, "module 3 content");
+  await idle(p);
+  const head = await txt(p, "#shell-panel-module_3 .ws-pagehead");
+  check(`${tag}: Negotiation Simulator reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Rules pending client confirmation/.test(head), head);
+  check(`${tag}: Module 3 pages listed under Negotiation Simulator`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_3'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "deal,price");
+  const accounts = await evaluate(p, "Object.keys(document.querySelector('#m3_store').selectize.options).length");
+  check(`${tag}: only accounts in the signed-in scope can be chosen`, accounts > 0 && (stores === null || accounts <= stores), `${accounts}`);
+  const verdict = (k) => `document.querySelector('#m3_verdict_${k} [data-verdict]')?.dataset.verdict`;
+  await waitFor(p, `!!${verdict("a")} && !!${verdict("b")} && !!${verdict("c")}`, 30000, "verdicts");
+  await idle(p);
+  const verdicts = await evaluate(p, `[${verdict("a")}, ${verdict("b")}, ${verdict("c")}]`);
+  check(`${tag}: three proposals side by side, each with a guardrail verdict`, verdicts.every((v) => ["APPROVED", "APPROVED WITH CONDITIONS", "REJECTED", "CANNOT ASSESS"].includes(v)) && (await evaluate(p, "document.querySelectorAll('#m3-scenarios .m3-scn').length")) === 3, JSON.stringify(verdicts));
+  check(`${tag}: the context shows the guardrail as Requires review`, /Requires review/.test(await txt(p, "#m3-context")) && /Maximum discount without extra approval/.test(await txt(p, "#m3-context")));
+  check(`${tag}: no Module 3 error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m3-root .shiny-output-error, #m3-root .ws-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
+  if (!full) return;
+  check("deal: the starting proposals show the trade-off (with the commitment it is conditional)", verdicts[2] === "APPROVED WITH CONDITIONS" || verdicts[2] === "CANNOT ASSESS", JSON.stringify(verdicts));
+  check("deal: margin chart with the minimum-margin line", await evaluate(p, "(() => { const g = document.querySelector('#m3-margin-chart'); return !!g && (g.layout.shapes || []).some(s => s.type === 'line'); })()"));
+  if (verdicts[2] === "APPROVED WITH CONDITIONS") {
+    await evaluate(p, "(() => { const s = document.querySelector('#m3_commit_c'); s.value = 'none'; window.jQuery(s).trigger('change'); return true; })()");
+    await waitFor(p, `${verdict("c")} === 'REJECTED'`, 20000, "commitment withdrawn");
+    check("deal: withdrawing the commitment turns the conditional proposal into REJECTED", true);
+  }
+  await click(p, "#m3-assumptions > summary");
+  await soft(p, "/m3-rules/.test(document.querySelector('#m3-rules')?.innerText || '')", 10000, "rules text");
+  check("deal: rules and assumptions are stated and switchable", /m3-rules\.v0-proposed/.test(await txt(p, "#m3-rules")) && (await evaluate(p, "document.querySelectorAll('#m3_basis input, #m3_uplift input').length")) === 4);
+  await shot(p, "9-module3-deal");
+  await click(p, "#shell-nav .ws-subnav[data-module='module_3'] button[data-page='price']");
+  await waitFor(p, "!!document.querySelector('#m3-b-cards') || /No observed sales|No elasticity/.test(document.querySelector('#m3_b_results')?.innerText || '')", 60000, "price page");
+  await idle(p);
+  await soft(p, "!!document.querySelector('#m3-price-chart')", 30000, "price chart");
+  await idle(p);
+  check("price: volume, revenue, gross profit and elasticity cards with the response curve", (await evaluate(p, "document.querySelectorAll('#m3-b-cards .m3-b-card').length")) === 4 && await evaluate(p, "!!document.querySelector('#m3-price-chart')"), await txt(p, "#m3_b_results"));
+  check("price: the assumptions and limits are stated", /not complete demand/.test(await txt(p, "#m3-b-notes")) && /not a forecast/.test(await txt(p, "#m3-b-notes")));
+  await evaluate(p, "(() => { const r = document.querySelector(\"#m3_b_source input[value='custom']\"); r.checked = true; window.jQuery(r).trigger('change'); return true; })()");
+  await waitFor(p, "!!document.querySelector('#m3_b_custom')", 10000, "custom elasticity");
+  await evaluate(p, "(() => { const n = document.querySelector('#m3_b_custom'); n.value = '-2'; window.jQuery(n).trigger('change'); return true; })()");
+  await waitFor(p, "/-2\\.00/.test(document.querySelector('#m3-b-cards')?.innerText || '')", 20000, "custom elasticity applied");
+  check("price: a custom elasticity is used and labelled as an assumption", /Custom assumption/.test(await txt(p, "#m3-b-cards")));
+  await shot(p, "10-module3-price");
+  await evaluate(p, "m3Go('deal') || true");
+  await idle(p);
+}
 async function moduleOneReady(p) {
   await waitFor(p, "!!document.querySelector('#m1-kpis') || !!document.querySelector('#m1-unavailable')", 120000, "module 1 content");
   await idle(p);
@@ -287,7 +332,7 @@ async function scenarioMain() {
   const p = await openPage({ name: "desktop", w: 1440, h: 900 });
   const login = await txt(p, "#shell-login");
   check("login: demo-only sign-in is stated", /Demo sign-in only/.test(login) && /not production authentication/.test(login), login);
-  check("login: lists the four modules by name, only Module 3 not in this build", /Business Performance\s*Module 1 · Sales, distribution/.test(login) && !/Business Performance\s*Module 1[^\n]*not in this build/.test(login) && /Stockout Risk\s*Module 2 · Predicted stockouts/.test(login) && /Negotiation Simulator\s*Module 3 · .*\(not in this build yet\)/.test(login) && /Commercial Copilot\s*Module 4 · Ask questions/.test(login) && !/Stockout Risk\s*Module 2[^\n]*not in this build/.test(login), login);
+  check("login: lists the four modules by name, all in this build", /Business Performance\s*Module 1 · Sales, distribution/.test(login) && /Stockout Risk\s*Module 2 · Predicted stockouts/.test(login) && /Negotiation Simulator\s*Module 3 · Test deal terms/.test(login) && /Commercial Copilot\s*Module 4 · Ask questions/.test(login) && !/not in this build/.test(login), login);
   check("login: workspace hidden while signed out", !(await visible(p, "#shell-app")));
   await shot(p, "1-login");
 
@@ -302,7 +347,7 @@ async function scenarioMain() {
   check("start: the welcome makes way for the KPIs", !(await evaluate(p, "!!document.querySelector('#m1-welcome')")) && (await evaluate(p, "document.querySelectorAll('#m1-root .m1-kpi').length")) === 5);
   await openModule(p, "module_2");
   const nav = await evaluate(p, "[...document.querySelectorAll('#shell-nav > button[data-module]')].map(b => ({key: b.dataset.module, text: b.innerText.replace(/\\s+/g, ' ').trim(), disabled: b.getAttribute('aria-disabled') === 'true'}))");
-  check("sidebar: four modules by functional name in order; Module 3 kept but disabled", JSON.stringify(nav.map((n) => [n.key, n.disabled])) === JSON.stringify([["module_1", false], ["module_2", false], ["module_3", true], ["module_4", false]]) && /^Business Performance Module 1/.test(nav[0].text) && /^Stockout Risk Module 2/.test(nav[1].text) && /^Negotiation Simulator Module 3/.test(nav[2].text) && /^Commercial Copilot Module 4/.test(nav[3].text), JSON.stringify(nav));
+  check("sidebar: four modules by functional name in order, all enabled", JSON.stringify(nav.map((n) => [n.key, n.disabled])) === JSON.stringify([["module_1", false], ["module_2", false], ["module_3", false], ["module_4", false]]) && /^Business Performance Module 1/.test(nav[0].text) && /^Stockout Risk Module 2/.test(nav[1].text) && /^Negotiation Simulator Module 3/.test(nav[2].text) && /^Commercial Copilot Module 4/.test(nav[3].text), JSON.stringify(nav));
   check("sidebar: the only module switcher (no top module bar), one sign-out", (await evaluate(p, "document.querySelectorAll('.shell-nav, #shell-bar').length")) === 0 && (await evaluate(p, "document.querySelectorAll('#m2_signout, #shell_signout').length")) === 1);
   check("sidebar: Module 2 pages listed under Stockout Risk", (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_2'] button[data-page]\")].filter(b => b.offsetParent !== null).map(b => b.dataset.page).join(',')")) === "overview,ranking,analytics");
   check("top bar: breadcrumb uses the module name", /Stockout Risk\s*\/\s*Overview/.test(await txt(p, "#m2-root .m2-crumb")), await txt(p, "#m2-root .m2-crumb"));
@@ -422,6 +467,7 @@ async function scenarioMain() {
   // Business Performance: the rep's scope, rep view; then an identity switch clears it and loads the manager's.
   await moduleOneChecks(p, "rep A", EXPECT.rep, false);
   await shot(p, "7-module1-rep");
+  await moduleThreeChecks(p, "rep A", EXPECT.rep, false);
   await watchWelcome(p);
   await signIn(p, "manager", "demo:manager");
   await moduleOneReady(p);
@@ -445,11 +491,8 @@ async function scenarioMain() {
   check("top bar: Module 1's Copilot button opens the Commercial Copilot", await evaluate(p, "document.querySelector(\"#shell-nav button[data-module='module_4']\").getAttribute('aria-current') === 'page'"));
   check("top bar: Module 4 has the same icons and no Copilot button of its own", (await evaluate(p, barIcons("#m4-root"))) === placeholders && !(await evaluate(p, "!!document.querySelector('#m4-root .ws-copilot')")));
 
-  // Modules not in this build cannot be opened; the sidebar's one sign-out ends the session.
-  await openModule(p, "module_2");
-  await click(p, "#shell-nav button[data-module='module_3']");
-  await sleep(800);
-  check("sidebar: Negotiation Simulator (not in this build) does not open", await evaluate(p, "document.querySelector('#shell-panel-module_2')?.offsetParent !== null && document.querySelector(\"#shell-nav button[data-module='module_2']\").getAttribute('aria-current') === 'page' && !document.querySelector(\"#shell-nav button[data-module='module_3']\").hasAttribute('aria-current')"));
+  // Negotiation Simulator (Module 3) for the manager: the full deal and price-change flow; then one sign-out.
+  await moduleThreeChecks(p, "manager", EXPECT.manager, true);
   await signOut(p);
   check("sidebar sign-out ends the session for every module", !(await visible(p, "#shell-app")));
 
@@ -493,6 +536,10 @@ async function scenarioMain() {
     await moduleOneChecks(q, `${vp.name} rep B`, null, false);
     const m1over = await overflow(q);
     check(`${vp.name}: Business Performance without horizontal page overflow`, m1over <= 1, `${m1over}px`);
+    await moduleThreeChecks(q, `${vp.name} rep B`, null, false);
+    const m3over = await overflow(q);
+    check(`${vp.name}: Negotiation Simulator without horizontal page overflow`, m3over <= 1, `${m3over}px`);
+    await shot(q, "module3");
     await shot(q, "module1");
   }
 }
@@ -512,6 +559,9 @@ async function scenarioUnavailable() {
   await openModule(p, "module_1");
   await moduleOneReady(p);
   check("unavailable: Business Performance shows unavailable, not data", /unavailable/i.test(await txt(p, "#m1-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m1-kpis')")), await txt(p, "#m1-unavailable"));
+  await openModule(p, "module_3");
+  await waitFor(p, "!!document.querySelector('#m3-unavailable')", 60000, "module 3 unavailable");
+  check("unavailable: Negotiation Simulator shows unavailable, not data", /unavailable/i.test(await txt(p, "#m3-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m3-context')")), await txt(p, "#m3-unavailable"));
   await openModule(p, "module_4");
   const status = await txt(p, "#m4-root .m4-status");
   check("unavailable: Module 4 data chip explains", /Shared business data unavailable/.test(status), status);
@@ -596,6 +646,9 @@ async function scenarioPgRevoked() {
   await openModule(p, "module_1");
   await moduleOneReady(p);
   check("revoked: Business Performance shows no data scope and no KPIs", /no data scope/.test(await txt(p, "#m1-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m1-kpis')")), await txt(p, "#m1-unavailable"));
+  await openModule(p, "module_3");
+  await waitFor(p, "!!document.querySelector('#m3-unavailable')", 60000, "module 3 no scope");
+  check("revoked: Negotiation Simulator shows no data scope and no account", /no data scope/.test(await txt(p, "#m3-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m3-context')")), await txt(p, "#m3-unavailable"));
   await signIn(p, "manager", "demo:manager");
   await moduleTwoChecks(p, "revoked: manager unaffected", EXPECT.manager);
   await shot(p, "1-manager");

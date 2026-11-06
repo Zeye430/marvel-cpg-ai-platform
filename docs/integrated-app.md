@@ -1,10 +1,9 @@
-# Integrated app: Business Performance, Stockout Risk and Commercial Copilot (local)
+# Integrated app: all four modules (local)
 
-`integrated_app.py` runs **Business Performance (Module 1)**, **Stockout Risk (Module 2)** and
-**Commercial Copilot (Module 4)** in one local Shiny app with a demo sign-in, one app sidebar for
-switching modules and one shared business source. **Negotiation Simulator (Module 3)** is listed in the
-sidebar but cannot be opened in this build: its code is not imported and the legacy CSV loader is
-never used.
+`integrated_app.py` runs **Business Performance (Module 1)**, **Stockout Risk (Module 2)**, **Negotiation
+Simulator (Module 3)** and **Commercial Copilot (Module 4)** in one local Shiny app with a demo sign-in,
+one app sidebar for switching modules and one shared business source. The legacy CSV loader is never
+used.
 
 ## Run it
 
@@ -103,6 +102,38 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
   the publication's selected scoring run, the copilot says the predictions are unavailable (not zero
   risk) and business-data questions keep working.
 
+## Negotiation Simulator (Module 3)
+
+Two pages under Negotiation Simulator in the sidebar (brief Scenarios A and B). Both read the signed-in
+identity's scoped copy that Business Performance builds, so they open at once after the dashboard has loaded.
+
+- **Deal simulator.** Choose an account (only stores in your scope) and a product. The context shows the
+  reference list price and cost (static; currency not supplied), the recent 28-day trade discount and the
+  headroom to the cap, reported stock, sell-out, the last audit, and the channel × category guardrail
+  (cap, minimum margin, required commitment) marked *Requires review*. Three proposals side by side each
+  take an additional discount and an execution commitment and show total discount, net price, gross
+  margin, money for the order quantity, the three checks and a verdict:
+  - **APPROVED**: the compared discount is at or below the cap and the margin at or above the minimum;
+  - **APPROVED WITH CONDITIONS**: above the cap with the required commitment (any listed option), margin
+    still above the minimum; it goes to manager review and is not confirmed to the account. Distributors
+    above the cap go to manager review without a shelf commitment;
+  - **REJECTED**: below the minimum margin, or above the cap without the commitment;
+  - **CANNOT ASSESS**: a price, cost or guardrail value is missing.
+
+  Each proposal also shows the volume uplift needed to keep today's gross profit and whether the
+  commitment's assumed uplift covers it. Under *Assumptions and rules* you can switch which discount the
+  cap applies to (total = current + additional, the default, or the additional discount only) and the
+  execution uplift (the client's V3 note: display +8%, planogram +5%, +3% per 10 points of shelf share; or
+  the measured ≈ 0%). Rules version `m3-rules.v0-proposed`.
+- **Price change.** A list-price increase (0–15%) on a category or one product, with the share passed on
+  to the shelf price. The baseline is reported sell-out on in-stock days in the last 13 weeks for your
+  stores. The elasticity is estimated on the same scoped history (log units on log shelf price within
+  store × product × month; approximate interval shown) or set by you; a positive estimate means no
+  measurable price response and is used as 0. The page shows volume, revenue and gross-profit change, the
+  response curve with the elasticity band, the elasticity at which revenue stays flat, and an
+  extrapolation note when the increase is beyond the prices seen in the data (which vary almost only
+  through temporary promotions).
+
 ## Business Performance (Module 1)
 
 - **Content.** The dashboard's five KPI tiles (MSL compliance, reported out-of-stock rate, sell-in vs
@@ -142,8 +173,8 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
 - Module 2's overview questions and its "Ask Copilot about this store" button pass a question to the copilot.
   Switching modules from the sidebar carries no context.
 - Copilot conversations last for the browser session; they are not saved.
-- The same shell (`shared/shell.py`) is meant to host Module 3 once it reads the shared publication;
-  until then use the root `app.py` for that module.
+- The Negotiation Simulator does not save proposals: there is no submission or manager approval workflow
+  yet, and its guardrail rules are a proposal pending client confirmation (switchable in the page).
 - Business Performance keeps one copy of the scoped data per recently signed-in identity (at most three)
   in the app process; it is rebuilt after a restart or an account-scope change.
 

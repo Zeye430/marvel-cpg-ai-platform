@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN_PREFIXES = ("SHARED_DATA_", "MODULE2_", "MODULE4_", "DATABASE_URL", "APP_STATE_")
-FORBIDDEN = ("modules.module_3", "shared.data", "shared.auth", "shinywidgets")
+FORBIDDEN = ("shared.data", "shared.auth", "shinywidgets")
 
 
 def clean_env(**extra):
@@ -25,7 +25,7 @@ def clean_env(**extra):
 
 
 class EntryImportTests(unittest.TestCase):
-    """The entry imports neither Module 3 nor the legacy CSV loader / sign-in, and opens nothing."""
+    """The entry imports neither the legacy CSV loader / sign-in nor shinywidgets, and opens nothing."""
 
     def run_import(self, env):
         code = ("import sys, json, integrated_app\n"
@@ -41,9 +41,9 @@ class EntryImportTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr[-2000:])
         return json.loads(done.stdout.strip().splitlines()[-1])
 
-    def test_entry_imports_modules_1_2_and_4_only(self):
+    def test_entry_imports_all_four_modules(self):
         result = self.run_import({})
-        self.assertEqual(result["modules"], ["module_1", "module_2", "module_4"])   # Business Performance opens first
+        self.assertEqual(result["modules"], ["module_1", "module_2", "module_3", "module_4"])   # Business Performance opens first
         self.assertEqual(result["forbidden"], [])
         self.assertFalse(result["opened_at_import"])
         self.assertFalse(result["ready"])                     # no publication configured: unavailable, no fallback
@@ -99,7 +99,7 @@ class ShellTests(unittest.TestCase):
         self.assertEqual(seen["m2"]["module_label"], "Stockout Risk")
         self.assertTrue(seen["m4"]["hosted"])
 
-    def test_integrated_build_enables_business_performance_and_keeps_module_3_disabled(self):
+    def test_integrated_build_enables_all_four_modules(self):
         from shared.shell import _app_ui
         sys.modules.pop("integrated_app", None)
         import integrated_app
@@ -107,10 +107,11 @@ class ShellTests(unittest.TestCase):
                     for s in integrated_app.MODULES}
         html = str(_app_ui(integrated_app.MODULES, contexts, "t"))
         nav = html[html.index('id="shell-nav"'):html.index("Other</p>")]
-        for key, disabled in (("module_1", False), ("module_2", False), ("module_3", True), ("module_4", False)):
+        for key, disabled in (("module_1", False), ("module_2", False), ("module_3", False), ("module_4", False)):
             tag = nav[nav.rindex("<button", 0, nav.index(f'data-module="{key}"')):nav.index(f'data-module="{key}"')]
             self.assertEqual('aria-disabled="true"' in tag, disabled, key)
         self.assertIn('id="m1_nav"', nav)                              # Module 1's pages, under it
+        self.assertIn('id="m3_nav"', nav)                              # Module 3's pages, under it
         self.assertIn('aria-current="page"', nav[max(0, nav.index('data-module="module_1"') - 400):
                                                  nav.index('data-module="module_1"')])   # landing: Business Performance
         ids = [i for i in __import__("re").findall(r' id="([^"]+)"', html)]
@@ -118,6 +119,16 @@ class ShellTests(unittest.TestCase):
         m1 = html[html.index('id="m1-root"'):]
         for legacy in ("sleek-card", "badge-telemetry-live", "LIVE TELEMETRY", "ambient-glow", "user_role_state"):
             self.assertNotIn(legacy, m1)
+        m3 = html[html.index('id="m3-root"'):html.index('id="m3-root"') + 20000]
+        for legacy in ("sleek-card", "Automated Deal Assessment", "POLICY GUARDRAIL ENGINE", "chart_m3_waterfall"):
+            self.assertNotIn(legacy, m3)
+
+    def test_module_3_without_the_shared_runtime_reads_nothing(self):
+        from modules.module_3 import module_3_server, module_3_ui
+        html = str(module_3_ui({"channels": ["x"]}))                   # the legacy root app's dataset dict
+        self.assertIn("runs in the integrated workspace", html)
+        self.assertNotIn("m3_store", html)
+        self.assertIsNone(module_3_server(None, None, None, {"channels": ["x"]}, {}))
 
     def test_module_1_without_the_shared_runtime_reads_nothing(self):
         from modules.module_1 import module_1_server, module_1_ui

@@ -2,7 +2,9 @@
 
 Read the [shared-data quickstart](README.md) first. This guide assumes a
 verified serving snapshot and an explicitly assigned application principal.
-It describes the current interface, not an already implemented simulator.
+It describes the data interface. The simulator built on it is `modules/module_3` in the integrated app
+(see [the integrated app guide](../integrated-app.md#negotiation-simulator-module-3)); it reads this
+context through the same scoped copy as Module 1 and does not save scenarios yet.
 
 ## 1. What you do not need to rebuild
 

@@ -2,11 +2,14 @@
 
 One place for the design tokens, the bundled Inter font, line icons, the placeholder logo,
 plotly.js and the base components every module page is built from: the app sidebar
-navigation, top bar, page head, cards, buttons, notices, pills, tables, disclosures and the
-user block. Styles live in ``shared/assets/ui_kit.css`` and are scoped under ``.ws``; the
-tokens are also read by Module 2's own stylesheet, so a token change reaches every module.
+navigation, top bar, page head, cards, buttons, notices, pills, filter pills, help pop-overs,
+tables, disclosures and the user block (with the demo account's portrait). Styles live in
+``shared/assets/ui_kit.css`` and are scoped under ``.ws``; the tokens are also read by Module 2's
+own stylesheet, so a token change reaches every module.
 
-Markup only: nothing here reads data or adds behaviour.
+Nothing here reads data. ``shared/assets/ui_kit.js`` adds only the generic behaviour of filter
+pills and help pop-overs (one open at a time, close on a click outside or Escape, the pill shows
+its input's current value).
 """
 
 from pathlib import Path
@@ -71,8 +74,23 @@ def logo(class_="ws-logo-mark"):
 def kit_dependency():
     """Inter 4.1 (SIL OFL 1.1, bundled; registered as "Workspace Inter"), the tokens and the
     ``.ws`` components. Every module page includes it; HTML dependencies load once."""
-    return HTMLDependency("ws-kit", VERSION, source={"subdir": str(ASSETS)},
-                          stylesheet=[{"href": "fonts/inter.css"}, {"href": "ui_kit.css"}])
+    return HTMLDependency("ws-kit", VERSION, source={"subdir": str(ASSETS)}, all_files=True,
+                          stylesheet=[{"href": "fonts/inter.css"}, {"href": "ui_kit.css"}],
+                          script={"src": "ui_kit.js"})
+
+
+AVATAR_URL = f"lib/ws-kit-{VERSION}/avatars/"
+_PHOTO_TYPES = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def avatar_url(key):
+    """The demo account's portrait: a photo in assets/avatars when one is present, else its illustration."""
+    if not key:
+        return None
+    for suffix in _PHOTO_TYPES:
+        if (ASSETS / "avatars" / f"{key}{suffix}").is_file():
+            return AVATAR_URL + key + suffix
+    return AVATAR_URL + key + ".svg" if (ASSETS / "avatars" / f"{key}.svg").is_file() else None
 
 
 def plotly_dependency():
@@ -101,8 +119,15 @@ def initials(name):
     return ("".join(p[0] for p in parts[:2]) or "?").upper()
 
 
-def user_block(name, title, class_="ws-user", **attrs):
-    return tags.div(tags.span(initials(name), class_="ws-avatar", **{"aria-hidden": "true"}),
+def avatar(name, src=None, size=36):
+    """The portrait (``src``), or the name's initials without one."""
+    if src:
+        return tags.img(src=src, alt="", width=size, height=size, class_="ws-avatar photo", **{"aria-hidden": "true"})
+    return tags.span(initials(name), class_="ws-avatar", **{"aria-hidden": "true"})
+
+
+def user_block(name, title, class_="ws-user", avatar_src=None, **attrs):
+    return tags.div(avatar(name, avatar_src),
                     tags.div(tags.strong(name), tags.span(title), class_="ws-user-text"), class_=class_, **attrs)
 
 
@@ -124,6 +149,38 @@ def placeholder_button(icon_name, label, text=None):
                        tags.span("Soon", class_="ws-soon") if text else None, type="button",
                        class_="ws-icon-btn" + (" ws-copilot" if text else ""), title=f"{label} — coming soon",
                        **{"aria-disabled": "true", "aria-label": f"{label} — coming soon"})
+
+
+def filter_pill(pill_id, title, face, *body, icon_name=None, class_="", pop_class="", **attrs):
+    """One filter pill (Module 1's pattern for every module): the face shows the current value; the options
+    open below it. ``face``: markup, or ``ws-fpill-val`` spans with ``data-for`` naming an input whose
+    current choice ui_kit.js writes into them."""
+    return tags.details(
+        tags.summary(icon(icon_name, 15) if icon_name else None, face,
+                     tags.span("▾", class_="ws-fpill-caret", **{"aria-hidden": "true"}),
+                     class_="ws-fpill-face", **{"aria-label": f"{title} filter"}),
+        tags.div(tags.h3(title, class_="ws-fpop-title"), *body, class_=f"ws-fpop {pop_class}".strip(), role="group",
+                 **{"aria-label": title}),
+        class_=f"ws-fpill {class_}".strip(), id=pill_id, **attrs)
+
+
+def pill_face(key, input_id, empty="All", unit=None, narrows=True):
+    """A filter pill's face: its name and the current value of ``input_id`` (kept current by ui_kit.js).
+    ``narrows``: a chosen value narrows the data (highlighted, as in Module 1); False for a plain selection."""
+    return tags.span(tags.span(key, class_="ws-fpill-key"),
+                     tags.span(empty, class_="ws-fpill-val", **{"data-for": input_id, "data-empty": empty,
+                                                                **({"data-unit": unit} if unit else {}),
+                                                                **({} if narrows else {"data-plain": ""})}),
+                     class_="ws-fpill-text")
+
+
+def help_tip(title, *body, id=None, align="left"):
+    """A "?" button next to a title that opens a short note on how to read it (closed by default)."""
+    return tags.details(
+        tags.summary(icon("help", 16), tags.span(f"How to read: {title}", class_="ws-sr"), class_="ws-help-btn",
+                     title="How to read this"),
+        tags.div(tags.p(tags.strong(title), class_="ws-help-title"), *body, class_=f"ws-help-pop {align}"),
+        class_="ws-help", id=id)
 
 
 def topbar_actions(user, *, copilot_id=None, copilot=True):
@@ -174,5 +231,6 @@ def pill(text, kind="plain", dot=None, class_="", **attrs):
     return tags.span(marker, text, class_=f"ws-pill {kind} {class_}".strip(), **attrs)
 
 
-__all__ = ["CHART_COLORS", "FONT_STACK", "ICON_PATHS", "card", "chart_layout", "icon", "initials", "kit_dependency",
-           "logo", "nav_item", "notice", "page_head", "pill", "plotly_dependency", "topbar", "user_block"]
+__all__ = ["CHART_COLORS", "FONT_STACK", "ICON_PATHS", "avatar", "avatar_url", "card", "chart_layout", "filter_pill",
+           "help_tip", "icon", "initials", "kit_dependency", "logo", "nav_item", "notice", "page_head", "pill",
+           "pill_face", "plotly_dependency", "topbar", "user_block"]

@@ -10,20 +10,22 @@ own pages (``ModuleSpec.pages_nav``) are listed under it. Each module receives:
   "module_label": <its name>}``. Module services are bound to that runtime's single
   pinned reader, so every module shows the same publication / release and the
   principal's account scope from it.
-* ``auth_state``: per session. ``authenticated``, ``principal_id``, ``role``, ``name``
-  and ``title`` are reactive; ``is_demo`` is always true; ``logout()`` ends the session
+* ``auth_state``: per session. ``authenticated``, ``principal_id``, ``role``, ``name``,
+  ``title`` and ``avatar`` (the portrait's URL) are reactive; ``is_demo`` is always true; ``logout()`` ends the session
   identity; ``navigate(key)`` switches the visible module (no data is passed along);
   ``active_module()`` (reactive) is the visible module's key, so a module can load on first visit.
 
-DEMO ONLY: the sign-in buttons select fixed demo principals on the server. The
-browser only reports which button was pressed, never a principal, role or store.
-No password is checked; this is not production authentication. Store access comes
+DEMO ONLY: three fictional demo accounts (a regional manager and two field sales reps)
+sign in with a user name and a demo password, both filled in on the sign-in page for
+the demo. The server matches them to a fixed demo principal; the browser never sends a
+principal, role or store. This is not production authentication. Store access comes
 from the account scope configured for that principal in the shared data.
 
 The shell never imports module business logic beyond the given specs and never
 loads raw CSVs or legacy tables; an unavailable source is shown, not replaced.
 """
 
+import hmac
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -72,15 +74,35 @@ class DemoAccount:
     key: str
     principal_id: str
     role: str                                 # "Regional Manager" or "Field Rep" (module document access)
-    name: str
+    name: str                                 # fictional person
     title: str
+    username: str
+    password: str                             # demo only, shown filled in on the sign-in page
+    short_role: str = ""
+
+    @property
+    def avatar(self):
+        return kit.avatar_url(self.key)
 
 
+DEMO_PASSWORD = "marvel-demo"
 DEMO_ACCOUNTS = (
-    DemoAccount("manager", "demo:manager", "Regional Manager", "Manager (demo)", "Regional manager · demo identity"),
-    DemoAccount("rep_a", "demo:rep-a", "Field Rep", "Sales Rep A (demo)", "Field sales rep · demo identity"),
-    DemoAccount("rep_b", "demo:rep-b", "Field Rep", "Sales Rep B (demo)", "Field sales rep · demo identity"),
+    DemoAccount("manager", "demo:manager", "Regional Manager", "Elena Rostova", "Regional manager · demo account",
+                "elena.rostova", DEMO_PASSWORD, "Regional manager"),
+    DemoAccount("rep_a", "demo:rep-a", "Field Rep", "Alex Mercer", "Field sales rep · demo account",
+                "alex.mercer", DEMO_PASSWORD, "Field sales rep"),
+    DemoAccount("rep_b", "demo:rep-b", "Field Rep", "Beatrice Vance", "Field sales rep · demo account",
+                "beatrice.vance", DEMO_PASSWORD, "Field sales rep"),
 )
+
+
+def match_account(username, password):
+    """The demo account for these credentials, or None (constant-time password comparison)."""
+    name = str(username or "").strip().lower()
+    for demo in DEMO_ACCOUNTS:
+        if name == demo.username and hmac.compare_digest(str(password or "").encode(), demo.password.encode()):
+            return demo
+    return None
 
 _CSS = """
 body { background: var(--ws-canvas); margin: 0; }
@@ -106,6 +128,24 @@ window.jQuery(document).on('shiny:connected', function () {
   });
 });
 function wsOpenModule(key) { Shiny.setInputValue('shell_nav', key, {priority: 'event'}); }
+// Sign-in: choosing an account fills in its demo credentials; the form sends both together.
+function wsPickAccount(button) {
+  document.querySelectorAll('#shell-login .ws-account').forEach(function (b) {
+    b.setAttribute('aria-checked', b === button ? 'true' : 'false');
+  });
+  var form = document.getElementById('shell-login-form');
+  form.elements.username.value = button.dataset.username;
+  form.elements.password.value = button.dataset.password;
+  var error = document.getElementById('shell_login_error');
+  if (error) { error.textContent = ''; }
+}
+function wsSignIn(event) {
+  event.preventDefault();
+  var form = event.target;
+  Shiny.setInputValue('shell_login', {user: form.elements.username.value, password: form.elements.password.value,
+                                      at: Date.now()}, {priority: 'event'});
+  return false;
+}
 // Phones: the sidebar is an overlay; choosing a destination closes it.
 document.addEventListener('click', function (event) {
   var item = event.target.closest && event.target.closest('#shell_sidebar .ws-nav-item');
@@ -164,25 +204,40 @@ def _sidebar(specs):
                       class_="ws-sidebar ws-controls", title=None)
 
 
-def _app_ui(specs, contexts, title):
-    accounts = [ui.input_action_button(f"shell_signin_{a.key}", f"Sign in as {a.name}",
-                                       class_="ws-btn" + (" primary" if i == 0 else ""))
-                for i, a in enumerate(DEMO_ACCOUNTS)]
-    present = {s.key for s in specs}
-    modules = tags.ul(*[tags.li(tags.strong(info.name), tags.span(
-        f"Module {info.number} · {info.description}" if info.number else info.description,
-        " (not in this build yet)" if info.key not in present else ""))
-        for info in _catalog(specs)], class_="ws-module-list")
-    login = tags.div(
+def _login():
+    first = DEMO_ACCOUNTS[0]
+    accounts = [tags.button(kit.avatar(a.name, a.avatar, 52), tags.strong(a.name),
+                            tags.span(a.short_role, class_="ws-account-role"), type="button", class_="ws-account",
+                            id=f"shell-account-{a.key}", role="radio", onclick="wsPickAccount(this)",
+                            **{"aria-checked": "true" if a is first else "false", "data-username": a.username,
+                               "data-password": a.password})
+                for a in DEMO_ACCOUNTS]
+    form = tags.form(
+        tags.div(tags.label("User name", **{"for": "shell-username"}),
+                 tags.input(type="text", name="username", id="shell-username", value=first.username,
+                            autocomplete="username", spellcheck="false", autocapitalize="none"),
+                 class_="ws-field"),
+        tags.div(tags.label("Password", **{"for": "shell-password"}),
+                 tags.input(type="password", name="password", id="shell-password", value=first.password,
+                            autocomplete="current-password"),
+                 class_="ws-field"),
+        tags.p(ui.output_text("shell_login_error", inline=True), class_="ws-login-error", id="shell-login-error",
+               role="alert"),
+        tags.button("Sign in", type="submit", class_="ws-btn primary", id="shell-signin"),
+        id="shell-login-form", onsubmit="return wsSignIn(event)", novalidate="novalidate", autocomplete="on")
+    return tags.div(tags.div(
         _brand(),
-        tags.h1("Sign in", class_="ws-title"),
-        tags.p("Demo sign-in only: choose a demo identity. No password is checked and this is not production "
-               "authentication. Store access comes from the account scope configured for that identity in the "
-               "shared data.", class_="ws-sub"),
-        tags.div(*accounts, class_="ws-roles"),
-        tags.p("Modules", class_="ws-label"),
-        modules,
-        class_="ws-card ws-login ws-controls", id="shell-login")
+        tags.h1("Welcome back", class_="ws-title"),
+        tags.p("Choose a demo account; its user name and password are filled in for you.", class_="ws-sub"),
+        tags.div(*accounts, class_="ws-accounts", role="radiogroup", **{"aria-label": "Demo accounts"}),
+        form,
+        tags.p("Demo accounts with fictional people, not production sign-in. Store access comes from each "
+               "account's scope in the shared data.", class_="ws-login-note"),
+        class_="ws-card ws-login ws-controls", id="shell-login"), class_="ws-login-page")
+
+
+def _app_ui(specs, contexts, title):
+    login = _login()
     panels = [ui.nav_panel(s.key, tags.div(s.ui(contexts[s.key]), id=f"shell-panel-{s.key}")) for s in specs]
     main = tags.div(ui.output_ui("shell_alert"), ui.navset_hidden(*panels, id="shell_module", selected=specs[0].key),
                     class_="ws-main")
@@ -236,21 +291,32 @@ def build_app(specs, runtime, *, title="Marvel CPG · Commercial workspace (demo
             "role": reactive.calc(lambda: account().role if account() else None),
             "name": reactive.calc(lambda: account().name if account() else None),
             "title": reactive.calc(lambda: account().title if account() else None),
+            "avatar": reactive.calc(lambda: account().avatar if account() else None),
             "is_demo": lambda: True,
             "logout": logout,
             "navigate": navigate,
             "active_module": lambda: active(),
         }
 
-        for demo in DEMO_ACCOUNTS:
-            def bind(demo=demo):
-                @reactive.effect
-                @reactive.event(input[f"shell_signin_{demo.key}"])
-                def _sign_in():
-                    account.set(demo)
-                    active.set(specs[0].key)
-                    ui.update_navset("shell_module", selected=specs[0].key)
-            bind()
+        login_error = reactive.value("")
+
+        @reactive.effect
+        @reactive.event(input.shell_login)
+        def _sign_in():
+            form = input.shell_login() or {}
+            demo = match_account(form.get("user"), form.get("password"))
+            if demo is None:
+                login_error.set("The user name or password is not right.")
+                return
+            login_error.set("")
+            account.set(demo)
+            active.set(specs[0].key)
+            ui.update_navset("shell_module", selected=specs[0].key)
+
+        @output(suspend_when_hidden=False)
+        @render.text
+        def shell_login_error():
+            return login_error()
 
         @reactive.effect
         @reactive.event(input.shell_signout)
@@ -311,7 +377,7 @@ def build_app(specs, runtime, *, title="Marvel CPG · Commercial workspace (demo
             demo = account()
             if demo is None:
                 return None
-            return kit.user_block(demo.name, demo.title, class_="ws-user-card", id="shell-identity",
+            return kit.user_block(demo.name, demo.title, class_="ws-user-card", id="shell-identity", avatar_src=demo.avatar,
                                   **{"data-principal": demo.principal_id})
 
         for spec in specs:
@@ -320,4 +386,4 @@ def build_app(specs, runtime, *, title="Marvel CPG · Commercial workspace (demo
     return App(_app_ui(specs, contexts, title), server)
 
 
-__all__ = ["DEMO_ACCOUNTS", "MODULE_CATALOG", "MODULE_NAMES", "ModuleSpec", "build_app", "SETUP_HINT"]
+__all__ = ["DEMO_ACCOUNTS", "match_account", "MODULE_CATALOG", "MODULE_NAMES", "ModuleSpec", "build_app", "SETUP_HINT"]

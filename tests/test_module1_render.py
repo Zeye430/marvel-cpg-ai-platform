@@ -140,17 +140,22 @@ class Module1RenderTests(unittest.TestCase):
                     self.assertIn("No trend for these filters", markup)
 
     def test_kpi_trend_adds_up_to_the_card_value(self):
-        f = self.filters()
-        c = self.manager.kpis(f)
-        for key, field in (("msl", "msl"), ("oos", "oos"), ("gap", "gap_pct"), ("plano", "plano")):
-            with self.subTest(key=key):
-                trend = self.manager.kpi_trend(f, key)
-                den = trend["denominator"].sum()
-                total = None if not den else 100 * trend["numerator"].sum() / den
-                if c[field] is None:
-                    self.assertIsNone(total)
-                else:
-                    self.assertAlmostEqual(total, c[field], places=6)
+        info = self.manager.choices()
+        partial = tuple(list(info["products"])[:1])                   # one SKU: unequal visits per week
+        cases = (self.filters(), self.filters(skus=partial))
+        fields = (("msl", "msl", 100), ("oos", "oos", 100), ("gap", "gap_pct", 100), ("plano", "plano", 100),
+                  ("shelf", "allocation", 1))
+        for f in cases:
+            c = self.manager.kpis(f)
+            for key, field, scale in fields:
+                with self.subTest(key=key, skus=len(f.skus)):
+                    trend = self.manager.kpi_trend(f, key)
+                    den = trend["denominator"].sum()
+                    total = None if not den else scale * trend["numerator"].sum() / den
+                    if c[field] is None:
+                        self.assertIsNone(total)
+                    else:
+                        self.assertAlmostEqual(total, c[field], places=6)
 
     def test_msl_option_narrows_the_selected_skus(self):
         info = self.manager.choices()
@@ -232,24 +237,52 @@ class FilterPillAndWelcomeTests(unittest.TestCase):
         self.assertEqual(m1.choice_label(["a", "b", "c"], names, empty_means_all=False), ("All 3", False))
         self.assertEqual(m1.choice_label([], names, empty_means_all=False), ("None", True))   # SKU: none = none
 
-    def test_date_presets_snap_to_whole_weeks_inside_the_data(self):
+    def test_date_presets_are_whole_weeks_inside_the_data(self):
         first, last = "2025-01-01", "2026-06-30"                # 2026-06-30 is a Tuesday
-        default = m1.snap(m1.preset_start("13w", first, last), last, first, last)
-        self.assertEqual(default[0].dayofweek, 0)                # starts on a Monday
-        self.assertEqual(default[1], m1.pd.Timestamp(last))      # never past the data
-        self.assertEqual(m1.matching_preset(default, first, last), "13w")
-        self.assertEqual(m1.preset_start("ytd", first, last), m1.pd.Timestamp("2026-01-01"))
-        self.assertEqual(m1.preset_start("qtd", first, last), m1.pd.Timestamp("2026-04-01"))
-        self.assertEqual(m1.preset_start("all", first, last), m1.pd.Timestamp(first))
+        ts = m1.pd.Timestamp
+        self.assertEqual(m1.preset_span("1w", first, last), (ts("2026-06-22"), ts("2026-06-28")))   # last full week
+        self.assertEqual(m1.preset_span("4w", first, last), (ts("2026-06-01"), ts("2026-06-28")))
+        self.assertEqual(m1.preset_span("mtd", first, last), (ts("2026-06-01"), ts(last)))
+        self.assertEqual(m1.preset_span("qtd", first, last), (ts("2026-03-30"), ts(last)))       # from Monday
+        self.assertEqual(m1.preset_span("ytd", first, last), (ts("2025-12-29"), ts(last)))
+        self.assertEqual(m1.preset_span("all", first, last), (ts(first), ts(last)))
+        for key in m1.DATE_PRESETS:
+            with self.subTest(key=key):
+                start, end = m1.preset_span(key, first, last)
+                self.assertTrue(start.dayofweek == 0 or start == ts(first))
+                self.assertLessEqual(end, ts(last))                              # never past the data
+                self.assertEqual(m1.matching_preset((start, end), first, last, chosen=key), key)
+        self.assertEqual(m1.DEFAULT_PRESET, "4w")
+        self.assertNotIn("13w", m1.DATE_PRESETS)
         custom = m1.snap("2026-03-03", "2026-03-20", first, last)
         self.assertIsNone(m1.matching_preset(custom, first, last))
-        # Data ending on a quarter's last day: quarter to date covers the same weeks as the last 13 weeks,
-        # so the preset the user picked is the one named (otherwise the click looks ignored).
-        qtd = m1.snap(m1.preset_start("qtd", first, last), last, first, last)
-        self.assertEqual(qtd, default)
-        self.assertEqual(m1.matching_preset(qtd, first, last, chosen="qtd"), "qtd")
-        self.assertEqual(m1.matching_preset(qtd, first, last, chosen="13w"), "13w")
-        self.assertEqual(m1.matching_preset(custom, first, last, chosen="qtd"), None)   # edited: custom
+        self.assertIsNone(m1.matching_preset(custom, first, last, chosen="qtd"))         # edited: custom
+        # Data ending on a Sunday: the last week is the one that ends that day.
+        self.assertEqual(m1.preset_span("1w", first, "2026-06-28"), (ts("2026-06-22"), ts("2026-06-28")))
+
+    def test_msl_pill_narrows_the_sku_list(self):
+        info = {"products": {"a": "A", "b": "B", "c": "C"}, "msl_products": ["a", "c"],
+                "product_names": {"a": "Alpha", "b": "Beta", "c": "Gamma"}, "product_categories": {}}
+        self.assertEqual(m1.msl_skus(info, "all"), ["a", "b", "c"])
+        self.assertEqual(m1.msl_skus(info, "msl"), ["a", "c"])
+        self.assertEqual(m1.msl_skus(info, "non"), ["b"])
+        self.assertEqual(list(m1.sku_choices(info, ["a", "c"])), ["a", "c"])
+        names = {s: s for s in m1.msl_skus(info, "msl")}
+        self.assertEqual(m1.choice_label(["a", "c"], names, empty_means_all=False), ("All 2", False))
+
+    def test_change_colour_says_better_or_worse_for_that_kpi(self):
+        up = str(m1._delta(52.0, 50.0, "up"))
+        self.assertIn('data-trend="ok"', up)
+        self.assertIn("higher is better", up)
+        oos_up = str(m1._delta(7.0, 5.0, "down"))                # OOS went up: worse, red
+        self.assertIn('data-trend="bad"', oos_up)
+        self.assertIn("▲", oos_up)
+        self.assertIn("lower is better", oos_up)
+        oos_down = str(m1._delta(4.0, 5.0, "down"))              # OOS went down: better, green
+        self.assertIn('data-trend="ok"', oos_down)
+        self.assertIn("▼", oos_down)
+        gap = str(m1._delta(-2.0, 4.0, "zero"))                  # closer to zero: better although it fell
+        self.assertIn('data-trend="ok"', gap)
 
 
 if __name__ == "__main__":

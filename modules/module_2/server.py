@@ -148,6 +148,7 @@ def module_2_server(input, output, session, dataset: dict, auth_state: dict):
              workspace_fn=(lambda: workspace() or "business") if workspace else None,
              logout_fn=auth_state.get("logout"),                 # the root app's own server-side logout
              identity_fn=(lambda: (name(), title())) if name and title else None,
+             avatar_fn=auth_state.get("avatar"),
              open_copilot_fn=(lambda: navigate("module_4")) if navigate else None,
              ask_copilot_fn=ask_copilot if navigate and copilot_request is not None else None,
              hosted=bool(dataset.get("hosted")) if isinstance(dataset, dict) else False,
@@ -255,7 +256,7 @@ def _kpi(label, value, note, key, icon_name, tone=""):
 
 def register(input, output, session, principal_fn, service, unavailable_reason=None, workspace_fn=None,
              logout_fn=None, identity_fn=None, open_copilot_fn=None, ask_copilot_fn=None, hosted=False,
-             module_label="Module 2"):
+             module_label="Module 2", avatar_fn=None):
     page = reactive.value(0)
     sku_page = reactive.value(0)
     previous = reactive.value(None)
@@ -394,7 +395,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         ui.update_radio_buttons("m2_oos_measure", selected="current")
         ui.update_radio_buttons("m2_oos_msl", selected="all")
         ui.update_text("m2_f_search", value="")
-        ui.update_select("m2_f_urgency", selected="")
+        ui.update_radio_buttons("m2_f_urgency", selected="")
         ui.update_select("m2_sort", selected="score:desc")
         ui.update_select("m2_rows", selected="10")
         rows = []
@@ -413,7 +414,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                                         ("m2_f_region", "region", "All regions"),
                                         ("m2_f_tier", "segment_tier", "All tiers")):
             values = sorted({r[field_name] for r in rows if r.get(field_name)})
-            ui.update_select(name, choices={"": label, **{v: v for v in values}}, selected="")
+            ui.update_radio_buttons(name, choices={"": label, **{v: v for v in values}}, selected="")
 
     seen = reactive.value(None)
 
@@ -597,12 +598,19 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                         tags.div(tags.strong(name), tags.span(title), class_="m2-user-text"),
                         class_="m2-user-card", id="m2-demo-identity")
 
+    def portrait(name):
+        """The host account's portrait when it has one, else the initials."""
+        src = avatar_fn() if avatar_fn is not None and mode() != "ops" else None
+        if src:
+            return tags.img(src=src, alt="", width=36, height=36, class_="m2-avatar photo", **{"aria-hidden": "true"})
+        return tags.span(_initials(name), class_="m2-avatar", **{"aria-hidden": "true"})
+
     @render.ui
     def m2_user_block():
         name, title = identity()
         if name is None:
             return None
-        return tags.div(tags.span(_initials(name), class_="m2-avatar", **{"aria-hidden": "true"}),
+        return tags.div(portrait(name),
                         tags.div(tags.strong(name), tags.span(title), class_="m2-user-text"),
                         class_="m2-user", id="m2-user")
 
@@ -613,14 +621,6 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
         pages = OPS_PAGES if mode() == "ops" else {**BUSINESS_PAGES, "detail": "Store"}
         return tags.nav(tags.span(module_label), tags.span("/", **{"aria-hidden": "true"}),
                         tags.strong(pages.get(current_page(), "")), class_="m2-crumb", **{"aria-label": "Breadcrumb"})
-
-    def _model_label(element_id="m2-model-status"):
-        """Candidate disclosure shown on every business page (overview, ranking, analytics, store)."""
-        if service is None or (service.record.get("model_outputs") or {}).get("publication_kind") != \
-                "Local_review_candidate":
-            return None
-        return tags.span("Model: review candidate, not an approved production model", class_="m2-model-label",
-                         id=element_id)
 
     @render.ui
     @safe
@@ -639,9 +639,6 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                           f" · {fmt_int(sc.get('stores'))} assigned stores"),
                 tags.span("Reported as of ", tags.b(_day(date.fromisoformat(str(as_of))) if as_of else "N/A")),
                 tags.span("Stockout risk window ", tags.b(f"{_day(start)} – {_day(end)}" if start else "N/A"))]
-        label = _model_label()
-        if label is not None:
-            meta.append(label)
         action = ui.download_button("m2_export", "Export visit list", class_="m2-btn primary") \
             if current_page() == "ranking" else None
         return tags.div(tags.div(tags.h1(titles[current_page()], class_="m2-title"), tags.p(*meta, class_="m2-meta"),
@@ -661,8 +658,9 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
             banners.append(tags.div(tags.strong("Synthetic demo. "), "Stores, products and predictions are generated "
                                     "test data, not client evidence.", class_="m2-banner warn", role="note"))
         elif outputs.get("publication_kind") == "Local_review_candidate":
-            banners.append(tags.div("Stockout risks are predictions from a model under review. Because parts of the "
-                                    "reported data are missing, some other figures are estimates.",
+            # The page does not describe the model's review status (Owner decision, 2026-11-06); only that
+            # some figures are estimates.
+            banners.append(tags.div("Because parts of the reported data are missing, some figures are estimates.",
                                     class_="m2-banner info", role="note", id="m2-estimate-note"))
         as_of = record.get("as_of")
         if as_of and service._stale(date.fromisoformat(str(as_of))):
@@ -1267,7 +1265,7 @@ def register(input, output, session, principal_fn, service, unavailable_reason=N
                      tags.div(chip(store_id, "id", "Store ID"), chip(store.get("channel"), "channel", "Channel"),
                               chip(store.get("region"), "region", "Region"), chip(store.get("segment_tier"), "tier", "Tier"),
                               class_="m2-chips"),
-                     _model_label("m2-detail-model-status"), class_="m2-head-main"),
+                     class_="m2-head-main"),
             tags.div(figure("Overall rank", str(store["overall_rank"]) if store.get("overall_rank") else
                             tags.span("Not ranked", class_="m2-fig-muted", title=NOT_RANKED), key="rank"),
                      figure("Score", tags.span(_score(store.get("priority_score")),

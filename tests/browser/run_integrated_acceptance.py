@@ -140,6 +140,7 @@ def main():
                  ("nomodel", {**base, "MODULE4_LLM_BASE_URL": f"http://127.0.0.1:{free_port()}"},
                   "integrated_app.py", None),
                  ("candidate", base, "tests/browser/candidate_disclosure_app.py", None),
+                 ("slow", {**base, "SLOW_SCOPE_SECONDS": "4"}, "tests/browser/slow_scope_app.py", None),
                  ("unreleased", {**base, "SHARED_DATA_ARTIFACT_DIR": unreleased}, "integrated_app.py", None)]
         if args.with_postgres:
             fx.require_database()

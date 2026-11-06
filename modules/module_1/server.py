@@ -2,8 +2,9 @@
 modules/module_1/server.py
 ==========================
 Server logic for Module 1: Business Performance (Commercial Execution Analytics): the five KPI
-cards (the selected one's weekly trend with its team target, notes and calculation below them)
-and ten Plotly charts.
+cards (the selected one's weekly trend with its team target below them, and how it is calculated
+with what the number rests on, collapsed) and ten Plotly charts. What each chart means is in its
+"?" help (ui.py), not in small print under it.
 
 Data comes only from the shared business publication pinned by the app runtime
 (modules/module_1/data.py), restricted to the signed-in principal's account scope and loaded
@@ -88,17 +89,13 @@ KPI_SPECS = {
 PAGE_HEADS = {
     "overview": ("Business performance", None),
     "geo": ("Commercial strategy & geospatial execution",
-            "For regional managers and commercial operations: territory health by state and how channel sell-in "
-            "compares with store sell-out."),
+            "Where territories sell well or execute poorly, and how invoiced stock compares with what consumers buy."),
     "oos": ("Out-of-stock & supply chain insights",
-            "For field sales reps and regional operations: mandatory MSL items, current stockouts and a labelled "
-            "lost-sales heuristic."),
+            "Which must-stock products are out of stock, for how long, and what it may cost."),
     "shelf": ("Shelf execution & compliance",
-              "For field sales reps and regional managers: planogram compliance, MSL availability and shelf "
-              "allocation."),
+              "Planogram compliance, must-stock availability and shelf space by brand, store and region."),
     "trade": ("Trade terms & commercial guardrails",
-              "For field sales reps and regional managers: reported discounts against source guardrail references "
-              "(Requires review) and the audit evidence behind execution trade-offs."),
+              "Trade discounts against the guardrail reference, and whether execution commitments are delivered."),
 }
 
 
@@ -126,8 +123,8 @@ def chart_layout(fig, height):
                       legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0, title=None, font=dict(size=12)),
                       hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_family=kit.FONT_STACK,
                                       bordercolor="#dfd4d4"))
-    fig.update_xaxes(gridcolor="#ece4e4", zerolinecolor="#dfd4d4", automargin=True)
-    fig.update_yaxes(gridcolor="#ece4e4", zerolinecolor="#dfd4d4", automargin=True)
+    fig.update_xaxes(showgrid=False, zerolinecolor="#ece4e4", automargin=True, linecolor="#ece4e4")
+    fig.update_yaxes(gridcolor="#f3eeee", zerolinecolor="#ece4e4", automargin=True)
     return fig
 
 
@@ -184,9 +181,11 @@ def state(title, text, kind="info"):
 
 
 # ---------------------------------------------------------------- filter pills and the welcome screen
-DATE_PRESETS = {"4w": "Last 4 weeks", "13w": "Last 13 weeks", "qtd": "Quarter to date", "ytd": "Year to date",
-                "all": "All data"}
-DEFAULT_PRESET = "13w"
+# Weeks run Monday to Sunday. "Last week" and "Last 4 weeks" are the latest complete weeks; the to-date
+# presets run through the data's last day.
+DATE_PRESETS = {"1w": "Last week", "4w": "Last 4 weeks", "mtd": "Month to date", "qtd": "Quarter to date",
+                "ytd": "Year to date", "all": "All data"}
+DEFAULT_PRESET = "4w"
 MSL_OPTIONS = {"all": "All products", "msl": "MSL products only", "non": "Non-MSL products only"}
 MSL_PILL = {"all": "All", "msl": "MSL only", "non": "Non-MSL only"}
 
@@ -199,22 +198,27 @@ def snap(a, b, first, last):
     return max(a - pd.Timedelta(days=a.dayofweek), first), min(b + pd.Timedelta(days=6 - b.dayofweek), last)
 
 
-def preset_start(key, first, last):
-    """The first day a date preset asks for, counted back from the data's last day."""
+def preset_span(key, first, last):
+    """The whole weeks a date preset covers, counted back from the data's last day."""
     first, last = pd.Timestamp(first), pd.Timestamp(last)
-    start = {"4w": last - pd.Timedelta(days=27), "13w": last - pd.Timedelta(days=90),
-             "qtd": last.to_period("Q").start_time, "ytd": pd.Timestamp(last.year, 1, 1), "all": first}[key]
-    return max(first, start)
+    if key in ("1w", "4w"):
+        end = last if last.dayofweek == 6 else last - pd.Timedelta(days=last.dayofweek + 1)   # last complete week
+        if end < first:
+            return snap(first, last, first, last)
+        return snap(end - pd.Timedelta(days=6 if key == "1w" else 27), end, first, last)
+    start = {"mtd": pd.Timestamp(last.year, last.month, 1), "qtd": last.to_period("Q").start_time,
+             "ytd": pd.Timestamp(last.year, 1, 1), "all": first}[key]
+    return snap(max(first, start), last, first, last)
 
 
 def matching_preset(span_, first, last, chosen=None):
-    """The preset whose snapped span is ``span_``, or None (a custom range). Presets can cover the same
-    weeks (data ending on a quarter's last day: quarter to date = last 13 weeks); the one the user
+    """The preset whose span is ``span_``, or None (a custom range). Presets can cover the same weeks
+    (a month starting on a Monday: month to date = last 4 weeks plus the open week); the one the user
     ``chosen`` is named then."""
-    if chosen in DATE_PRESETS and snap(preset_start(chosen, first, last), last, first, last) == tuple(span_):
+    if chosen in DATE_PRESETS and preset_span(chosen, first, last) == tuple(span_):
         return chosen
     for key in DATE_PRESETS:
-        if snap(preset_start(key, first, last), last, first, last) == tuple(span_):
+        if preset_span(key, first, last) == tuple(span_):
             return key
     return None
 
@@ -231,11 +235,19 @@ def choice_label(selected, names, empty_means_all=True):
     return f"{len(selected)} of {len(names)}", True
 
 
-def sku_choices(info):
-    """SKU checkbox labels in category order; the category is carried for the list's group headings."""
+def msl_skus(info, msl="all"):
+    """The SKUs the MSL pill allows, in list order: all, MSL products only or non-MSL products only."""
+    required = set(info.get("msl_products") or ())
+    return [s for s in info["products"] if msl not in ("msl", "non") or (s in required) == (msl == "msl")]
+
+
+def sku_choices(info, skus=None):
+    """SKU checkbox labels in category order (``skus``: only these); the category is carried for the list's
+    group headings."""
     names, categories = info.get("product_names") or {}, info.get("product_categories") or {}
+    keep = set(info["products"] if skus is None else skus)
     return {sku: tags.span(names.get(sku, label), **{"data-category": categories.get(sku, "")})
-            for sku, label in info["products"].items()}
+            for sku, label in info["products"].items() if sku in keep}
 
 
 def greeting(hour):
@@ -327,18 +339,18 @@ def chart_heatmap(item, f, option, colors):
         colorbar=dict(title="On-hand units"), zmin=0, xgap=1, ygap=1))
     fig.update_xaxes(side="top", tickangle=-30, showgrid=False)
     fig.update_yaxes(showgrid=False, autorange="reversed")
-    rule = f" Manager view: the {HEATMAP_TOP_STORES} stores with the most zero-stock SKUs." if item.manager and \
-        frame["store_name"].nunique() >= HEATMAP_TOP_STORES else ""
-    return Chart(fig, f"Reported inventory on {pd.Timestamp(latest):%b %d, %Y}; grey cells marked Unknown were not "
-                      f"reported that day (not zero stock).{rule}", max(460, min(720, len(pivot) * 24 + 150)),
-                 layout={"plot_bgcolor": "#e7e1e1"})
+    fig.update_traces(hovertemplate=f"%{{y}}<br>%{{x}}<br>On hand {pd.Timestamp(latest):%b %d, %Y}: %{{text}}"
+                                    "<extra></extra>")
+    return Chart(fig, "", max(460, min(720, len(pivot) * 24 + 150)),
+                 layout={"plot_bgcolor": "#e7e1e1",
+                         "title": {"text": f"On hand on {pd.Timestamp(latest):%b %d, %Y}", "x": 0, "xanchor": "left",
+                                   "y": 0.995, "yanchor": "top", "font": {"size": 12, "color": "#65595a"}}})
 
 
 def chart_lost_sales(item, f, option, colors):
     """Heuristic exposure trend; not the shared missing-day estimator."""
     group_by = option or "region"
     frame = item.lost_sales_heuristic(f, group_by)
-    excluded = item.heuristic_excluded(f)
     if frame.empty:
         return Chart(empty=("No observed OOS days", "No observed zero-inventory days with an observed in-stock "
                                                     "baseline in the selected scope."))
@@ -349,9 +361,7 @@ def chart_lost_sales(item, f, option, colors):
                           "grp": group_by.capitalize()})
     fig.update_traces(line=dict(width=2))
     fig.update_yaxes(tickformat=",.0f")
-    return Chart(fig, "HEURISTIC: observed OOS days × observed in-stock average daily units × static list price "
-                      f"(no currency in the source). Not the shared missing-day estimate. {excluded:,} OOS SKU-days "
-                      "without an observed baseline are excluded, not estimated.", 440)
+    return Chart(fig, "", 440)
 
 
 def chart_duration(item, f, option, colors):
@@ -365,8 +375,7 @@ def chart_duration(item, f, option, colors):
                  category_orders={"grp": list(colors[key])},
                  labels={"days": "Consecutive observed OOS days per episode", "grp": ""})
     fig.update_layout(showlegend=False)
-    return Chart(fig, "Episodes end at any missing or Unknown calendar day; episodes at the range edges are "
-                      "truncated.", 420)
+    return Chart(fig, "", 420)
 
 
 def chart_compliance(item, f, option, colors):
@@ -393,8 +402,7 @@ def chart_compliance(item, f, option, colors):
         fig.add_annotation(x=x, y=1, yref="paper", yanchor="bottom", xanchor=anchor, text=text, showarrow=False,
                            xshift=4 if anchor == "left" else -4, font=dict(size=11, color="#4a3f40"))
     fig.update_xaxes(range=[0, 108], ticksuffix="%")
-    return Chart(fig, "Missing bars = no audited rows or no MSL SKUs in that group (N/A, not zero). The 85% line is a "
-                      "team display target, not a client-approved threshold.",
+    return Chart(fig, "",
                  max(420, 80 + 44 * merged["brand_key"].nunique()),
                  layout={"legend": {"y": 1.07}, "margin": {"t": 76}})   # reference labels between legend and bars
 
@@ -418,8 +426,7 @@ def chart_bubble(item, f, option, colors):
         fig.update_xaxes(range=[middle - 1, middle + 1])
     fig.update_xaxes(ticksuffix="%", tickformat=".1f")
     fig.update_yaxes(tickformat=",.0f")
-    return Chart(fig, "Allocation is within audited category visits (not market share); no shelf-share target "
-                      "applies. Bubble size = segment tier (Tier 1 largest). An association, not an effect.", 460)
+    return Chart(fig, "", 460)
 
 
 SCORE_AXES = ["Planogram Compliance %", "MSL Availability % (observed)", "Secondary Display %",
@@ -443,7 +450,7 @@ def chart_radar(item, f, option, colors):
                                  radialaxis=dict(visible=True, range=[0, 100], gridcolor="#ece4e4", ticksuffix="%",
                                                  tickfont=dict(size=10, color="#65595a")),
                                  angularaxis=dict(gridcolor="#ece4e4", tickfont=dict(size=11, color="#211b1c"))))
-    return Chart(fig, "Gaps = N/A (no audited rows or no known inventory), not zero.", 480)
+    return Chart(fig, "", 480)
 
 
 REFERENCE_COLORS = {"Above source discount reference (requires review)": CHART_COLORS[7],
@@ -472,8 +479,7 @@ def chart_discount(item, f, option, colors):
                       annotation_position="top right", annotation_font=dict(size=11, color="#4a3f40"))
     fig.update_xaxes(ticksuffix="%")
     fig.update_yaxes(ticksuffix="%")
-    return Chart(fig, "Source guardrails are Requires review, not approved rules. Margin uses static product cost; "
-                      "the source min-margin scale is unresolved, so no margin floor is evaluated.", 460)
+    return Chart(fig, "", 460)
 
 
 def chart_tradeoff(item, f, option, colors):
@@ -494,8 +500,7 @@ def chart_tradeoff(item, f, option, colors):
     labels = {t: wrap(t) for t in melted["required_exec_tradeoff"].unique()}
     fig.update_xaxes(tickangle=0, tickmode="array", tickvals=list(labels), ticktext=list(labels.values()))
     fig.update_yaxes(range=[0, 110], ticksuffix="%")
-    return Chart(fig, "EVIDENCE ONLY: no approved rule maps these audits to Met/Breach; commitments are not verified.",
-                 440)
+    return Chart(fig, "", 440)
 
 
 GEO_SCALE = [[0.0, "#e3eefb"], [0.5, CHART_COLORS[0]], [1.0, "#174a8c"]]
@@ -521,8 +526,7 @@ def chart_geo(item, f, option, colors):
                                subunitcolor="#dfd4d4"),
                       coloraxis_colorbar=dict(title=None, thickness=10, orientation="h", y=-0.02, yanchor="top",
                                               len=0.6, x=0.5, xanchor="center"))
-    return Chart(fig, "Execution index = equal-weight mean of planogram % and observed in-stock % (display index, "
-                      "not a shared KPI). States without stores in scope are blank.", 500)
+    return Chart(fig, "", 500)
 
 
 def chart_sankey(item, f, option, colors):
@@ -553,11 +557,7 @@ def chart_sankey(item, f, option, colors):
     fig = go.Figure(go.Sankey(node=dict(pad=18, thickness=16, line=dict(color="#ffffff", width=1), label=nodes,
                                         color=node_colors),
                               link=dict(source=sources, target=targets, value=values, color=link_colors)))
-    under = by_channel[by_channel["sell_out"] > by_channel["sell_in"]].index.tolist()
-    note = f"Comparable complete {PERIOD_TYPE} flows only. Invoice units are not received stock."
-    if under:
-        note += f" Sell-out exceeds sell-in for: {', '.join(under)} (shown up to sell-in)."
-    return Chart(fig, note, 460)
+    return Chart(fig, "", 460)
 
 
 # output id -> (builder, option input, regional manager only, accessible label)
@@ -609,20 +609,28 @@ KPI_TILES = (("msl", "MSL Compliance", "msl", "{:.1f}%", "up"), ("oos", "Reporte
              ("plano", "Planogram Compliance", "plano", "{:.1f}%", "up"))
 
 
+BETTER_TEXT = {"up": "higher is better", "down": "lower is better", "zero": "closer to 0 is better"}
+
+
 def _delta(value, prior, better, long=False):
     """The change vs the prior period of equal length, as a pill: the arrow is the direction of the number;
-    the colour says whether that is better (``better``: "up", "down", or "zero" for a gap whose ideal is 0)."""
+    the colour says whether that is better (green) or worse (red) for this KPI (``better``: "up", "down", or
+    "zero" for a gap whose ideal is 0), so a fall in the OOS rate is green. The tooltip says which."""
     suffix = " vs prior period" if long else ""
     if value is None or pd.isna(value) or prior is None or pd.isna(prior):
         return kit.pill("No prior value" + ("" if not long else " to compare"), "outline")
     delta = round(value - prior, 1)
     if delta == 0:
-        return kit.pill("No change" + suffix, "outline")
+        return kit.pill("No change" + suffix, "outline", title="Same as the previous period of equal length")
     text = f"{'▲' if delta > 0 else '▼'} {abs(delta):.1f} pts{suffix}"
     if better == "zero":
         closer = round(abs(value), 1) - round(abs(prior), 1)
-        return kit.pill(text, "outline" if closer == 0 else ("ok" if closer < 0 else "bad"))
-    return kit.pill(text, "ok" if (delta > 0) == (better == "up") else "bad")
+        kind = "outline" if closer == 0 else ("ok" if closer < 0 else "bad")
+    else:
+        kind = "ok" if (delta > 0) == (better == "up") else "bad"
+    verdict = {"ok": "Better", "bad": "Worse", "outline": "No better or worse"}[kind]
+    return kit.pill(text, kind, title=f"{verdict} than the previous period of equal length ({BETTER_TEXT[better]})",
+                    **{"data-trend": kind})
 
 
 def _target(key, value, long=False):
@@ -646,7 +654,9 @@ def kpi_tiles(c, p, selected="msl"):
         tiles.append(tags.button(
             tags.span(label, class_="m1-kpi-label"),
             tags.span(_fmt(value, pattern), class_="m1-kpi-value"),
-            tags.span(_delta(value, p[field], better), _target(key, value), class_="m1-kpi-foot"),
+            tags.span(_delta(value, p[field], better), tags.span("vs prior period", class_="m1-kpi-vs"),
+                      class_="m1-kpi-foot"),
+            _target(key, value),
             type="button", class_="m1-kpi" + (" on" if on else ""), id=f"m1-kpi-{key}",
             onclick=f"Shiny.setInputValue('m1_kpi', '{key}', {{priority: 'event'}})",
             **{"data-key": key, "aria-pressed": "true" if on else "false",
@@ -656,7 +666,7 @@ def kpi_tiles(c, p, selected="msl"):
 
 
 def kpi_notes(key, c):
-    """What the selected number rests on (formerly the small print on each tile)."""
+    """What the selected number rests on (in "How it's calculated", collapsed)."""
     gap_dates = f"{c['gap_first']:%b %d} – {c['gap_last']:%b %d, %Y}" if c.get("gap_first") else "no complete period"
     notes = {
         "msl": [f"Assessable coverage {_fmt(c['msl_coverage'])} of eligible store-days; "
@@ -676,61 +686,100 @@ def kpi_notes(key, c):
     return [n for n in notes if n]
 
 
+KPI_READ = {
+    "msl": "the share of store-days on which every must-stock product was on the shelf",
+    "oos": "the share of product-days with zero stock; lower is better",
+    "gap": "how far invoiced units ran ahead of (+) or behind (−) what consumers bought; 0 is ideal",
+    "shelf": "the selected products' share of the audited shelf, among the client's own products in a category",
+    "plano": "the share of audited products placed as the planogram says",
+}
+
+
 def trend_chart(key, frame, element_id):
-    """The KPI per week (gap: per complete biweekly period) with its team target."""
+    """The KPI per week (gap: per complete biweekly period) with its team target: a smooth line over a soft
+    fill, no grid."""
     frame = frame[frame["value"].notna()] if frame is not None and len(frame) else frame
     if frame is None or not len(frame):
         return state("No trend for these filters", "No period in the range has a value for this KPI.")
     x = [pd.Timestamp(v).strftime("%Y-%m-%d") for v in frame["period"]]
     y = [float(v) for v in frame["value"]]
-    fig = go.Figure(go.Scatter(x=x, y=y, mode="lines+markers", name=KPI_SPECS[key]["title"].replace(" %", ""),
-                               line=dict(color=CHART_COLORS[0], width=2.5), marker=dict(size=7),
-                               hovertemplate=("Biweekly period from" if key == "gap" else "Week of")
-                               + " %{x|%b %d, %Y}<br>%{y:.1f}%<extra></extra>"))
     lows, highs = [min(y)], [max(y)]
     target = KPI_TARGETS.get(key)
+    lines = ()
     if target:
         lines = target[2] if isinstance(target[2], tuple) else (target[2],)
-        if key == "gap":
-            fig.add_hrect(y0=lines[0], y1=lines[1], fillcolor="rgba(29,107,69,0.08)", line_width=0, layer="below")
-        for value in lines:
-            fig.add_hline(y=value, line=dict(color="#86121c", width=1.5, dash="dash"),
-                          annotation=dict(text=f"Team target {target[1]}" if value == lines[-1] else "",
-                                          font=dict(size=11, color="#86121c"), xanchor="right", x=1,
-                                          yanchor="bottom"))
         lows.append(min(lines))
         highs.append(max(lines))
     pad = max(2.0, (max(highs) - min(lows)) * 0.15)
     low, high = min(lows) - pad, max(highs) + pad
     if key != "gap":
         low, high = max(0.0, low), min(100.0 + (5 if key == "shelf" else 0), high)
-    layout = dict(showlegend=False, margin=dict(l=16, r=16, t=24, b=16),
-                  yaxis=dict(range=[low, high], ticksuffix="%", title=None),
-                  xaxis=dict(tickformat="%b %d", title=None))
+    color = CHART_COLORS[0]
+    # A flat line at the bottom of the axis, so the soft fill ends there rather than at zero.
+    fig = go.Figure(go.Scatter(x=x, y=[low] * len(y), mode="lines", line=dict(width=0), hoverinfo="skip",
+                               showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=x, y=y, mode="lines+markers", name=KPI_SPECS[key]["title"].replace(" %", ""), fill="tonexty",
+        fillgradient=dict(type="vertical", colorscale=[[0, _rgba(color, 0.0)], [1, _rgba(color, 0.20)]]),
+        line=dict(color=color, width=2.5, shape="spline", smoothing=0.6),
+        marker=dict(size=7, color="#ffffff", line=dict(color=color, width=2)),
+        hovertemplate=("Biweekly period from" if key == "gap" else "Week of") + " %{x|%b %d, %Y}<br>"
+                      "<b>%{y:.1f}%</b><extra></extra>"))
+    if key == "gap" and lines:
+        fig.add_hrect(y0=lines[0], y1=lines[1], fillcolor="rgba(29,107,69,0.07)", line_width=0, layer="below")
+    for value in lines:
+        fig.add_hline(y=value, line=dict(color="#86121c", width=1.2, dash="dot"),
+                      annotation=dict(text=f"Team target {target[1]}" if value == lines[-1] else "",
+                                      font=dict(size=11, color="#86121c"), xanchor="right", x=1, yanchor="bottom"))
+    layout = dict(showlegend=False, margin=dict(l=8, r=8, t=16, b=8), hovermode="x",
+                  yaxis=dict(range=[low, high], ticksuffix="%", title=None, showgrid=False, zeroline=False,
+                             showline=False, tickfont=dict(color="#8a7f80", size=11)),
+                  xaxis=dict(tickformat="%b %d", title=None, showgrid=False, zeroline=False, showline=False,
+                             tickfont=dict(color="#8a7f80", size=11), showspikes=True, spikemode="across",
+                             spikethickness=1, spikedash="solid", spikecolor="#dfd4d4"))
     return plot(fig, element_id, f"{KPI_SPECS[key]['title']} trend", 300, layout)
 
 
+def kpi_help(key, period):
+    """How to read the selected KPI's trend (the "?" next to its title)."""
+    lines = [f"The line is {KPI_READ[key]}, per {period}, for the stores, products and dates in the filters.",
+             "Hover the chart for each " + period + "'s value."]
+    if key in KPI_TARGETS:
+        lines.append(f"The dotted line is the team's target ({KPI_TARGETS[key][1]}): "
+                     + {"gap": "inside the green band is on target.", "oos": "points below it meet the target."}
+                     .get(key, "points above it meet the target."))
+    lines.append("On the cards, green means better than the previous period of the same length and red means "
+                 "worse; the arrow only shows whether the number went up or down.")
+    return kit.help_tip(KPI_SPECS[key]["title"].replace(" %", ""), tags.ul(*[tags.li(t) for t in lines]),
+                        tags.p("Targets are set by the team for display; the client has not set them yet."
+                               if key in KPI_TARGETS else "No target applies to this KPI.", class_="ws-help-data"),
+                        id="m1-kpi-help")
+
+
 def kpi_detail(key, c, p, trend, f):
-    """Below the cards: the selected KPI's trend with target, what it rests on, and (collapsed) how it is computed."""
+    """Below the cards: the selected KPI's trend with target and (collapsed) how it is computed and what the
+    number rests on."""
     spec = KPI_SPECS[key]
     _, _, field, pattern, better = next(t for t in KPI_TILES if t[0] == key)
     label = spec["title"].replace(" %", "")                  # the full name; the card uses a short one
     period = "complete biweekly period" if key == "gap" else "week"
     how = tags.details(tags.summary("How it's calculated"),
-                       tags.dl(tags.dt("Definition"), tags.dd(spec["desc"]), tags.dt("Shared view"),
-                               tags.dd(spec["source"]), tags.dt("Components"), tags.dd(spec["columns"]),
-                               tags.dt("Formula"), tags.dd(spec["formula"]), tags.dt("Rules"), tags.dd(spec["logic"])),
+                       tags.dl(tags.dt("Definition"), tags.dd(spec["desc"]), tags.dt("Formula"),
+                               tags.dd(spec["formula"]), tags.dt("Rules"), tags.dd(spec["logic"]),
+                               tags.dt("This selection"), tags.dd(*[tags.div(n) for n in kpi_notes(key, c)],
+                                                                  class_="m1-notes"),
+                               tags.dt("Shared view"), tags.dd(spec["source"]), tags.dt("Components"),
+                               tags.dd(spec["columns"])),
                        class_="ws-disclosure m1-how", id="m1-kpi-how")
     return tags.section(
-        tags.div(tags.div(tags.h2(label, class_="ws-h"),
-                          tags.p(f"Trend per {period}, {pd.Timestamp(f.start):%b %d} – {pd.Timestamp(f.end):%b %d, %Y}, "
-                                 "for the filtered stores and products.", class_="ws-muted m1-logic")),
+        tags.div(tags.div(tags.div(tags.h2(label, class_="ws-h"), kpi_help(key, period), class_="ws-title-row"),
+                          tags.p(f"{pd.Timestamp(f.start):%b %d} – {pd.Timestamp(f.end):%b %d, %Y}",
+                                 class_="ws-muted m1-detail-range")),
                  tags.div(tags.span(_fmt(c[field], pattern), class_="m1-detail-value"),
                           _delta(c[field], p[field], better, long=True), _target(key, c[field], long=True),
                           class_="m1-detail-figures"),
                  class_="ws-card-head m1-detail-head"),
         trend_chart(key, trend, f"m1-trend-{key}"),
-        tags.ul(*[tags.li(n) for n in kpi_notes(key, c)], class_="m1-notes"),
         how,
         class_="ws-card m1-kpi-detail", id="m1-kpi-detail", **{"aria-live": "polite"})
 
@@ -851,9 +900,10 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             ui.update_checkbox_group("m1_channel", choices=choices["channels"], selected=choices["channels"])
             ui.update_checkbox_group("m1_region", choices=choices["regions"], selected=choices["regions"])
             ui.update_checkbox_group("m1_sku", choices=sku_choices(choices), selected=list(choices["products"]))
+            ui.update_radio_buttons("m1_msl", selected="all")
             last, first = pd.Timestamp(choices["last_date"]), pd.Timestamp(choices["first_date"])
-            start = preset_start(DEFAULT_PRESET, first, last)
-            ui.update_date_range("m1_dates", start=str(start.date()), end=str(last.date()),
+            start, end = preset_span(DEFAULT_PRESET, first, last)
+            ui.update_date_range("m1_dates", start=str(start.date()), end=str(end.date()),
                                  min=str(first.date()), max=str(last.date()))
 
     @reactive.effect
@@ -863,7 +913,8 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             return
         dates = input.m1_dates()
         # The first values sent back after ui.update_* carry the scoped choices and dates.
-        if input.m1_sku() and dates and str(dates[1]) == str(pd.Timestamp(info["last_date"]).date()):
+        _, end = preset_span(DEFAULT_PRESET, info["first_date"], info["last_date"])
+        if input.m1_sku() and dates and str(dates[1]) == str(end.date()):
             synced.set(True)
 
     @reactive.effect
@@ -871,7 +922,16 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
     def _select_all_skus():
         info = choice_info()
         if info:
-            ui.update_checkbox_group("m1_sku", selected=list(info["products"]))
+            ui.update_checkbox_group("m1_sku", selected=msl_skus(info, input.m1_msl()))
+
+    @reactive.effect
+    @reactive.event(input.m1_msl)
+    def _msl_narrows_skus():
+        """MSL only / non-MSL only: the SKU list shows (and selects) just those products; All brings back all."""
+        info = choice_info()
+        if info:
+            skus = msl_skus(info, input.m1_msl())
+            ui.update_checkbox_group("m1_sku", choices=sku_choices(info, skus), selected=skus)
 
     @reactive.effect
     @reactive.event(input.m1_sku_none)
@@ -886,9 +946,8 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
         info, key = choice_info(), input.m1_preset()
         if info and key in DATE_PRESETS:
             chosen_preset.set(key)
-            start = preset_start(key, info["first_date"], info["last_date"])
-            ui.update_date_range("m1_dates", start=str(start.date()),
-                                 end=str(pd.Timestamp(info["last_date"]).date()))
+            start, end = preset_span(key, info["first_date"], info["last_date"])
+            ui.update_date_range("m1_dates", start=str(start.date()), end=str(end.date()))
 
     @reactive.effect
     @reactive.event(input.m1_reset)
@@ -898,11 +957,10 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             chosen_preset.set(DEFAULT_PRESET)
             ui.update_checkbox_group("m1_channel", selected=info["channels"])
             ui.update_checkbox_group("m1_region", selected=info["regions"])
-            ui.update_checkbox_group("m1_sku", selected=list(info["products"]))
+            ui.update_checkbox_group("m1_sku", choices=sku_choices(info), selected=list(info["products"]))
             ui.update_radio_buttons("m1_msl", selected="all")
-            start = preset_start(DEFAULT_PRESET, info["first_date"], info["last_date"])
-            ui.update_date_range("m1_dates", start=str(start.date()),
-                                 end=str(pd.Timestamp(info["last_date"]).date()))
+            start, end = preset_span(DEFAULT_PRESET, info["first_date"], info["last_date"])
+            ui.update_date_range("m1_dates", start=str(start.date()), end=str(end.date()))
 
     @reactive.effect
     @reactive.event(input.m1_go)
@@ -981,7 +1039,9 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
     @render.ui
     def m1_user_block():
         name, title = auth_state["name"](), auth_state["title"]()
-        return None if name is None else kit.user_block(name, title, id="m1-user")
+        avatar = auth_state.get("avatar")
+        return None if name is None else kit.user_block(name, title, id="m1-user",
+                                                        avatar_src=avatar() if avatar else None)
 
     @output(suspend_when_hidden=False)
     @render.text
@@ -1024,8 +1084,8 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
 
     # ---------------------------------------------------------- filter pills
     def pill_value(text, changed, extra=None):
-        return TagList(tags.span(text, class_="m1-pill-val" + (" set" if changed else "")),
-                       tags.span(extra, class_="m1-pill-extra") if extra else None)
+        return TagList(tags.span(text, class_="m1-pill-val ws-fpill-val" + (" set" if changed else "")),
+                       tags.span(extra, class_="m1-pill-extra ws-fpill-extra") if extra else None)
 
     @render.ui
     def m1_pill_dates():
@@ -1052,21 +1112,21 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
     def m1_pill_channel():
         info = choice_info()
         req(info)
-        return TagList(tags.span("Channel", class_="m1-pill-key"),
+        return TagList(tags.span("Channel", class_="m1-pill-key ws-fpill-key"),
                        pill_value(*choice_label(input.m1_channel(), {c: c for c in info["channels"]})))
 
     @render.ui
     def m1_pill_region():
         info = choice_info()
         req(info)
-        return TagList(tags.span("Region", class_="m1-pill-key"),
+        return TagList(tags.span("Region", class_="m1-pill-key ws-fpill-key"),
                        pill_value(*choice_label(input.m1_region(), {r: r for r in info["regions"]})))
 
     @render.ui
     def m1_pill_msl():
         req(choice_info())
         value = input.m1_msl() or "all"
-        return TagList(tags.span("Products", class_="m1-pill-key"),
+        return TagList(tags.span("Products", class_="m1-pill-key ws-fpill-key"),
                        pill_value(MSL_PILL.get(value, MSL_PILL["all"]), value != "all"))
 
     @render.ui
@@ -1074,24 +1134,27 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
         info = choice_info()
         req(info)
         names = info.get("product_names") or info["products"]
-        return TagList(tags.span("SKU", class_="m1-pill-key"),
-                       pill_value(*choice_label(input.m1_sku(), names, empty_means_all=False)))
+        shown = {s: names.get(s, s) for s in msl_skus(info, input.m1_msl())}
+        return TagList(tags.span("SKU", class_="m1-pill-key ws-fpill-key"),
+                       pill_value(*choice_label(input.m1_sku(), shown, empty_means_all=False)))
 
     @render.ui
     def m1_sku_count():
         info = choice_info()
         req(info)
-        return tags.span(f"{len(input.m1_sku() or ())} of {len(info['products'])} selected", class_="ws-muted")
+        shown = msl_skus(info, input.m1_msl())
+        return tags.span(f"{len([s for s in input.m1_sku() or () if s in shown])} of {len(shown)} selected",
+                         class_="ws-muted")
 
     @render.ui
     @safe
     def m1_filter_summary():
         info = choice_info()
         item, f = current()
-        names = info.get("product_names") or info["products"]
         changed = (choice_label(input.m1_channel(), {c: c for c in info["channels"]})[1]
                    or choice_label(input.m1_region(), {r: r for r in info["regions"]})[1]
-                   or choice_label(input.m1_sku(), names, empty_means_all=False)[1]
+                   or choice_label(input.m1_sku(), {s: s for s in msl_skus(info, input.m1_msl())},
+                                   empty_means_all=False)[1]
                    or (input.m1_msl() or "all") != "all"
                    or matching_preset(span(), info["first_date"], info["last_date"], chosen_preset()) != DEFAULT_PRESET)
         reset = tags.button("Reset filters", type="button", class_="m1-reset", id="m1-reset",

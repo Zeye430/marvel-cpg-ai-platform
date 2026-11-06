@@ -39,6 +39,10 @@ VERDICT_KIND = {calc.APPROVED: "ok", calc.CONDITIONS: "warn", calc.REJECTED: "ba
 VERDICT_COLOR = {calc.APPROVED: "#1d6b45", calc.CONDITIONS: "#b26a00", calc.REJECTED: "#b41824",
                  calc.NOT_ASSESSED: "#a39797"}
 SCENARIO_COLORS = ("#2b6fd6", "#86121c", "#1d6b45")
+# Every input of the two pages: any change re-checks the principal's access before results are shown.
+INTERACTION_INPUTS = ("m3_store", "m3_sku", "m3_qty", "m3_basis", "m3_uplift", "m3_b_kind", "m3_b_target",
+                      "m3_b_increase", "m3_b_pass", "m3_b_source", "m3_b_custom",
+                      *[f"m3_{part}_{key}" for key in SCENARIOS for part in ("add", "commit")])
 
 
 def _num(value):
@@ -64,7 +68,8 @@ def deal_from(context):
                      current_discount=_num(context.get("weighted_trade_discount_pct_28d")),
                      cap=_num(context.get("max_discount_pct_source")),
                      floor=_num(context.get("min_target_margin_source")),
-                     tradeoff=context.get("required_exec_tradeoff") or "")
+                     tradeoff=context.get("required_exec_tradeoff") or "",
+                     policy_status=context.get("policy_status"))
 
 
 def default_proposals(deal):
@@ -149,10 +154,10 @@ def result_panel(deal, result, quantity):
         return tags.li(tags.span(mark, class_="m3-mark " + ("na" if ok is None else ("ok" if ok else "bad")),
                                  **{"aria-hidden": "true"}),
                        ("Not assessed: " if ok is None else ("Pass: " if ok else "Fails: ")) + text)
-    compared_label = "total" if result["compared"] == result["total"] else "additional"
+    compared_label = "total" if result["basis"] == "total" else "additional"
+    compared = "unknown" if result["compared"] is None else f"{result['compared']:.2f}%"
     checks = tags.ul(
-        check(result["cap_ok"], f"{compared_label} discount {result['compared']:.2f}% vs cap "
-                                f"{_pct(deal.cap, '{:.2f}%')}"),
+        check(result["cap_ok"], f"{compared_label} discount {compared} vs cap {_pct(deal.cap, '{:.2f}%')}"),
         check(result["floor_ok"], f"margin {_pct(result['margin'])} vs minimum {_pct(deal.floor, '{:.2f}%')}"),
         check(None if result["cap_ok"] or deal.distributor else result["commitment"] is not None,
               "commitment " + (result["commitment"].label if result["commitment"] else "not offered")
@@ -207,18 +212,24 @@ def margin_chart(deal, results):
 # ---------------------------------------------------------------- Scenario B helpers
 
 def weighted_unit(baseline):
-    """Units-weighted list price, unit cost and trade discount of the selection (13-week observed units)."""
-    frame = baseline[baseline["units"].fillna(0) > 0]
-    units = float(frame["units"].sum()) if len(frame) else 0.0
+    """Units-weighted list price, unit cost and trade discount of the selection (13-week observed units).
+
+    Only products with a known list price, unit cost and recent trade discount enter the economics; the
+    others are excluded and counted (never filled with 0). None when no sold product is complete."""
+    sold = baseline[baseline["units"].fillna(0) > 0]
+    complete = sold[sold["list_price"].notna() & sold["unit_cost"].notna() & sold["trade_discount"].notna()]
+    units = float(complete["units"].sum()) if len(complete) else 0.0
     if units <= 0:
         return None
-    disc = frame["trade_discount"].fillna(0.0)
-    net = float((frame["units"] * frame["list_price"] * (1 - disc / 100)).sum()) / units
-    cost = float((frame["units"] * frame["unit_cost"]).sum()) / units
+    disc = complete["trade_discount"]
+    net = float((complete["units"] * complete["list_price"] * (1 - disc / 100)).sum()) / units
+    cost = float((complete["units"] * complete["unit_cost"]).sum()) / units
     return {"units": units, "unit_net": net, "unit_cost": cost,
-            "trade_discount": float((frame["units"] * disc).sum()) / units,
-            "stores": int(frame["stores"].max()), "skus": int(len(frame)),
-            "first": frame["first_day"].min(), "last": frame["last_day"].max()}
+            "trade_discount": float((complete["units"] * disc).sum()) / units,
+            "stores": int(complete["stores"].max()), "skus": int(len(complete)),
+            "excluded_skus": int(len(sold) - len(complete)),
+            "excluded_units": float(sold["units"].sum()) - units,
+            "first": complete["first_day"].min(), "last": complete["last_day"].max()}
 
 
 def price_curve(elasticity, low, high, pass_through, unit_net, unit_cost, chosen):
@@ -347,7 +358,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         item = data()
         if item is None:
             return None, load_state()[1]
-        input.m3_store(), input.m3_sku(), input.m3_b_target()    # re-check on every selection change
+        for name in INTERACTION_INPUTS:                          # re-check on every interaction, not only
+            if name in input:                                    # the selectors (proposal-only changes too)
+                input[name]()
         try:
             item.check()
             return item, None
@@ -373,7 +386,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
     @render.ui
     def m3_user_block():
         name, title = auth_state["name"](), auth_state["title"]()
-        return None if name is None else kit.user_block(name, title, id="m3-user")
+        avatar = auth_state.get("avatar")
+        return None if name is None else kit.user_block(name, title, id="m3-user",
+                                                        avatar_src=avatar() if avatar else None)
 
     @output(suspend_when_hidden=False)
     @render.text
@@ -409,7 +424,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
     @reactive.effect
     @reactive.event(input.m3_store)
     def _store_products():
-        item = data()
+        item, _ = checked()
         store = input.m3_store()
         if item is None or not store:
             return
@@ -484,9 +499,23 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
             @render.ui
             def _verdict():
                 result = results()[SCENARIOS.index(key)]
-                return kit.pill(result["verdict"], VERDICT_KIND[result["verdict"]], class_="m3-verdict",
-                                **{"data-verdict": result["verdict"]})
+                label = result["verdict"] + (" · provisional" if result["provisional"] else "")
+                return kit.pill(label, VERDICT_KIND[result["verdict"]], class_="m3-verdict",
+                                **{"data-verdict": result["verdict"],
+                                   "data-provisional": "true" if result["provisional"] else "false"})
         bind()
+
+    @render.ui
+    @safe
+    def m3_banner():
+        _, deal = deal_context()
+        if not deal.provisional:
+            return None
+        return kit.notice(tags.strong("Provisional simulation. "),
+                          f"The guardrail is \"{deal.policy_status or 'not confirmed'}\" and the rules "
+                          f"({calc.RULES_VERSION}) await client confirmation. A verdict here does not authorise offering "
+                          "or agreeing a deal, and this app has no approval workflow.",
+                          kind="warn", id="m3-provisional", role="note")
 
     @render.ui
     @safe
@@ -498,7 +527,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
     @reactive.effect
     @reactive.event(input.m3_b_kind)
     def _b_targets():
-        item = data()
+        item, _ = checked()
         if item is None:
             return
         if input.m3_b_kind() == "sku":
@@ -544,8 +573,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
     def m3_b_results():
         label, category, base, estimate = b_inputs()
         if base is None:
-            return state("No observed sales", f"No in-stock sell-out was reported for {label} in your stores in the "
-                         "last 13 weeks, so there is no baseline to change.")
+            return state("No complete baseline", f"No product of {label} has reported in-stock sell-out in your stores "
+                         "in the last 13 weeks together with a known list price, unit cost and recent trade discount, "
+                         "so there is nothing to change.")
         e, low, high, source = chosen_elasticity(estimate)
         if e is None:
             return state("No elasticity", "Enter an elasticity." if source == "custom" else
@@ -585,6 +615,31 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
 
     @render.ui
     @safe
+    def m3_b_warnings():
+        """What limits this result, shown above the chart (the rest of the background is in the chart's "?")."""
+        label, category, base, estimate = b_inputs()
+        e, _, _, _ = chosen_elasticity(estimate)
+        if base is None or e is None:
+            return None
+        p = input.m3_b_increase() or 0.0
+        through = input.m3_b_pass() if input.m3_b_pass() is not None else 100
+        warnings = []
+        rng = estimate.get("price_range")
+        if rng is not None and p * through / 100 > 100 * rng[1] + 1e-9:
+            warnings.append(f"Outside the data: shelf prices were at most {100 * rng[1]:+.1f}% above the reference "
+                            f"price (and down to {100 * rng[0]:+.1f}% on promotion), so a lasting increase of this "
+                            "size is an extrapolation.")
+        if base["excluded_skus"]:
+            warnings.append(f"Left out: {base['excluded_skus']} product(s) with {base['excluded_units']:,.0f} sold units, "
+                            "whose list price, unit cost or recent trade discount is unknown; nothing is filled in "
+                            "for them.")
+        if not warnings:
+            return None
+        return kit.notice(tags.ul(*[tags.li(w) for w in warnings]), kind="warn", id="m3-b-warnings", role="note")
+
+    @output(suspend_when_hidden=False)              # in the chart's "?" pop-over, closed by default
+    @render.ui
+    @safe
     def m3_b_notes():
         label, category, base, estimate = b_inputs()
         e, low, high, source = chosen_elasticity(estimate)
@@ -606,11 +661,6 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
                          f"(approximate 95% interval {estimate['low']:.2f} to {estimate['high']:.2f}; "
                          f"{estimate['n']:,} in-stock store-SKU-days with a shelf price, retail accounts only). It compares "
                          "days within the same store, product and month, so store size and season do not drive it.")
-        rng = estimate.get("price_range")
-        if rng is not None and p * through / 100 > 100 * rng[1] + 1e-9:
-            notes.append(f"Extrapolation: shelf prices in the data were at most {100 * rng[1]:+.1f}% above the reference "
-                         f"price, and down to {100 * rng[0]:+.1f}% on promotion; nearly all the price variation comes "
-                         "from temporary promotions, so a lasting increase of this size is outside the data.")
         notes.append(f"Baseline: {base['units']:,.0f} units of reported sell-out on in-stock days over the last 13 weeks "
                      f"({pd.Timestamp(base['first']):%b %d} – {pd.Timestamp(base['last']):%b %d, %Y}), {base['skus']} "
                      f"product(s), retail accounts only (distributors have no meaningful sell-out); not complete demand. Revenue at the reference list price less the recent trade "

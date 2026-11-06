@@ -101,6 +101,7 @@
 .m2 .m2-views label.radio-inline > input:focus-visible + span { outline: 3px solid var(--m2-data); outline-offset: -3px; }
 
 /* Filters. */
+.m2 .m2-fbar { margin: 0 0 16px; }
 .m2 details.m2-filter-box { margin: 0 0 12px; }
 .m2 details.m2-filter-box > summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0 8px; list-style: none;
   display: inline-flex; min-height: 32px; align-items: center; }
@@ -240,6 +241,7 @@
 .m2 .m2-sidebar-foot { margin-top: auto; border-top: 1px solid var(--m2-rule); padding-top: 12px; display: flex;
   flex-direction: column; gap: 6px; }
 .m2 .btn.m2-signout { justify-content: flex-start; border: 0; box-shadow: none; }
+.m2 img.m2-avatar.photo { object-fit: cover; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--m2-rule-strong); padding: 0; }
 .m2 .m2-avatar { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center;
   justify-content: center; background: var(--m2-red-soft); color: var(--m2-red-dark); font-weight: 700; font-size: 13px;
   border: 1px solid var(--m2-red-line); }
@@ -373,9 +375,6 @@
 .m2 .m2-fig[data-key="urgency"] .m2-urg { font-size: 16px; padding: 4px 12px; margin-top: 4px; }
 .m2 .m2-dates.m2-card { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; }
 .m2 .m2-date strong { font-size: 15px; font-weight: 600; }
-.m2 .m2-model-label { display: inline-flex; padding: 1px 8px; border-radius: 999px; background: var(--m2-raised);
-  border: 1px solid var(--m2-rule-strong); color: var(--m2-ink-2); font-weight: 600; }
-
 /* Risk category: one line per concern, never joined with "+". */
 .m2 ul.m2-cat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .m2 ul.m2-cat li { position: relative; padding-left: 14px; font-size: 13px; line-height: 1.35; color: var(--m2-ink-2); }

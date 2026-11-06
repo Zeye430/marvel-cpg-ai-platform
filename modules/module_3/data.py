@@ -4,7 +4,9 @@ modules/module_3/data.py
 Read-only inputs for Module 3, from the signed-in principal's scoped copy of the shared publication
 (the same copy Module 1 builds: modules/module_1/data.Module1Pool), so opening the simulator after the
 dashboard needs no second load. Fixed SQL only; scope is the copy's scope, and a store or SKU outside it
-simply has no rows.
+simply has no rows. Every read re-checks the principal's access and the pinned publication before and
+after the query (a revocation during the read is caught), and a cached result is re-checked before it
+is returned; a failed check raises and closes the copy.
 
 - Scenario A: the negotiation context of one store × SKU (reference prices, the recent trade discount,
   the guardrail and its required commitment, stock and audit evidence).
@@ -36,12 +38,18 @@ class Module3Data:
         self.scope = item.scope
         self.manager = item.manager
         self._elasticity = {}
+        self._baseline = {}
 
     def check(self):
-        return self.item.check()
+        self.scope = self.item.check()
+        return self.scope
 
     def q(self, sql, params=None):
-        return self.item.query(sql, params)
+        """One fixed query, between two access checks."""
+        self.check()
+        frame = self.item.query(sql, params)
+        self.check()
+        return frame
 
     # ------------------------------------------------------------------ Scenario A
     def accounts(self):
@@ -83,7 +91,12 @@ class Module3Data:
     def baseline(self, kind, value):
         """Per SKU: observed units on in-stock days in the last 13 weeks, reference prices and the recent
         reported trade discount. Units are reported sell-out, not complete demand."""
-        frame = self.q(f"""WITH d AS (SELECT * FROM store_sku_daily d WHERE {self._where(kind, value)}
+        where = self._where(kind, value)
+        key = (kind, value)
+        if key in self._baseline:
+            self.check()                     # a cached result is only returned to a principal still in scope
+            return self._baseline[key].copy()
+        frame = self.q(f"""WITH d AS (SELECT * FROM store_sku_daily d WHERE {where}
                               AND d.channel <> 'Distributor' AND d.date > (SELECT max(date) FROM store_sku_daily) - INTERVAL {BASELINE_DAYS} DAY),
                      units AS (SELECT sku_id, sum(units_sold_observed) AS units, count(*) AS instock_days,
                                       count(DISTINCT store_id) AS stores, min(date) AS first_day, max(date) AS last_day
@@ -96,7 +109,8 @@ class Module3Data:
                        CASE WHEN disc.gross > 0 THEN 100 * (disc.gross - disc.net) / disc.gross END AS trade_discount
                 FROM products p JOIN units u USING (sku_id) LEFT JOIN disc USING (sku_id)
                 ORDER BY p.category, p.product_name""", {"value": value})
-        return frame
+        self._baseline[key] = frame
+        return frame.copy()
 
     def elasticity(self, category):
         """Own-price elasticity of observed daily units for a category, from the scoped history.
@@ -105,7 +119,8 @@ class Module3Data:
         product and season do not drive it. The price variation in the data comes almost only from
         temporary promotions; the standard error ignores clustering, so the interval is approximate."""
         if category in self._elasticity:
-            return self._elasticity[category]
+            self.check()                     # a cached result is only returned to a principal still in scope
+            return dict(self._elasticity[category])
         row = self.q("""WITH d AS (SELECT store_id, sku_id, date_trunc('month', date) AS m,
                                       ln(units_sold_observed + 0.5) AS y, ln(consumer_price_observed) AS x
                                FROM store_sku_daily WHERE category = $category AND channel <> 'Distributor' AND inventory_observed > 0
@@ -133,4 +148,4 @@ class Module3Data:
             result.update(estimate=slope, se=se, low=slope - 1.96 * se, high=slope + 1.96 * se,
                           price_range=None if _num(span.get("hi")) is None else (_num(span["lo"]), _num(span["hi"])))
         self._elasticity[category] = result
-        return result
+        return dict(result)

@@ -275,7 +275,8 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
         name, title = auth_state.get("name"), auth_state.get("title")
         if principal() is None or name is None or not name():
             return None
-        return kit.user_block(name(), title() if title else "", id="m4-user")
+        avatar = auth_state.get("avatar")
+        return kit.user_block(name(), title() if title else "", id="m4-user", avatar_src=avatar() if avatar else None)
 
     @render.ui
     def m4_status():

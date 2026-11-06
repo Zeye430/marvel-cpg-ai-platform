@@ -42,6 +42,7 @@ class VerdictTests(unittest.TestCase):
         rejected = calc.scenario(lemon(), 15)
         self.assertEqual(rejected["verdict"], calc.REJECTED)
         self.assertIn("without the required commitment", rejected["reason"])
+        self.assertTrue(rejected["provisional"])                       # no confirmed policy in the test deal
 
     def test_cap_is_inclusive_and_compares_the_total_discount_by_default(self):
         self.assertEqual(calc.scenario(lemon(current=10.8), 2.0)["verdict"], calc.APPROVED)     # 12.80 = cap
@@ -84,10 +85,40 @@ class VerdictTests(unittest.TestCase):
                      calc.Deal("Modern Trade", 4.5, 2.1, 0.0, 12.8, None)):
             self.assertEqual(calc.scenario(deal, 5)["verdict"], calc.NOT_ASSESSED)
 
-    def test_unknown_current_discount_is_disclosed_and_not_guessed(self):
-        result = calc.scenario(lemon(current=None), 5.0)
-        self.assertEqual((result["current"], result["total"], result["compared"]), (None, 5.0, 5.0))
-        self.assertIn("current discount is unknown", result["notes"][0])
+    def test_unknown_current_discount_cannot_be_assessed_on_either_basis(self):
+        # Codex R-01: list 4.5, cost 2.1, no recent invoice, cap 10%, floor 20%, additional 2%.
+        deal = calc.Deal("Modern Trade", 4.5, 2.1, None, 10.0, 20.0, TRADEOFFS[0])
+        for basis in ("total", "additional"):
+            for commitment in (None, "display"):
+                with self.subTest(basis=basis, commitment=commitment):
+                    r = calc.scenario(deal, 2.0, commitment, quantity=100, basis=basis)
+                    self.assertEqual(r["verdict"], calc.NOT_ASSESSED)
+                    self.assertIn("current discount is unknown", r["reason"])
+                    for key in ("total", "net", "margin", "unit_gp", "breakeven", "covers", "revenue",
+                                "discount_cost", "gross_profit", "gross_profit_with_uplift"):
+                        self.assertIsNone(r[key], key)                # nothing invented
+                    self.assertIsNone(r["floor_ok"])
+        self.assertIsNone(calc.scenario(deal, 2.0, basis="total")["cap_ok"])         # total unknown
+        self.assertTrue(calc.scenario(deal, 2.0, basis="additional")["cap_ok"])      # 2% vs 10% is known
+        self.assertEqual(calc.scenario(deal, 0.0)["verdict"], calc.NOT_ASSESSED)
+
+    def test_unconfirmed_policy_gives_no_permission_to_agree(self):
+        pending = calc.Deal("Modern Trade", 4.5, 2.1, 0.0, 12.8, 26.62, TRADEOFFS[0], "Requires review")
+        self.assertTrue(pending.provisional)
+        for additional, commitment in ((10, None), (15, "display"), (15, None), (40, "display")):
+            r = calc.scenario(pending, additional, commitment)
+            self.assertTrue(r["provisional"])
+            self.assertIn("does not authorise offering or agreeing anything", r["reason"])
+            self.assertNotIn("can agree", r["reason"])
+            self.assertNotIn("within the rep's authority", r["reason"])
+        self.assertTrue(calc.Deal("Modern Trade", 4.5, 2.1, 0.0, 12.8, 26.62).provisional)   # status missing
+        confirmed = calc.Deal("Modern Trade", 4.5, 2.1, 0.0, 12.8, 26.62, TRADEOFFS[0], "Approved")
+        ok = calc.scenario(confirmed, 10)
+        self.assertEqual((ok["verdict"], ok["provisional"]), (calc.APPROVED, False))
+        self.assertIn("within the rep's authority", ok["reason"])
+        self.assertNotIn("Provisional", ok["reason"])
+        above = calc.scenario(confirmed, 15, "display")
+        self.assertIn("do not confirm it to the account", above["reason"])            # still no permission
 
     def test_unknown_rule_option_is_refused(self):
         with self.assertRaises(ValueError):
@@ -120,7 +151,7 @@ class CommitmentAndPaybackTests(unittest.TestCase):
         self.assertAlmostEqual(display["discount_cost"], 100 * 4.5 * 0.147, places=6)
 
     def test_starting_proposals_show_all_three_verdicts(self):
-        for current in (0.0, 6.0, None):
+        for current in (0.0, 6.0):
             deal = lemon(current=current)
             verdicts = [calc.scenario(deal, a, None if c == "none" else c)["verdict"] for a, c in default_proposals(deal)]
             self.assertEqual(verdicts, [calc.APPROVED, calc.REJECTED, calc.CONDITIONS], current)

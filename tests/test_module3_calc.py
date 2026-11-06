@@ -63,6 +63,21 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(above["verdict"], calc.CONDITIONS)
         self.assertIn("manager review", above["reason"])
 
+    def test_distributor_card_offers_manager_review_not_a_shelf_commitment(self):
+        from modules.module_3.server import context_panel
+        deal = calc.Deal("Distributor", 4.50, 2.10, 14.0, 16.34, 17.41, TRADEOFFS[0])
+        text = str(context_panel({"channel": "Distributor", "category": "Laundry"}, deal))
+        self.assertIn("manager review", text)
+        self.assertNotIn("shelf share or place", text)
+        retail = str(context_panel({"channel": "Modern Trade", "category": "Laundry"}, lemon()))
+        self.assertIn("shelf share or place", retail)
+
+    def test_a_discount_that_leaves_no_net_price_is_rejected_not_missing(self):
+        for additional in (100, 150):
+            out = calc.scenario(lemon(), additional)
+            self.assertEqual(out["verdict"], calc.REJECTED)
+            self.assertIn("no net price", out["reason"])
+
     def test_missing_inputs_are_never_a_pass(self):
         for deal in (calc.Deal("Modern Trade", None, 2.1, 0.0, 12.8, 26.62),
                      calc.Deal("Modern Trade", 4.5, 2.1, 0.0, None, 26.62),

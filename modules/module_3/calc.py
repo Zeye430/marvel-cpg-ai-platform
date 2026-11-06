@@ -136,6 +136,8 @@ def scenario(deal, additional, commitment=None, quantity=None, basis="total", up
 
 def verdict(deal, result, offered):
     """(verdict, reason) under RULES_VERSION. Missing inputs are never a pass."""
+    if result["net"] is not None and result["net"] <= 0:
+        return REJECTED, f"A total discount of {result['total']:.2f}% leaves no net price."
     if deal.cap is None or deal.floor is None or result["margin"] is None:
         return NOT_ASSESSED, "A price, cost or guardrail value is missing, so this proposal cannot be checked."
     if not result["floor_ok"]:

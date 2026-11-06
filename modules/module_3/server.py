@@ -105,7 +105,8 @@ def context_panel(context, deal):
                  class_="m3-rule-head"),
         tags.ul(tags.li("Maximum discount without extra approval: ", tags.b(_pct(deal.cap, "{:.2f}%"))),
                 tags.li("Minimum gross margin on net price: ", tags.b(_pct(deal.floor, "{:.2f}%"))),
-                tags.li("Commitment that can unlock more: ", tags.b(deal.tradeoff or "not supplied")),
+                tags.li("Above the cap: ", tags.b("manager review (wholesale account: volume, not shelf execution)"))
+                if deal.distributor else tags.li("Commitment that can unlock more: ", tags.b(deal.tradeoff or "not supplied")),
                 class_="m3-rule-list"),
         tags.p(kit.pill(context.get("policy_status") or "Requires review", "outline"),
                " ", context.get("policy_limitation") or "", class_="m3-rule-note"),
@@ -296,6 +297,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
             load_state.set(("idle", "") if pid else ("signed_out", ""))
             page.set("deal")
             ui.update_navset("m3_pages", selected="deal")
+            ui.update_radio_buttons("m3_b_kind", selected="category")
         await session.send_custom_message("m3-clear", {})
 
     @reactive.effect
@@ -439,7 +441,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
             return
         applied["key"] = key
         with reactive.isolate():
-            options = {"none": "None offered", **{c.key: c.label for c in calc.commitments(deal.tradeoff)}}
+            options = {"none": "None offered"}
+            if not deal.distributor:
+                options.update({c.key: c.label for c in calc.commitments(deal.tradeoff)})
             for key, (additional, commitment) in zip(SCENARIOS, default_proposals(deal)):
                 ui.update_numeric(f"m3_add_{key}", value=additional)
                 ui.update_select(f"m3_commit_{key}", choices=options, selected=commitment)
@@ -544,7 +548,8 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
                          "last 13 weeks, so there is no baseline to change.")
         e, low, high, source = chosen_elasticity(estimate)
         if e is None:
-            return state("No elasticity", "Too few priced, in-stock days to estimate one; choose Custom to set it.")
+            return state("No elasticity", "Enter an elasticity." if source == "custom" else
+                         "Too few priced, in-stock days to estimate one; choose Custom to set it.")
         p, through = input.m3_b_increase() or 0.0, input.m3_b_pass() if input.m3_b_pass() is not None else 100
         r = calc.price_response(p, e, through, base["unit_net"], base["unit_cost"])
         revenue0 = base["units"] * base["unit_net"]

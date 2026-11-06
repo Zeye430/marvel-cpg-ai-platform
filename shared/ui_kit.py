@@ -118,6 +118,32 @@ def nav_item(icon_name, label, *, active=False, disabled=False, note=None, capti
                        class_="ws-nav-item" + (" active" if active else ""), **extra, **attrs)
 
 
+def placeholder_button(icon_name, label, text=None):
+    """A top-bar control that is visible and focusable but announced as not available (no handler)."""
+    return tags.button(icon(icon_name), tags.span(text, class_="ws-ph-text") if text else None,
+                       tags.span("Soon", class_="ws-soon") if text else None, type="button",
+                       class_="ws-icon-btn" + (" ws-copilot" if text else ""), title=f"{label} — coming soon",
+                       **{"aria-disabled": "true", "aria-label": f"{label} — coming soon"})
+
+
+def topbar_actions(user, *, copilot_id=None, copilot=True):
+    """Module 2's top-bar actions for every module: Copilot, messages, notifications, calendar, the user.
+
+    ``copilot_id``: input id of a working Copilot button (the module opens the host's copilot on it);
+    without one the button is a placeholder. ``copilot=False`` leaves it out (the copilot's own page).
+    """
+    if not copilot:
+        button = None
+    elif copilot_id:
+        button = tags.button(icon("spark"), tags.span("Copilot", class_="ws-ph-text"), type="button", id=copilot_id,
+                             class_="action-button ws-icon-btn ws-copilot", title="Open the Commercial Copilot")
+    else:
+        button = placeholder_button("spark", "Copilot", "Copilot")
+    return (button, placeholder_button("mail", "Messages"), placeholder_button("bell", "Notifications"),
+            placeholder_button("calendar", "Calendar"),
+            tags.span(class_="ws-topbar-sep", **{"aria-hidden": "true"}), user)
+
+
 def topbar(crumbs, *actions, search=None):
     """``crumbs``: (module name, page name). Placeholder-free: only the given actions are shown."""
     module, page = crumbs

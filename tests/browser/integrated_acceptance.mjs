@@ -109,11 +109,12 @@ async function signIn(p, key, principal) {
   if (!(await visible(p, "#shell-login"))) await signOut(p);
   await click(p, `#shell_signin_${key}`);
   await waitFor(p, `document.querySelector('#shell-identity')?.dataset.principal === '${principal}'`, 20000, "signed in " + principal);
-  await waitFor(p, "document.querySelector('#shell-panel-module_2')?.offsetParent !== null", 20000, "module 2 shown");
+  await waitFor(p, "document.querySelector('#shell-panel-module_1')?.offsetParent !== null", 20000, "module 1 shown");
   await idle(p);
 }
 // The app sidebar is an overlay on phones: open it before using its controls.
 async function sidebar(p) {
+  await waitFor(p, "!document.querySelector('#shell-app .bslib-sidebar-layout')?.classList.contains('transitioning')", 10000, "sidebar settled");
   if (await visible(p, "#shell-nav")) return;
   await click(p, "#shell-app .bslib-sidebar-layout > .collapse-toggle");
   await waitFor(p, "document.querySelector('#shell-nav')?.offsetParent !== null && !document.querySelector('#shell-app .bslib-sidebar-layout').classList.contains('transitioning')", 10000, "sidebar open");
@@ -134,7 +135,109 @@ async function openModule(p, key) {
   await idle(p);
 }
 async function moduleTwoReady(p) {
+  if (!(await visible(p, "#shell-panel-module_2"))) await openModule(p, "module_2");
   await waitFor(p, "!!document.querySelector('#m2_header') || !!document.querySelector('#m2-root .m2-banner.bad') || !!document.querySelector('#m2-root .m2-state')", 60000, "module 2 content");
+  await idle(p);
+}
+// Module 1 (Business Performance): KPI tiles, the four chart pages, rep locks; no widget errors.
+const M1_PAGES = { geo: [2, 0], oos: [3, 0], shelf: [3, 0], trade: [2, 0] };
+const M1_REP = { geo: [0, 2], oos: [1, 2], shelf: [1, 2], trade: [1, 1] };
+// Records every welcome greeting shown from now on (the load can be quick on the synthetic data).
+async function watchWelcome(p) {
+  await evaluate(p, `(() => { window.__m1Welcome = []; if (window.__m1WelcomeObs) window.__m1WelcomeObs.disconnect();
+    const seen = () => { const w = document.querySelector('#m1-welcome'); if (w) { const t = w.innerText.replace(/\\s+/g, ' ').trim(); if (!window.__m1Welcome.includes(t)) window.__m1Welcome.push(t); } };
+    window.__m1WelcomeObs = new MutationObserver(seen); window.__m1WelcomeObs.observe(document.body, {childList: true, subtree: true, characterData: true}); return true; })()`);
+}
+// Filter pills: current values on the pills, a changed filter is highlighted with Reset, Reset restores defaults.
+async function filterPillChecks(p) {
+  const pill = (key) => txt(p, `#m1-pill-${key} > summary`);
+  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "date pill");
+  check("filters: one row of pills with the current values", /Last 13 weeks/.test(await pill("dates")) && /Channel\s*All/.test(await pill("channel")) && /Region\s*All/.test(await pill("region")) && /SKU\s*All \d+/.test(await pill("sku")) && !(await evaluate(p, "!!document.querySelector('#m1-reset')")), [await pill("dates"), await pill("channel"), await pill("sku")].join(" | "));
+  check("filters: options stay closed until a pill is opened", !(await evaluate(p, "[...document.querySelectorAll('#m1-root details.m1-pill')].some(d => d.open)")));
+  await click(p, "#m1-pill-sku > summary");
+  await waitFor(p, "document.querySelector('#m1-pill-sku')?.open && document.querySelector('#m1-pill-sku .m1-pop').checkVisibility()", 10000, "SKU options");
+  check("filters: SKU options list products under their category headings", (await evaluate(p, "document.querySelectorAll('#m1_sku .m1-sku-group').length")) >= 1);
+  await click(p, "#m1_sku_none");
+  await waitFor(p, "/SKU\\s*None/.test(document.querySelector('#m1-pill-sku > summary')?.innerText || '') && !!document.querySelector('#m1-reset')", 20000, "SKU cleared");
+  await idle(p);
+  check("filters: a changed pill is highlighted and Reset appears", await evaluate(p, "!!document.querySelector('#m1-pill-sku .m1-pill-val.set')") && /No SKU selected/.test(await txt(p, "#m1-kpis-wrap, #m1_kpis")));
+  await click(p, "#m1-reset");
+  await waitFor(p, "/SKU\\s*All \\d+/.test(document.querySelector('#m1-pill-sku > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "filters reset");
+  await idle(p);
+  check("filters: Reset restores every product and the KPIs", (await evaluate(p, "document.querySelectorAll('#m1-root .m1-kpi').length")) === 5);
+  await click(p, "#m1-pill-dates > summary");
+  await waitFor(p, "document.querySelector('#m1-pill-dates')?.open && document.querySelector('#m1-pill-dates .m1-pop').checkVisibility()", 10000, "date options");
+  await click(p, "#m1-pill-dates .m1-preset:nth-child(1)");
+  await waitFor(p, "/Last 4 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "4-week preset");
+  await idle(p);
+  check("filters: a date preset sets the range and highlights the pill", await evaluate(p, "!!document.querySelector('#m1-pill-dates .m1-pill-val.set') && !!document.querySelector('#m1-reset')"));
+  await click(p, "#m1-reset");
+  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset");
+  await idle(p);
+  // Every preset answers, including one that covers the same weeks as the current range.
+  await click(p, "#m1-pill-dates > summary");
+  await waitFor(p, "document.querySelector('#m1-pill-dates')?.open", 10000, "date options again");
+  await click(p, "#m1-pill-dates .m1-preset:nth-child(3)");
+  await waitFor(p, "/Quarter to date/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "quarter-to-date preset");
+  await idle(p);
+  check("filters: Quarter to date is shown as chosen (even where it covers the last 13 weeks)", await evaluate(p, "document.querySelector('#m1-pill-dates .m1-preset.on')?.innerText === 'Quarter to date' && !!document.querySelector('#m1-reset')"));
+  await click(p, "#m1-reset");
+  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset again");
+  await idle(p);
+}
+// KPI cards: compact; the selected card's trend (with target), notes and collapsed calculation open below.
+async function kpiDetailChecks(p) {
+  const detailReady = (title) => `/${title}/.test(document.querySelector('#m1-kpi-detail h2')?.innerText || '') && (!!document.querySelector('#m1-kpi-detail .js-plotly-plot') || /No trend/.test(document.querySelector('#m1-kpi-detail')?.innerText || ''))`;
+  await waitFor(p, detailReady("MSL Compliance"), 30000, "KPI detail");
+  await idle(p);
+  check("KPI cards: the first card is selected and its trend shows below with the team target line", (await evaluate(p, "document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'true'")) && (await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || (g.layout.shapes || []).some(s => s.type === 'line'); })()")) && /Team target ≥ 90%|No trend/.test(await txt(p, "#m1-kpi-detail")));
+  check("KPI cards: no small print or calculation inside the cards", !/How it's calculated|coverage|not market share|known SKU-days/i.test(await txt(p, "#m1-kpis")), await txt(p, "#m1-kpis"));
+  check("KPI detail: notes below the chart, calculation collapsed", /team display target/.test(await txt(p, "#m1-kpi-detail .m1-notes")) && !(await evaluate(p, "document.querySelector('#m1-kpi-how').open")));
+  await click(p, "#m1-kpi-how > summary");
+  check("KPI detail: the calculation opens on request", await evaluate(p, "document.querySelector('#m1-kpi-how').open") && /Formula/.test(await txt(p, "#m1-kpi-how")));
+  await click(p, "#m1-kpi-oos");
+  await waitFor(p, detailReady("Reported OOS Rate"), 30000, "OOS detail");
+  await idle(p);
+  check("KPI cards: selecting another card shows its trend instead", (await evaluate(p, "document.querySelector('#m1-kpi-oos').getAttribute('aria-pressed') === 'true' && document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'false'")) && /Team target ≤ 5%|No trend/.test(await txt(p, "#m1-kpi-detail")));
+  await click(p, "#m1-kpi-msl");
+  await waitFor(p, detailReady("MSL Compliance"), 30000, "MSL detail again");
+  await idle(p);
+  // MSL products pill narrows the products the page counts.
+  const skus = async () => Number(((await txt(p, "#m1_filter_summary")).match(/(\d+) SKUs/) || [])[1]);
+  const before = await skus();
+  await click(p, "#m1-pill-msl > summary");
+  await waitFor(p, "document.querySelector('#m1-pill-msl')?.open", 10000, "MSL options");
+  await click(p, "#m1_msl input[value='msl']");
+  await waitFor(p, "/MSL only/.test(document.querySelector('#m1-pill-msl > summary')?.innerText || '') && !!document.querySelector('#m1-reset')", 20000, "MSL only");
+  await idle(p);
+  const after = await skus();
+  check("filters: MSL only is highlighted and counts only must-stock products", (await evaluate(p, "!!document.querySelector('#m1-pill-msl .m1-pill-val.set')")) && after > 0 && after <= before, `${before} -> ${after}`);
+  await click(p, "#m1-reset");
+  await waitFor(p, "/Products\\s*All/.test(document.querySelector('#m1-pill-msl > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "MSL reset");
+  await idle(p);
+}
+async function moduleOneReady(p) {
+  await waitFor(p, "!!document.querySelector('#m1-kpis') || !!document.querySelector('#m1-unavailable')", 120000, "module 1 content");
+  await idle(p);
+}
+async function moduleOneChecks(p, tag, stores, manager) {
+  await openModule(p, "module_1");
+  await moduleOneReady(p);
+  const head = await txt(p, "#shell-panel-module_1 .ws-pagehead");
+  check(`${tag}: Business Performance reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Reported data only/.test(head) && head.includes(manager ? "Regional manager view" : "Field sales rep view"), head);
+  check(`${tag}: five KPI tiles`, (await evaluate(p, "document.querySelectorAll('#m1-kpis .m1-kpi').length")) === 5);
+  check(`${tag}: Module 1 pages listed under Business Performance`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_1'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "overview,geo,oos,shelf,trade");
+  const counts = {};
+  for (const [page, [plots, locked]] of Object.entries(manager ? M1_PAGES : M1_REP)) {
+    await evaluate(p, `m1Go('${page}') || true`);
+    const pane = `document.querySelector("#m1-root .tab-pane[data-value='${page}']")`;
+    await soft(p, `${pane}?.classList.contains('active') && ${pane}.querySelectorAll('.js-plotly-plot, .m1-locked, .m1-state').length >= ${plots + locked}`, 60000, "module 1 " + page);
+    await idle(p);
+    counts[page] = await evaluate(p, `[${pane}.querySelectorAll('.js-plotly-plot').length, ${pane}.querySelectorAll('.m1-locked').length]`);
+  }
+  check(`${tag}: every Module 1 chart renders (manager: 10) or is locked for the rep (3 shown, 7 locked)`, JSON.stringify(counts) === JSON.stringify(manager ? M1_PAGES : M1_REP), JSON.stringify(counts));
+  check(`${tag}: no Module 1 widget error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m1-root .shiny-output-error, #m1-root .m1-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
+  await evaluate(p, "m1Go('overview') || true");
   await idle(p);
 }
 async function ask(p, question) {
@@ -184,16 +287,22 @@ async function scenarioMain() {
   const p = await openPage({ name: "desktop", w: 1440, h: 900 });
   const login = await txt(p, "#shell-login");
   check("login: demo-only sign-in is stated", /Demo sign-in only/.test(login) && /not production authentication/.test(login), login);
-  check("login: lists the four modules by name, Modules 1 and 3 not in this build", /Business Performance\s*Module 1 · .*\(not in this build yet\)/.test(login) && /Stockout Risk\s*Module 2 · Predicted stockouts/.test(login) && /Negotiation Simulator\s*Module 3 · .*\(not in this build yet\)/.test(login) && /Commercial Copilot\s*Module 4 · Ask questions/.test(login) && !/Stockout Risk\s*Module 2[^\n]*not in this build/.test(login), login);
+  check("login: lists the four modules by name, only Module 3 not in this build", /Business Performance\s*Module 1 · Sales, distribution/.test(login) && !/Business Performance\s*Module 1[^\n]*not in this build/.test(login) && /Stockout Risk\s*Module 2 · Predicted stockouts/.test(login) && /Negotiation Simulator\s*Module 3 · .*\(not in this build yet\)/.test(login) && /Commercial Copilot\s*Module 4 · Ask questions/.test(login) && !/Stockout Risk\s*Module 2[^\n]*not in this build/.test(login), login);
   check("login: workspace hidden while signed out", !(await visible(p, "#shell-app")));
   await shot(p, "1-login");
 
+  await watchWelcome(p);
   await signIn(p, "manager", "demo:manager");
   const source = await evaluate(p, "({...document.querySelector('#shell-source').dataset})");
   check("shell: one shared source with as-of and release", source.ready === "yes" && source.asOf === EXPECT.asOf && source.release === EXPECT.artifact, JSON.stringify(source));
-  check("shell: Module 2 is the start module", (await evaluate(p, "document.querySelector(\"#shell-nav button[data-module='module_2']\").getAttribute('aria-current')")) === "page");
+  check("shell: Business Performance is the start module", (await evaluate(p, "document.querySelector(\"#shell-nav button[data-module='module_1']\").getAttribute('aria-current')")) === "page");
+  await moduleOneReady(p);
+  const greeted = await evaluate(p, "window.__m1Welcome || []");
+  check("start: a welcome greeting for the signed-in user is shown while Business Performance loads", greeted.some((g) => /(Good morning|Good afternoon|Good evening|Working late), Manager\b/.test(g) && /Getting your business performance ready/.test(g)), JSON.stringify(greeted).slice(0, 300));
+  check("start: the welcome makes way for the KPIs", !(await evaluate(p, "!!document.querySelector('#m1-welcome')")) && (await evaluate(p, "document.querySelectorAll('#m1-root .m1-kpi').length")) === 5);
+  await openModule(p, "module_2");
   const nav = await evaluate(p, "[...document.querySelectorAll('#shell-nav > button[data-module]')].map(b => ({key: b.dataset.module, text: b.innerText.replace(/\\s+/g, ' ').trim(), disabled: b.getAttribute('aria-disabled') === 'true'}))");
-  check("sidebar: four modules by functional name in order; Modules 1 and 3 kept but disabled", JSON.stringify(nav.map((n) => [n.key, n.disabled])) === JSON.stringify([["module_1", true], ["module_2", false], ["module_3", true], ["module_4", false]]) && /^Business Performance Module 1/.test(nav[0].text) && /^Stockout Risk Module 2/.test(nav[1].text) && /^Negotiation Simulator Module 3/.test(nav[2].text) && /^Commercial Copilot Module 4/.test(nav[3].text), JSON.stringify(nav));
+  check("sidebar: four modules by functional name in order; Module 3 kept but disabled", JSON.stringify(nav.map((n) => [n.key, n.disabled])) === JSON.stringify([["module_1", false], ["module_2", false], ["module_3", true], ["module_4", false]]) && /^Business Performance Module 1/.test(nav[0].text) && /^Stockout Risk Module 2/.test(nav[1].text) && /^Negotiation Simulator Module 3/.test(nav[2].text) && /^Commercial Copilot Module 4/.test(nav[3].text), JSON.stringify(nav));
   check("sidebar: the only module switcher (no top module bar), one sign-out", (await evaluate(p, "document.querySelectorAll('.shell-nav, #shell-bar').length")) === 0 && (await evaluate(p, "document.querySelectorAll('#m2_signout, #shell_signout').length")) === 1);
   check("sidebar: Module 2 pages listed under Stockout Risk", (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_2'] button[data-page]\")].filter(b => b.offsetParent !== null).map(b => b.dataset.page).join(',')")) === "overview,ranking,analytics");
   check("top bar: breadcrumb uses the module name", /Stockout Risk\s*\/\s*Overview/.test(await txt(p, "#m2-root .m2-crumb")), await txt(p, "#m2-root .m2-crumb"));
@@ -219,8 +328,9 @@ async function scenarioMain() {
   check("detail: MSL is the as-of store value", /MSL \(as of\)/.test(await evaluate(p, "(document.querySelector('#m2-sku-table, #m2-reported-table') || {innerText: ''}).innerText")) || /MSL/.test(detail));
   await click(p, "#m2_detail_tabs a[data-value='oos']");
   await waitFor(p, "!!document.querySelector('#m2-detail-oos-note')", 20000, "store OOS tab");
+  await soft(p, "/Days with data/.test(document.querySelector('#m2-root .tab-pane[data-value=oos]')?.innerText || '')", 20000, "store OOS table");
   const note = await txt(p, "#m2-detail-oos-note");
-  check("detail: absent days are not counted as unknown", /not counted as missing reports/.test(note) && /Days with data/.test(await evaluate(p, "document.querySelector('.tab-pane[data-value=oos]').innerText")), note);
+  check("detail: absent days are not counted as unknown", /not counted as missing reports/.test(note) && /Days with data/.test(await evaluate(p, "document.querySelector('#m2-root .tab-pane[data-value=oos]').innerText")), note);
   await shot(p, "3-module2-detail");
 
   // Analytics: MSL filter applies to bars, SKU choices and the drilldown alike; a bar click selects.
@@ -309,13 +419,39 @@ async function scenarioMain() {
   await predictionChecks(p, "rep A", EXPECT.rep, /Synthetic demo predictions/);
   await shot(p, "6-module4-rep");
 
+  // Business Performance: the rep's scope, rep view; then an identity switch clears it and loads the manager's.
+  await moduleOneChecks(p, "rep A", EXPECT.rep, false);
+  await shot(p, "7-module1-rep");
+  await watchWelcome(p);
+  await signIn(p, "manager", "demo:manager");
+  await moduleOneReady(p);
+  check("identity switch: Module 1 reloads for the new identity (welcome shown, not the rep's figures)", (await evaluate(p, "(window.__m1Welcome || []).some((g) => /, Manager\\b/.test(g))")) && !(await evaluate(p, "(window.__m1Welcome || []).some((g) => /Rep A/.test(g))")));
+  await moduleOneChecks(p, "manager", EXPECT.manager, true);
+  await filterPillChecks(p);
+  await kpiDetailChecks(p);
+  await idle(p);                                       // the page links re-render after each page change
+  await waitFor(p, "document.querySelector(\"#shell-nav .ws-subnav[data-module='module_1'] button[data-page='shelf']\")?.offsetParent !== null", 20000, "module 1 page link visible");
+  await click(p, "#shell-nav .ws-subnav[data-module='module_1'] button[data-page='shelf']");
+  await waitFor(p, "/Shelf/.test(document.querySelector('#m1_crumb')?.innerText || '')", 20000, "module 1 page link");
+  check("sidebar: Module 1 page links open the page", /Shelf execution/.test(await txt(p, "#m1_crumb")));
+  await shot(p, "8-module1-manager-shelf");
+
+  // One top bar across modules: Module 2's Copilot button and placeholder icons, then the user.
+  const barIcons = (root) => `[...document.querySelectorAll('${root} .ws-topbar .ws-icon-btn[aria-disabled="true"], ${root} .m2-topbar .m2-icon-btn[aria-disabled="true"]')].map(b => b.getAttribute('aria-label')).join('|')`;
+  const placeholders = "Messages — coming soon|Notifications — coming soon|Calendar — coming soon";
+  check("top bar: Module 1 has Module 2's message, notification and calendar icons", (await evaluate(p, barIcons("#m1-root"))) === placeholders);
+  await click(p, "#m1_open_copilot");
+  await waitFor(p, "document.querySelector('#shell-panel-module_4')?.offsetParent !== null", 20000, "copilot opened from Module 1");
+  check("top bar: Module 1's Copilot button opens the Commercial Copilot", await evaluate(p, "document.querySelector(\"#shell-nav button[data-module='module_4']\").getAttribute('aria-current') === 'page'"));
+  check("top bar: Module 4 has the same icons and no Copilot button of its own", (await evaluate(p, barIcons("#m4-root"))) === placeholders && !(await evaluate(p, "!!document.querySelector('#m4-root .ws-copilot')")));
+
   // Modules not in this build cannot be opened; the sidebar's one sign-out ends the session.
   await openModule(p, "module_2");
-  await click(p, "#shell-nav button[data-module='module_1']");
+  await click(p, "#shell-nav button[data-module='module_3']");
   await sleep(800);
-  check("sidebar: Business Performance (not in this build) does not open", await evaluate(p, "document.querySelector('#shell-panel-module_2')?.offsetParent !== null && document.querySelector(\"#shell-nav button[data-module='module_2']\").getAttribute('aria-current') === 'page' && !document.querySelector(\"#shell-nav button[data-module='module_1']\").hasAttribute('aria-current')"));
+  check("sidebar: Negotiation Simulator (not in this build) does not open", await evaluate(p, "document.querySelector('#shell-panel-module_2')?.offsetParent !== null && document.querySelector(\"#shell-nav button[data-module='module_2']\").getAttribute('aria-current') === 'page' && !document.querySelector(\"#shell-nav button[data-module='module_3']\").hasAttribute('aria-current')"));
   await signOut(p);
-  check("sidebar sign-out ends the session for both modules", !(await visible(p, "#shell-app")));
+  check("sidebar sign-out ends the session for every module", !(await visible(p, "#shell-app")));
 
   // Overview additions: the rep's visit plan, the manager's territory view, questions that open the Copilot.
   const a = await openPage({ name: "additions", w: 1440, h: 900 });
@@ -354,6 +490,10 @@ async function scenarioMain() {
     await shot(q, "module2");
     await openModule(q, "module_4");
     await shot(q, "module4");
+    await moduleOneChecks(q, `${vp.name} rep B`, null, false);
+    const m1over = await overflow(q);
+    check(`${vp.name}: Business Performance without horizontal page overflow`, m1over <= 1, `${m1over}px`);
+    await shot(q, "module1");
   }
 }
 
@@ -365,9 +505,13 @@ async function scenarioUnavailable() {
   check("unavailable: actionable shell alert", /unavailable/i.test(alert) && /SHARED_DATA_PUBLICATION/.test(alert) && /docs\/integrated-app\.md/.test(alert), alert);
   check("unavailable: source chip says unavailable", (await evaluate(p, "document.querySelector('#shell-source').dataset.ready")) === "no");
   check("unavailable: no path or credential in the alert", !/\/tmp|\/Users|password|postgresql:/.test(alert), alert);
+  await openModule(p, "module_2");
   await waitFor(p, "!!document.querySelector('#m2-root .m2-banner.bad')", 30000, "Module 2 unavailable banner");
   check("unavailable: Module 2 shows unavailable, not data", /Unavailable/.test(await txt(p, "#m2-root .m2-banner.bad")) && !(await evaluate(p, "!!document.querySelector('#m2-top10-table tr[data-open-store]')")));
   await shot(p, "1-module2");
+  await openModule(p, "module_1");
+  await moduleOneReady(p);
+  check("unavailable: Business Performance shows unavailable, not data", /unavailable/i.test(await txt(p, "#m1-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m1-kpis')")), await txt(p, "#m1-unavailable"));
   await openModule(p, "module_4");
   const status = await txt(p, "#m4-root .m4-status");
   check("unavailable: Module 4 data chip explains", /Shared business data unavailable/.test(status), status);
@@ -432,11 +576,14 @@ async function scenarioPg() {
   check("pg: rep A copilot answer in scope", out.table && out.provenance.includes(`your ${EXPECT.rep} assigned stores`), out.provenance);
   await predictionChecks(p, "pg rep A", EXPECT.rep, /Synthetic demo predictions/);
   await shot(p, "1-module4");
+  await moduleOneChecks(p, "pg rep A", EXPECT.rep, false);
+  await shot(p, "2-module1");
 }
 
 async function scenarioPgRevoked() {
   const p = await openPage({ name: "desktop", w: 1280, h: 860 });
   await signIn(p, "rep_a", "demo:rep-a");
+  await openModule(p, "module_2");
   await waitFor(p, "/No access/.test(document.querySelector('#m2-root')?.innerText || '')", 30000, "Module 2 no access");
   check("revoked: Module 2 shows no access and no rows", !(await evaluate(p, "!!document.querySelector('#m2-top10-table tr[data-open-store]')")));
   await openModule(p, "module_4");
@@ -446,6 +593,9 @@ async function scenarioPgRevoked() {
   await ask(p, STORED_Q);
   const ranking = await answered(p, STORED_Q, 60000);
   check("revoked: copilot refuses the ranking question", ranking.warn && !ranking.table && !ranking.note, ranking.text.slice(0, 200));
+  await openModule(p, "module_1");
+  await moduleOneReady(p);
+  check("revoked: Business Performance shows no data scope and no KPIs", /no data scope/.test(await txt(p, "#m1-unavailable")) && !(await evaluate(p, "!!document.querySelector('#m1-kpis')")), await txt(p, "#m1-unavailable"));
   await signIn(p, "manager", "demo:manager");
   await moduleTwoChecks(p, "revoked: manager unaffected", EXPECT.manager);
   await shot(p, "1-manager");

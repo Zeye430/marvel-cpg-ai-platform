@@ -1,0 +1,154 @@
+/* Module 1 (Business Performance) on the shared workspace design: tokens and .ws components come from
+   shared/assets/ui_kit.css; only Module 1's own layout is defined here, scoped under .m1. */
+.m1 .tab-content, .m1 .tab-pane, .m1 .shiny-html-output { min-width: 0; max-width: 100%; }
+
+/* ---------- Filter pills: one row, kept below the top bar while the page scrolls ---------- */
+.m1 .m1-fbar { position: sticky; top: 64px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 -24px 16px; padding: 10px 24px; background: var(--ws-canvas); border-bottom: 1px solid var(--ws-rule-strong); }
+.m1 details.m1-pill { position: relative; }
+.m1 .m1-pill-face { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 999px;
+  background: var(--ws-surface); border: 1px solid var(--ws-rule-strong); font-size: 13px; color: var(--ws-ink-2);
+  white-space: nowrap; cursor: pointer; list-style: none; user-select: none; }
+.m1 .m1-pill-face::-webkit-details-marker { display: none; }
+.m1 .m1-pill-face:hover { background: var(--ws-raised); }
+.m1 .m1-pill-face .shiny-html-output { display: inline-flex; align-items: center; gap: 6px; }
+.m1 .m1-pill-key, .m1 .m1-pill-extra, .m1 .m1-caret { color: var(--ws-ink-3); }
+.m1 .m1-pill-val { font-weight: 600; color: var(--ws-ink); }
+.m1 details.m1-pill:has(.m1-pill-val.set) > .m1-pill-face { background: var(--ws-red-soft); border-color: var(--ws-red-line); }
+.m1 .m1-pill-val.set { color: var(--ws-red-dark); }
+.m1 details.m1-pill[open] > .m1-pill-face { border-color: var(--ws-red); box-shadow: 0 0 0 3px rgba(180, 24, 36, .12); }
+.m1 .m1-pop { position: absolute; top: calc(100% + 8px); left: 0; z-index: 6; width: 300px; max-width: calc(100vw - 32px);
+  background: var(--ws-surface); border: 1px solid var(--ws-rule-strong); border-radius: 12px; padding: 14px;
+  box-shadow: 0 14px 36px rgba(33, 27, 28, .18); }
+.m1 #m1-pill-sku .m1-pop { width: 360px; }
+.m1 .m1-pop-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--ws-ink); }
+.m1 .m1-pop .shiny-input-container { width: 100%; margin: 0; }
+.m1 .m1-pop .shiny-options-group { display: flex; flex-direction: column; gap: 2px; }
+.m1 .m1-pop .checkbox { margin: 0; }
+.m1 .m1-pop .checkbox label { display: flex; gap: 8px; align-items: center; padding: 5px 4px; margin: 0; border-radius: 6px;
+  font-size: 13px; font-weight: 500; color: var(--ws-ink); cursor: pointer; }
+.m1 .m1-pop .checkbox label:hover { background: var(--ws-raised); }
+.m1 .m1-pop input[type="checkbox"] { accent-color: var(--ws-red); width: 15px; height: 15px; margin: 0; }
+.m1 .m1-presets { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.m1 .m1-preset { text-align: left; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; font: inherit;
+  font-size: 13px; color: var(--ws-ink); cursor: pointer; }
+.m1 .m1-preset:hover { background: var(--ws-raised); }
+.m1 .m1-preset.on { background: var(--ws-red-soft); color: var(--ws-red-dark); font-weight: 600; }
+.m1 #m1-pill-dates .m1-pop { width: 320px; }
+.m1 #m1-pill-dates .m1-pop label { font-size: 12px; }
+.m1 .m1-sku-search { height: 34px; font-size: 13px; margin-bottom: 8px; }
+.m1 .m1-sku-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+.m1 .m1-sku-actions { display: flex; gap: 6px; align-items: center; color: var(--ws-ink-3); }
+.m1 .m1-sku-actions a { color: var(--ws-red-dark); font-weight: 600; text-decoration: none; }
+.m1 .m1-sku-list { max-height: 320px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.m1 .m1-sku-group { margin: 10px 4px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ws-ink-3); }
+.m1 .m1-sku-group:first-child { margin-top: 0; }
+.m1 .m1-fsum { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
+.m1 .m1-reset { border: 0; background: none; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--ws-red-dark);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.m1 .m1-fnote { font-size: 12px; color: var(--ws-ink-3); white-space: nowrap; }
+.m1 .m1-fnote b { color: var(--ws-ink-2); font-weight: 600; }
+
+/* ---------- Welcome while the first load runs ---------- */
+.m1 .m1-welcome { padding: 40px 8px 8px; max-width: 1180px; }
+.m1 .m1-welcome-day { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ws-red-dark); letter-spacing: .02em; }
+.m1 .m1-welcome-title { margin: 0 0 8px; font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em; color: var(--ws-ink);
+  animation: m1-rise .5s ease-out both; }
+.m1 .m1-welcome-sub { margin: 0 0 18px; font-size: 15px; color: var(--ws-ink-2); animation: m1-rise .5s .08s ease-out both; }
+.m1 .m1-welcome-note { margin: 10px 0 24px; font-size: 12.5px; color: var(--ws-ink-3); }
+.m1 .m1-progress { position: relative; height: 4px; max-width: 420px; border-radius: 4px; background: var(--ws-raised); overflow: hidden; }
+.m1 .m1-progress-bar { position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 4px; background: var(--ws-red);
+  animation: m1-slide 1.4s ease-in-out infinite; }
+.m1 .m1-skeleton { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.m1 .m1-skel-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--ws-surface);
+  border: 1px solid var(--ws-rule); }
+.m1 .m1-skel-line { display: block; height: 10px; width: 80%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--ws-raised) 0%, #fbf8f8 50%, var(--ws-raised) 100%); background-size: 200% 100%;
+  animation: m1-shimmer 1.6s linear infinite; }
+.m1 .m1-skel-line.short { width: 50%; }
+.m1 .m1-skel-line.big { height: 22px; width: 60%; }
+@keyframes m1-slide { 0% { left: -35%; } 100% { left: 100%; } }
+@keyframes m1-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes m1-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .m1 .m1-progress-bar, .m1 .m1-skel-line, .m1 .m1-welcome-title, .m1 .m1-welcome-sub { animation: none; }
+  .m1 .m1-progress-bar { left: 0; width: 100%; opacity: .5; }
+}
+
+/* ---------- KPI cards: value, change, target; the selected card's detail opens below ---------- */
+.m1 .m1-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+.m1 .m1-kpi { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; text-align: left;
+  background: var(--ws-surface); border: 1px solid var(--ws-rule-strong); border-radius: 12px; padding: 16px 18px;
+  font: inherit; color: var(--ws-ink); cursor: pointer; box-shadow: 0 1px 2px rgba(33, 27, 28, .04);
+  transition: border-color .15s, box-shadow .15s; }
+.m1 .m1-kpi:hover { border-color: var(--ws-red-line); }
+.m1 .m1-kpi.on { border-color: var(--ws-red); box-shadow: 0 0 0 3px rgba(180, 24, 36, .10); }
+.m1 .m1-kpi:focus-visible { outline: 3px solid var(--ws-red); outline-offset: 2px; }
+.m1 .m1-kpi-label { font-size: 13px; font-weight: 600; color: var(--ws-ink-2); }
+.m1 .m1-kpi-value { font-size: 30px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.m1 .m1-kpi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }
+.m1 .m1-kpi-foot .ws-pill { font-size: 11.5px; }
+.m1 .m1-kpi-target { display: inline-flex; align-items: center; gap: 5px; color: var(--ws-ink-3); white-space: nowrap; }
+.m1 .m1-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.m1 .m1-dot.ok { background: var(--ws-ok); }
+.m1 .m1-dot.bad { background: var(--ws-red); }
+.m1 .ws-pill.ok { border-color: #bfe0cd; background: var(--ws-ok-soft); color: var(--ws-ok); }
+.m1 .m1-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.m1 .m1-kpi-detail { margin-bottom: 16px; }
+.m1 .m1-detail-head { align-items: flex-start; }
+.m1 .m1-detail-head > div:first-child { flex: 1 1 360px; min-width: 0; }
+.m1 .m1-detail-figures { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.m1 .m1-detail-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.m1 .m1-notes { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--ws-ink-2); }
+.m1 details.m1-how { margin-top: 12px; }
+.m1 details.m1-how dl { margin: 8px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 13px; }
+.m1 details.m1-how dt { font-weight: 600; color: var(--ws-ink-2); }
+.m1 details.m1-how dd { margin: 0; color: var(--ws-ink-3); overflow-wrap: anywhere; }
+.m1 .m1-pop .radio { margin: 0; }
+.m1 .m1-pop .radio label { display: flex; gap: 8px; align-items: center; padding: 6px 4px; margin: 0; border-radius: 6px;
+  font-size: 13px; font-weight: 500; color: var(--ws-ink); cursor: pointer; }
+.m1 .m1-pop .radio label:hover { background: var(--ws-raised); }
+.m1 .m1-pop input[type="radio"] { accent-color: var(--ws-red); width: 15px; height: 15px; margin: 0; }
+.m1 .m1-pop-note { margin: 8px 0 0; font-size: 12px; }
+
+/* ---------- Charts ---------- */
+.m1 .m1-chart-head { margin-bottom: 6px; }
+.m1 .m1-chart-head > div:first-child { flex: 1 1 360px; min-width: 0; }
+.m1 .m1-logic { margin: 0; max-width: 900px; }
+.m1 .m1-toggle .shiny-input-container { margin: 0; width: auto; }
+.m1 .m1-toggle .shiny-options-group { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--ws-rule-strong); border-radius: 8px; overflow: hidden; }
+.m1 .m1-toggle label.radio-inline { position: relative; margin: 0; padding: 0; border-left: 1px solid var(--ws-rule-strong); }
+.m1 .m1-toggle label.radio-inline:first-child { border-left: 0; }
+.m1 .m1-toggle label.radio-inline input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.m1 .m1-toggle label.radio-inline span { display: inline-block; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--ws-ink-2); white-space: nowrap; }
+.m1 .m1-toggle label.radio-inline input:checked + span { background: var(--ws-red-soft); color: var(--ws-red-dark); font-weight: 600; }
+.m1 .m1-toggle label.radio-inline input:focus-visible + span { outline: 3px solid var(--ws-red); outline-offset: -3px; }
+.m1 .m1-chart { width: 100%; }
+.m1 .m1-caveat { margin: 6px 0 0; }
+.m1 .m1-locked { padding: 28px 20px; }
+.m1 .m1-locked strong { display: block; color: var(--ws-ink); margin-bottom: 4px; }
+.m1 .ws-state { margin: 4px 0; }
+
+@media (max-width: 1280px) {
+  .m1 .m1-kpis, .m1 .m1-skeleton { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .m1 .m1-kpis, .m1 .m1-skeleton { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .m1 .m1-fsum { margin-left: 0; width: 100%; }
+}
+@media (max-width: 640px) {
+  .m1 .m1-fbar { position: static; margin: 0 -16px 14px; padding: 8px 16px; }
+  .m1 .m1-pill-extra { display: none; }
+  /* On a phone the options open as a sheet from the bottom of the screen. */
+  .m1 .m1-pop, .m1 #m1-pill-sku .m1-pop, .m1 #m1-pill-dates .m1-pop { position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    width: auto; max-width: none; max-height: 75vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 16px 16px 24px;
+    box-shadow: 0 -12px 28px rgba(33, 27, 28, .18); }
+  .m1 .m1-pop .checkbox label, .m1 .m1-preset { min-height: 44px; }
+  .m1 .m1-welcome { padding-top: 20px; }
+  .m1 .m1-welcome-title { font-size: 26px; }
+}
+@media (max-width: 520px) {
+  .m1 .m1-kpis { grid-template-columns: 1fr 1fr; }
+  .m1 details.m1-how dl { grid-template-columns: 1fr; }
+  .m1 .m1-toggle label.radio-inline span { padding: 10px 12px; }
+}

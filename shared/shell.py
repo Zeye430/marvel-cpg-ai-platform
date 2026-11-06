@@ -12,7 +12,8 @@ own pages (``ModuleSpec.pages_nav``) are listed under it. Each module receives:
   principal's account scope from it.
 * ``auth_state``: per session. ``authenticated``, ``principal_id``, ``role``, ``name``
   and ``title`` are reactive; ``is_demo`` is always true; ``logout()`` ends the session
-  identity; ``navigate(key)`` switches the visible module (no data is passed along).
+  identity; ``navigate(key)`` switches the visible module (no data is passed along);
+  ``active_module()`` (reactive) is the visible module's key, so a module can load on first visit.
 
 DEMO ONLY: the sign-in buttons select fixed demo principals on the server. The
 browser only reports which button was pressed, never a principal, role or store.
@@ -238,6 +239,7 @@ def build_app(specs, runtime, *, title="Marvel CPG · Commercial workspace (demo
             "is_demo": lambda: True,
             "logout": logout,
             "navigate": navigate,
+            "active_module": lambda: active(),
         }
 
         for demo in DEMO_ACCOUNTS:

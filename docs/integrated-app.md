@@ -1,9 +1,9 @@
-# Integrated app: Stockout Risk and Commercial Copilot (local)
+# Integrated app: Business Performance, Stockout Risk and Commercial Copilot (local)
 
-`integrated_app.py` runs **Stockout Risk (Module 2)** and **Commercial Copilot (Module 4)** in one
-local Shiny app with a demo sign-in, one app sidebar for switching modules and one shared business
-source. **Business Performance (Module 1)** and **Negotiation Simulator (Module 3)** are listed in the
-sidebar but cannot be opened in this build: their code is not imported and the legacy CSV loader is
+`integrated_app.py` runs **Business Performance (Module 1)**, **Stockout Risk (Module 2)** and
+**Commercial Copilot (Module 4)** in one local Shiny app with a demo sign-in, one app sidebar for
+switching modules and one shared business source. **Negotiation Simulator (Module 3)** is listed in the
+sidebar but cannot be opened in this build: its code is not imported and the legacy CSV loader is
 never used.
 
 ## Run it
@@ -17,8 +17,10 @@ SHARED_DATA_PUBLICATION=<path to published/serving.json> \
 ```
 
 Open http://127.0.0.1:8000, choose a demo identity, and switch modules in the sidebar (or with the
-**Copilot** button in Stockout Risk's top bar). The active module's own pages (for Stockout Risk:
-Overview, Store ranking, Analytics) are listed under it. On a phone the sidebar opens from the
+**Copilot** button in the top bar of Business Performance and Stockout Risk). Business Performance opens first,
+with a welcome greeting while its data loads. The active module's own pages
+(for Stockout Risk: Overview, Store ranking, Analytics; for Business Performance: Overview, Geography &
+flow, Out-of-stock, Shelf execution, Trade terms) are listed under it. On a phone the sidebar opens from the
 button at the top left. Without any setting, the app looks for the default
 local delivery pointer `outputs/v3/platform/delivery/serving/published/serving.json`.
 
@@ -101,6 +103,32 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
   the publication's selected scoring run, the copilot says the predictions are unavailable (not zero
   risk) and business-data questions keep working.
 
+## Business Performance (Module 1)
+
+- **Content.** The dashboard's five KPI tiles (MSL compliance, reported out-of-stock rate, sell-in vs
+  sell-out gap, audited SKU shelf allocation, planogram compliance), its filters and its ten charts. The
+  filters are one row of pills (date range with presets, snapped to full weeks; channel; region; product
+  SKU with search): each pill shows its current value, a changed filter is highlighted and "Reset filters"
+  restores the defaults (last 13 weeks, everything selected). The charts: state execution map and sell-in/sell-out
+  flow (Geography & flow); stock heatmap, lost-sales heuristic trend and out-of-stock duration
+  (Out-of-stock); planogram/MSL by brand, shelf allocation vs invoiced sales and the execution scorecard
+  (Shelf execution); discount vs margin and trade-off evidence (Trade terms). The regional manager sees
+  all ten; a field rep sees the heatmap, brand compliance and discount charts for their stores, and the
+  others say they belong to the manager view.
+- **Data.** Read only from the shared publication's Reported views (`stores`, `products`, `store_day`,
+  `store_sku_daily`, `commercial_period`, `execution_visits`, `sell_in_events`, `negotiation_context`),
+  limited to the signed-in identity's stores. Business Performance opens after sign-in and builds a
+  complete copy of those stores' rows in the background, showing a welcome greeting (by the browser's
+  local time of day) until the KPIs are ready; Stockout Risk and the copilot stay usable meanwhile. A copy too large for the row budget shows "unavailable" instead of partial figures.
+  KPIs aggregate the shared numerator and denominator components; unknown values stay N/A, never zero.
+  The gap KPI compares complete biweekly periods inside the selected range (shown on the tile) and says
+  that invoice completeness is unconfirmed. Tile targets are team display targets, not client-approved
+  thresholds; the shelf tile is allocation among the supplied SKUs, not competitor shelf share.
+- **Charts** use the workspace palette and the local plotly.js. The US state map's outline data is bundled
+  (`modules/module_1/assets/geo`), so no page requests anything outside the app. A chart that cannot be
+  drawn shows a message; no value that cannot be encoded reaches the browser.
+- The legacy root `app.py` no longer renders Module 1: its tab points to this app.
+
 ## Current limits
 
 - The copilot answers from the shared business views (sales, stock, shelf audits, deliveries,
@@ -114,13 +142,16 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
 - Module 2's overview questions and its "Ask Copilot about this store" button pass a question to the copilot.
   Switching modules from the sidebar carries no context.
 - Copilot conversations last for the browser session; they are not saved.
-- The same shell (`shared/shell.py`) is meant to host Modules 1 and 3 once they read the shared
-  publication; until then use the root `app.py` for those modules.
+- The same shell (`shared/shell.py`) is meant to host Module 3 once it reads the shared publication;
+  until then use the root `app.py` for that module.
+- Business Performance keeps one copy of the scoped data per recently signed-in identity (at most three)
+  in the app process; it is rebuilt after a restart or an account-scope change.
 
 ## Tests
 
 ```bash
-python -m unittest tests.test_integrated_app tests.test_module2_review_fixes tests.test_module4_predictions
+python -m unittest tests.test_integrated_app tests.test_module1_shared tests.test_module1_render \
+  tests.test_module2_review_fixes tests.test_module4_predictions
 # With the disposable local PostgreSQL test server (compose.postgres-test.yml):
 SHARED_POSTGRES_REQUIRE_TEST_DB=1 python -m unittest tests.test_integrated_postgres
 # Browser smoke (headless Chrome + Node, synthetic data, deterministic model stub):

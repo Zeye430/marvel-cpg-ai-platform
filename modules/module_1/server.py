@@ -1,935 +1,1118 @@
 """
 modules/module_1/server.py
 ==========================
-Reactive business logic, KPI calculations, and Plotly visual renderers
-for Module 1: Commercial Execution Analytics Dashboard.
+Server logic for Module 1: Business Performance (Commercial Execution Analytics): the five KPI
+cards (the selected one's weekly trend with its team target, notes and calculation below them)
+and ten Plotly charts.
+
+Data comes only from the shared business publication pinned by the app runtime
+(modules/module_1/data.py), restricted to the signed-in principal's account scope and loaded
+on the first visit to the module, in a background task. Values are Reported data; unknown
+inputs stay Unknown/N/A, and heuristics or unapproved rules are labelled as such instead of
+being shown as measured results or approvals. Seven charts are for the regional manager view;
+a field rep sees the heatmap, the brand compliance bars and the discount scatter.
+
+Charts are rendered like Module 2's (Plotly JSON + the workspace's local plotly.js). Every
+figure is checked for strict JSON first: a NaN or infinite value can never reach the browser
+and close the session. A chart that fails shows a sanitized error card, never other data.
 """
 
-import warnings
+import asyncio
+import functools
+import json
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from htmltools import TagList, tags
 from shiny import reactive, render, req, ui
-from shinywidgets import render_widget
-from shared.data import CH, REG, COL, REP_PROFILES, MANAGER_PROFILE, scope_dataset
+
+from shared import ui_kit as kit
+from shared.chart_palette import CHART_COLORS, CHART_NEUTRAL
+
+from .data import PERIOD_TYPE, Filters
+from .ui import PAGE_ICONS, PAGES, TOPOJSON_URL
+
+HEATMAP_TOP_STORES = 25
+MODULE_KEY = "module_1"
+
+KPI_SPECS = {
+    "msl": {
+        "title": "MSL Compliance %",
+        "desc": "Share of assessable store-days where every applicable mandatory (is_msl) SKU had known positive inventory.",
+        "source": "store_day (all SKUs) or store_sku_daily (selected SKUs) · shared_kpi.v1",
+        "columns": "msl_compliant_store_count, msl_assessable_store_count, msl_eligible_store_count",
+        "formula": "100 × SUM(compliant store-days) / SUM(assessable store-days)",
+        "logic": "Noncompliant if any applicable MSL SKU is known at zero; Compliant if all are known positive; "
+                 "otherwise Unknown (not a failure). No applicable MSL SKU = N/A. Summed over dates: store-days.",
+    },
+    "oos": {
+        "title": "Reported OOS Rate %",
+        "desc": "Share of store-SKU-days with known inventory that were at zero (Reported Data Only).",
+        "source": "store_day (all SKUs) or store_sku_daily (selected SKUs) · shared_kpi.v1",
+        "columns": "oos_sku_count, known_inventory_sku_count, observed_inventory_sku_count, expected_sku_count",
+        "formula": "100 × SUM(oos_sku_count) / SUM(known_inventory_sku_count)",
+        "logic": "Unknown inventory is excluded from the denominator and shown as reporting coverage; it is never "
+                 "treated as in stock.",
+    },
+    "gap": {
+        "title": "Sell-in vs Sell-out Gap %",
+        "desc": "Invoiced units versus consumer sell-out units over complete aligned periods.",
+        "source": f"commercial_period · period_type={PERIOD_TYPE}, alignment_basis=event_date · shared_kpi.v1",
+        "columns": "comparable_gap_units, comparable_sell_out_units, flow_is_comparable, period_is_complete",
+        "formula": "100 × SUM(comparable_gap_units) / SUM(comparable_sell_out_units)",
+        "logic": "Only complete periods fully inside the date range and rows where both flows are known. A missing "
+                 "invoice is not zero while invoice-extract completeness is unconfirmed. Zero sell-out gives N/A.",
+    },
+    "shelf": {
+        "title": "Audited SKU Shelf Allocation %",
+        "desc": "Shelf allocation of the selected SKUs within audited category visits; not Marvel vs competitor share.",
+        "source": "execution_visits · scope_label = Individual audited SKU · shared_kpi.v1",
+        "columns": "shelf_allocation_pct per store × audit date × category visit",
+        "formula": "Sum the selected SKUs' allocation in each visit, then average across those visits",
+        "logic": "Supplied SKUs of a category sum to ~100% by construction, so selecting every SKU gives ~100%. "
+                 "The competitor shelf universe is not in the data; no market-share target is applied.",
+    },
+    "plano": {
+        "title": "Planogram Compliance %",
+        "desc": "Share of audited SKU rows compliant with the planogram.",
+        "source": "execution_visits · scope_label = Individual audited SKU · shared_kpi.v1",
+        "columns": "compliant_audit_row_count, audited_row_count",
+        "formula": "100 × SUM(compliant_audit_row_count) / SUM(audited_row_count)",
+        "logic": "Actual audit rows only; a day without an audit is not noncompliance.",
+    },
+}
+
+PAGE_HEADS = {
+    "overview": ("Business performance", None),
+    "geo": ("Commercial strategy & geospatial execution",
+            "For regional managers and commercial operations: territory health by state and how channel sell-in "
+            "compares with store sell-out."),
+    "oos": ("Out-of-stock & supply chain insights",
+            "For field sales reps and regional operations: mandatory MSL items, current stockouts and a labelled "
+            "lost-sales heuristic."),
+    "shelf": ("Shelf execution & compliance",
+              "For field sales reps and regional managers: planogram compliance, MSL availability and shelf "
+              "allocation."),
+    "trade": ("Trade terms & commercial guardrails",
+              "For field sales reps and regional managers: reported discounts against source guardrail references "
+              "(Requires review) and the audit evidence behind execution trade-offs."),
+}
 
 
-def module_1_server(input, output, session, dataset: dict, auth_state: dict):
-    """Executes all reactive filters, KPI aggregations, and Plotly charts for Module 1."""
-    prods = dataset["prods"]
-    stores = dataset["stores"]
-    guardrails = dataset["guardrails"]
-    so_raw = dataset["so_raw"]
-    si_raw = dataset["si_raw"]
-    au_raw = dataset["au_raw"]
-    MIN_DATE = dataset["min_date"]
-    MAX_DATE = dataset["max_date"]
+# ------------------------------------------------------------------ chart plumbing
 
-    active_role = auth_state["role"]
-    active_rep = auth_state["rep"]
-    active_name = auth_state["name"]
-    active_title = auth_state["title"]
+class NonFiniteChart(ValueError):
+    """A figure still carries NaN/Infinity after encoding (never sent to the browser)."""
 
-    # ---------- PRODUCT SKU SELECT / DESELECT ACTIONS ----------
+
+def _reject(token):
+    raise NonFiniteChart(f"non-finite value {token} in chart data")
+
+
+def figure_json(fig):
+    """Plotly's encoder writes NaN as null; anything non-finite left is rejected before sending."""
+    payload = fig.to_json()
+    json.loads(payload, parse_constant=_reject)
+    return payload
+
+
+def chart_layout(fig, height):
+    kit.chart_layout(fig, height)
+    # The legend sits above the plot, so long axis labels never run into it.
+    fig.update_layout(margin=dict(l=16, r=16, t=40, b=16), plot_bgcolor="rgba(0,0,0,0)",
+                      legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0, title=None, font=dict(size=12)),
+                      hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_family=kit.FONT_STACK,
+                                      bordercolor="#dfd4d4"))
+    fig.update_xaxes(gridcolor="#ece4e4", zerolinecolor="#dfd4d4", automargin=True)
+    fig.update_yaxes(gridcolor="#ece4e4", zerolinecolor="#dfd4d4", automargin=True)
+    return fig
+
+
+def plot(fig, element_id, label, height, layout=None):
+    """One validated Plotly figure as HTML for the workspace's local plotly.js (``layout``: chart overrides)."""
+    chart_layout(fig, height)
+    if layout:
+        fig.update_layout(**layout)
+    payload = figure_json(fig)
+    config = json.dumps({"displayModeBar": False, "responsive": True, "topojsonURL": TOPOJSON_URL})
+    script = (f"(function(){{var f={payload};var el=document.getElementById('{element_id}');"
+              f"if(el&&window.Plotly){{Plotly.newPlot(el,f.data,f.layout,{config});}}}})();")
+    return ui.HTML(f'<div class="m1-chart" role="img" aria-label="{label}">'
+                   f'<div id="{element_id}" style="height:{height}px"></div><script>{script}</script></div>')
+
+
+def palette(names):
+    """Fixed slot per entity (the scope's full sorted list), so a filter never repaints survivors."""
+    return {name: CHART_COLORS[i] if i < len(CHART_COLORS) else CHART_NEUTRAL for i, name in enumerate(names)}
+
+
+def _rgba(hex_color, alpha):
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+@dataclass
+class Chart:
+    fig: object = None
+    note: str = ""
+    height: int = 420
+    empty: tuple = None          # (title, text) when there is nothing to draw
+    layout: dict = None          # applied after the shared chart layout
+
+
+def wrap(text, width=26):
+    """Line breaks for a long category label (Plotly does not wrap tick text)."""
+    lines, line = [], ""
+    for word in str(text).split():
+        if line and len(line) + len(word) + 1 > width:
+            lines.append(line)
+            line = word
+        else:
+            line = f"{line} {word}".strip()
+    return "<br>".join(lines + [line])
+
+
+def _fmt(value, pattern="{:.1f}%"):
+    return "N/A" if value is None or pd.isna(value) else pattern.format(value)
+
+
+def state(title, text, kind="info"):
+    return tags.div(tags.strong(title), tags.div(text), class_=f"ws-state m1-state {kind}", role="status")
+
+
+# ---------------------------------------------------------------- filter pills and the welcome screen
+DATE_PRESETS = {"4w": "Last 4 weeks", "13w": "Last 13 weeks", "qtd": "Quarter to date", "ytd": "Year to date",
+                "all": "All data"}
+DEFAULT_PRESET = "13w"
+MSL_OPTIONS = {"all": "All products", "msl": "MSL products only", "non": "Non-MSL products only"}
+MSL_PILL = {"all": "All", "msl": "MSL only", "non": "Non-MSL only"}
+
+
+def snap(a, b, first, last):
+    """Whole weeks (Monday to Sunday) covering a..b, within the data's first and last day."""
+    a, b, first, last = (pd.Timestamp(x) for x in (a, b, first, last))
+    if a > b:
+        a, b = b, a
+    return max(a - pd.Timedelta(days=a.dayofweek), first), min(b + pd.Timedelta(days=6 - b.dayofweek), last)
+
+
+def preset_start(key, first, last):
+    """The first day a date preset asks for, counted back from the data's last day."""
+    first, last = pd.Timestamp(first), pd.Timestamp(last)
+    start = {"4w": last - pd.Timedelta(days=27), "13w": last - pd.Timedelta(days=90),
+             "qtd": last.to_period("Q").start_time, "ytd": pd.Timestamp(last.year, 1, 1), "all": first}[key]
+    return max(first, start)
+
+
+def matching_preset(span_, first, last, chosen=None):
+    """The preset whose snapped span is ``span_``, or None (a custom range). Presets can cover the same
+    weeks (data ending on a quarter's last day: quarter to date = last 13 weeks); the one the user
+    ``chosen`` is named then."""
+    if chosen in DATE_PRESETS and snap(preset_start(chosen, first, last), last, first, last) == tuple(span_):
+        return chosen
+    for key in DATE_PRESETS:
+        if snap(preset_start(key, first, last), last, first, last) == tuple(span_):
+            return key
+    return None
+
+
+def choice_label(selected, names, empty_means_all=True):
+    """(pill value, changed): "All", one name, "k of n" or "None"; changed = narrower than everything."""
+    selected = [s for s in selected or () if s in names]
+    if not selected:
+        return ("All", False) if empty_means_all else ("None", True)
+    if len(selected) == len(names):
+        return ("All" if empty_means_all else f"All {len(names)}"), False
+    if len(selected) == 1:
+        return names[selected[0]], True
+    return f"{len(selected)} of {len(names)}", True
+
+
+def sku_choices(info):
+    """SKU checkbox labels in category order; the category is carried for the list's group headings."""
+    names, categories = info.get("product_names") or {}, info.get("product_categories") or {}
+    return {sku: tags.span(names.get(sku, label), **{"data-category": categories.get(sku, "")})
+            for sku, label in info["products"].items()}
+
+
+def greeting(hour):
+    """A time-of-day greeting from the browser's local hour (None: no clock received)."""
+    if hour is None:
+        return "Welcome"
+    if 5 <= hour < 12:
+        return "Good morning"
+    if 12 <= hour < 17:
+        return "Good afternoon"
+    if 17 <= hour < 23:
+        return "Good evening"
+    return "Working late"
+
+
+def display_name(name):
+    return (name or "").replace("(demo)", "").strip()
+
+
+def welcome(name, clock=None, stores=None, as_of=None):
+    """Shown while the first load runs: who it is for, what is being prepared, and that it is still working."""
+    clock = clock if isinstance(clock, dict) else {}
+    hour = clock.get("hour")
+    who = display_name(name)
+    title = f"{greeting(hour if isinstance(hour, int) else None)}{', ' + who if who else ''}"
+    detail = ["Getting your business performance ready"]
+    if stores:
+        detail.append(f" for {stores} stores")
+    if as_of:
+        detail.append(f", with data through {as_of}")
+    return tags.section(
+        tags.p(clock.get("day") or "", class_="m1-welcome-day") if clock.get("day") else None,
+        tags.h1(title, class_="m1-welcome-title"),
+        tags.p("".join(detail) + ".", class_="m1-welcome-sub"),
+        tags.div(tags.span(class_="m1-progress-bar"), class_="m1-progress", role="progressbar",
+                 **{"aria-label": "Loading business performance"}),
+        tags.p("The first visit takes a few seconds. Stockout Risk and the Copilot are ready in the sidebar "
+               "meanwhile.", class_="m1-welcome-note"),
+        tags.div(*[tags.div(tags.span(class_="m1-skel-line short"), tags.span(class_="m1-skel-line big"),
+                            tags.span(class_="m1-skel-line"), class_="m1-skel-card") for _ in range(5)],
+                 class_="m1-skeleton", **{"aria-hidden": "true"}),
+        class_="m1-welcome", id="m1-welcome", role="status", **{"aria-live": "polite"})
+
+
+def locked(title):
+    return tags.div(tags.strong("Regional manager access required"),
+                    tags.span(f"{title} is part of the regional manager view. Field sales reps see the stock "
+                              "heatmap, brand compliance and discount charts for their assigned stores."),
+                    class_="ws-state m1-locked", role="note")
+
+
+def safe(function):
+    """Unexpected failures render a sanitized error state, never a stack trace or other data."""
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except Exception as error:  # noqa: BLE001 - deliberate UI boundary
+            if type(error).__name__ in ("SilentException", "SilentCancelOutputException"):
+                raise
+            return state("This section could not load", f"({type(error).__name__}). Change a filter or reload the "
+                         "page; other sections are not affected.", "bad")
+    return wrapper
+
+
+# ------------------------------------------------------------------ chart builders (pure: data -> Chart)
+
+def chart_heatmap(item, f, option, colors):
+    """Latest-day inventory heatmap; Unknown reports stay Unknown (never zero)."""
+    frame = item.latest_inventory(f, top=None if not item.manager else HEATMAP_TOP_STORES)
+    if frame.empty:
+        return Chart(empty=("No store-SKU rows", "No assortment rows match the selected filters and dates."))
+    latest = frame["date"].max()
+    pivot = frame.pivot_table(index="store_name", columns="product_name", values="inventory_observed",
+                              aggfunc="first", dropna=False)
+    status = frame.pivot_table(index="store_name", columns="product_name", values="inventory_data_status",
+                               aggfunc="first").reindex(index=pivot.index, columns=pivot.columns)
+    text = np.where(pivot.isna(), np.where(status.isna(), "", "Unknown"), pivot.round(0).astype("Int64").astype(str))
+    fig = go.Figure(go.Heatmap(
+        z=pivot.values, x=[c.replace("Marvel ", "") for c in pivot.columns], y=list(pivot.index), text=text,
+        texttemplate="%{text}", hovertemplate="%{y}<br>%{x}<br>Inventory: %{text}<extra></extra>",
+        colorscale=[[0.0, CHART_COLORS[7]], [0.12, CHART_COLORS[3]], [0.35, "#f3eded"], [1.0, CHART_COLORS[0]]],
+        colorbar=dict(title="On-hand units"), zmin=0, xgap=1, ygap=1))
+    fig.update_xaxes(side="top", tickangle=-30, showgrid=False)
+    fig.update_yaxes(showgrid=False, autorange="reversed")
+    rule = f" Manager view: the {HEATMAP_TOP_STORES} stores with the most zero-stock SKUs." if item.manager and \
+        frame["store_name"].nunique() >= HEATMAP_TOP_STORES else ""
+    return Chart(fig, f"Reported inventory on {pd.Timestamp(latest):%b %d, %Y}; grey cells marked Unknown were not "
+                      f"reported that day (not zero stock).{rule}", max(460, min(720, len(pivot) * 24 + 150)),
+                 layout={"plot_bgcolor": "#e7e1e1"})
+
+
+def chart_lost_sales(item, f, option, colors):
+    """Heuristic exposure trend; not the shared missing-day estimator."""
+    group_by = option or "region"
+    frame = item.lost_sales_heuristic(f, group_by)
+    excluded = item.heuristic_excluded(f)
+    if frame.empty:
+        return Chart(empty=("No observed OOS days", "No observed zero-inventory days with an observed in-stock "
+                                                    "baseline in the selected scope."))
+    order = list(colors[group_by])
+    fig = px.area(frame, x="week", y="lost_value", color="grp", color_discrete_map=colors[group_by],
+                  category_orders={"grp": order},
+                  labels={"lost_value": "Heuristic exposure (static list price)", "week": "",
+                          "grp": group_by.capitalize()})
+    fig.update_traces(line=dict(width=2))
+    fig.update_yaxes(tickformat=",.0f")
+    return Chart(fig, "HEURISTIC: observed OOS days × observed in-stock average daily units × static list price "
+                      f"(no currency in the source). Not the shared missing-day estimate. {excluded:,} OOS SKU-days "
+                      "without an observed baseline are excluded, not estimated.", 440)
+
+
+def chart_duration(item, f, option, colors):
+    """Consecutive observed OOS days; a calendar gap or Unknown day ends an episode."""
+    group_col = option or "channel"
+    episodes = item.oos_episodes(f, group_col)
+    if episodes.empty:
+        return Chart(empty=("No observed OOS episodes", "No observed zero-inventory days in the selected period."))
+    key = "channel" if group_col == "channel" else "tier"
+    fig = px.box(episodes, x="grp", y="days", color="grp", points="outliers", color_discrete_map=colors[key],
+                 category_orders={"grp": list(colors[key])},
+                 labels={"days": "Consecutive observed OOS days per episode", "grp": ""})
+    fig.update_layout(showlegend=False)
+    return Chart(fig, "Episodes end at any missing or Unknown calendar day; episodes at the range edges are "
+                      "truncated.", 420)
+
+
+def chart_compliance(item, f, option, colors):
+    merged = item.execution_by_brand(f)
+    if merged.empty:
+        return Chart(empty=("No audits or MSL rows", "Nothing matches the selected filters."))
+    merged["brand_key"] = merged["category"] + " · " + merged["brand"]
+    melted = merged.melt(id_vars=["brand_key"], value_vars=["planogram_pct", "msl_availability_pct"],
+                         var_name="Metric", value_name="Percentage")
+    names = {"planogram_pct": "Planogram Compliance % (audited rows)",
+             "msl_availability_pct": "MSL SKU-day Availability % (observed)"}
+    melted["Metric"] = melted["Metric"].map(names)
+    melted = melted.dropna(subset=["Percentage"])
+    if melted.empty:
+        return Chart(empty=("No audited rows or MSL SKUs", "Every group is N/A for the selected filters."))
+    fig = px.bar(melted, y="brand_key", x="Percentage", color="Metric", barmode="group", orientation="h",
+                 text_auto=".1f", labels={"Percentage": "Rate (%)", "brand_key": ""},
+                 category_orders={"Metric": list(names.values())},
+                 color_discrete_map={names["planogram_pct"]: CHART_COLORS[0], names["msl_availability_pct"]: CHART_COLORS[1]})
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    for x, dash, text, anchor in ((85, "dash", "85% display target (team-set)", "left"),
+                                  (62, "dot", "Brief: 62% of stores comply", "right")):
+        fig.add_vline(x=x, line_dash=dash, line_color="#65595a", line_width=1.5)
+        fig.add_annotation(x=x, y=1, yref="paper", yanchor="bottom", xanchor=anchor, text=text, showarrow=False,
+                           xshift=4 if anchor == "left" else -4, font=dict(size=11, color="#4a3f40"))
+    fig.update_xaxes(range=[0, 108], ticksuffix="%")
+    return Chart(fig, "Missing bars = no audited rows or no MSL SKUs in that group (N/A, not zero). The 85% line is a "
+                      "team display target, not a client-approved threshold.",
+                 max(420, 80 + 44 * merged["brand_key"].nunique()),
+                 layout={"legend": {"y": 1.07}, "margin": {"t": 76}})   # reference labels between legend and bars
+
+
+def chart_bubble(item, f, option, colors):
+    frame = item.store_allocation_sales(f)
+    if frame.empty:
+        return Chart(empty=("No audited stores with invoices", "Nothing matches the selected filters."))
+    frame["bubble_size"] = frame["segment_tier"].map({"Tier 1": 26, "Tier 2": 16, "Tier 3": 10}).fillna(12).astype(float)
+    fig = px.scatter(frame, x="allocation", y="net_sales", size="bubble_size", color="channel",
+                     hover_name="store_name", color_discrete_map=colors["channel"],
+                     category_orders={"channel": list(colors["channel"])},
+                     hover_data={"segment_tier": True, "region": True, "visits": True, "allocation": ":.1f",
+                                 "net_sales": ":,.0f", "bubble_size": False},
+                     labels={"allocation": "Audited SKU shelf allocation % (per visit)",
+                             "net_sales": "Invoiced net sales (reported, no currency)", "channel": "Channel"})
+    fig.update_traces(marker=dict(line=dict(width=1.5, color="#ffffff"), opacity=0.85))
+    low, high = frame["allocation"].min(), frame["allocation"].max()
+    if high - low < 2:                 # all SKUs selected: ~100% by construction; keep readable ticks
+        middle = (high + low) / 2
+        fig.update_xaxes(range=[middle - 1, middle + 1])
+    fig.update_xaxes(ticksuffix="%", tickformat=".1f")
+    fig.update_yaxes(tickformat=",.0f")
+    return Chart(fig, "Allocation is within audited category visits (not market share); no shelf-share target "
+                      "applies. Bubble size = segment tier (Tier 1 largest). An association, not an effect.", 460)
+
+
+SCORE_AXES = ["Planogram Compliance %", "MSL Availability % (observed)", "Secondary Display %",
+              "Audited SKU Allocation %", "In-Stock % (observed)"]
+
+
+def chart_radar(item, f, option, colors):
+    group_col = option or "region"
+    frame = item.scorecard(f, group_col)
+    if frame.empty:
+        return Chart(empty=("No rows", "Nothing matches the selected filters."))
+    key = {"region": "region", "segment_tier": "tier", "channel": "channel"}[group_col]
+    fig = go.Figure()
+    for _, row in frame.iterrows():
+        values = [None if row[a] is None or pd.isna(row[a]) else float(row[a]) for a in SCORE_AXES]
+        color = colors[key].get(row["grp"], CHART_NEUTRAL)
+        fig.add_trace(go.Scatterpolar(r=values + values[:1], theta=SCORE_AXES + SCORE_AXES[:1], fill="toself",
+                                      fillcolor=_rgba(color, 0.10), name=str(row["grp"]), connectgaps=False,
+                                      line=dict(color=color, width=2)))
+    fig.update_layout(polar=dict(bgcolor="rgba(0,0,0,0)",
+                                 radialaxis=dict(visible=True, range=[0, 100], gridcolor="#ece4e4", ticksuffix="%",
+                                                 tickfont=dict(size=10, color="#65595a")),
+                                 angularaxis=dict(gridcolor="#ece4e4", tickfont=dict(size=11, color="#211b1c"))))
+    return Chart(fig, "Gaps = N/A (no audited rows or no known inventory), not zero.", 480)
+
+
+REFERENCE_COLORS = {"Above source discount reference (requires review)": CHART_COLORS[7],
+                    "Within source discount reference (requires review)": CHART_COLORS[0],
+                    "No single source reference": CHART_NEUTRAL}
+
+
+def chart_discount(item, f, option, colors):
+    frame = item.trade_terms(f).dropna(subset=["trade_discount_pct", "margin_pct_static_cost"])
+    if frame.empty:
+        return Chart(empty=("No invoices", "No reported invoice lines in the selected scope and dates."))
+    fig = px.scatter(frame, x="trade_discount_pct", y="margin_pct_static_cost", color="reference_status",
+                     color_discrete_map=REFERENCE_COLORS, hover_name="store_name",
+                     category_orders={"reference_status": list(REFERENCE_COLORS)},
+                     hover_data={"channel": True, "category": True, "lines": True, "source_flagged_lines": True,
+                                 "trade_discount_pct": ":.1f", "max_discount_pct_source": ":.1f",
+                                 "margin_pct_static_cost": ":.1f", "reference_status": True},
+                     labels={"trade_discount_pct": "Trade discount % (gross-value weighted)",
+                             "margin_pct_static_cost": "Margin % at static product cost",
+                             "reference_status": "Source reference"})
+    fig.update_traces(marker=dict(size=9, line=dict(width=1, color="#ffffff"), opacity=0.85))
+    refs = frame["max_discount_pct_source"].dropna().unique()
+    if len(refs) == 1:
+        fig.add_vline(x=float(refs[0]), line_dash="dash", line_color="#65595a", line_width=1.5,
+                      annotation_text=f"Source max discount {refs[0]:.1f}% (requires review)",
+                      annotation_position="top right", annotation_font=dict(size=11, color="#4a3f40"))
+    fig.update_xaxes(ticksuffix="%")
+    fig.update_yaxes(ticksuffix="%")
+    return Chart(fig, "Source guardrails are Requires review, not approved rules. Margin uses static product cost; "
+                      "the source min-margin scale is unresolved, so no margin floor is evaluated.", 460)
+
+
+def chart_tradeoff(item, f, option, colors):
+    frame = item.tradeoff_evidence(f)
+    if frame.empty:
+        return Chart(empty=("No evidence", "No audited rows with a single source trade-off reference."))
+    names = ["Planogram compliant audit rows %", "Secondary display audit rows %"]
+    melted = frame.melt(id_vars=["required_exec_tradeoff"], value_vars=names, var_name="Evidence",
+                        value_name="Percentage").dropna(subset=["Percentage"])
+    if melted.empty:
+        return Chart(empty=("No evidence", "Every group is N/A for the selected filters."))
+    fig = px.bar(melted, x="required_exec_tradeoff", y="Percentage", color="Evidence", barmode="group",
+                 text_auto=".1f", category_orders={"Evidence": names},
+                 labels={"required_exec_tradeoff": "Required trade-off (source text)",
+                         "Percentage": "Share of audited SKU rows (%)"},
+                 color_discrete_map={names[0]: CHART_COLORS[0], names[1]: CHART_COLORS[1]})
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    labels = {t: wrap(t) for t in melted["required_exec_tradeoff"].unique()}
+    fig.update_xaxes(tickangle=0, tickmode="array", tickvals=list(labels), ticktext=list(labels.values()))
+    fig.update_yaxes(range=[0, 110], ticksuffix="%")
+    return Chart(fig, "EVIDENCE ONLY: no approved rule maps these audits to Met/Breach; commitments are not verified.",
+                 440)
+
+
+GEO_SCALE = [[0.0, "#e3eefb"], [0.5, CHART_COLORS[0]], [1.0, "#174a8c"]]
+
+
+def chart_geo(item, f, option, colors):
+    frame = item.state_execution(f)
+    if frame.empty:
+        return Chart(empty=("No rows", "Nothing matches the selected filters."))
+    column = "execution_index" if (option or "health_score") == "health_score" else "net_sales"
+    for name in ("execution_index", "net_sales", "planogram_pct", "in_stock_pct"):
+        frame[name] = pd.to_numeric(frame[name], errors="coerce")
+    fig = px.choropleth(frame, locations="state", locationmode="USA-states", color=column, scope="usa",
+                        hover_name="state",
+                        hover_data={"execution_index": ":.1f", "net_sales": ":,.0f", "planogram_pct": ":.1f",
+                                    "in_stock_pct": ":.1f", "store_count": True, "state": False},
+                        color_continuous_scale=GEO_SCALE,
+                        labels={"execution_index": "Execution index (display only)",
+                                "net_sales": "Invoiced net sales (no currency)", "planogram_pct": "Planogram %",
+                                "in_stock_pct": "In-stock % (observed)", "store_count": "Stores"})
+    fig.update_traces(marker_line_color="#ffffff", marker_line_width=1)
+    fig.update_layout(geo=dict(bgcolor="rgba(0,0,0,0)", showlakes=False, landcolor="#f3eded",
+                               subunitcolor="#dfd4d4"),
+                      coloraxis_colorbar=dict(title=None, thickness=10, orientation="h", y=-0.02, yanchor="top",
+                                              len=0.6, x=0.5, xanchor="center"))
+    return Chart(fig, "Execution index = equal-weight mean of planogram % and observed in-stock % (display index, "
+                      "not a shared KPI). States without stores in scope are blank.", 500)
+
+
+def chart_sankey(item, f, option, colors):
+    flow = item.flow_by_channel(f)
+    if flow.empty:
+        return Chart(empty=("No comparable flows", f"No complete {PERIOD_TYPE} periods with both flows known in the "
+                                                   "selected range."))
+    categories = sorted(flow["category"].unique().tolist())
+    channels = sorted(flow["channel"].unique().tolist())
+    out_label, gap_label = "Observed consumer sell-out", "Invoiced above sell-out (gap, not measured stock)"
+    nodes = categories + channels + [out_label, gap_label]
+    index = {n: i for i, n in enumerate(nodes)}
+    by_channel = flow.groupby("channel")[["sell_in", "sell_out"]].sum()
+    sources, targets, values, link_colors = [], [], [], []
+    for row in flow.itertuples(index=False):
+        if row.sell_in and row.sell_in > 0:
+            sources.append(index[row.category]); targets.append(index[row.channel])
+            values.append(float(row.sell_in)); link_colors.append(_rgba(CHART_COLORS[0], 0.22))
+    for channel, row in by_channel.iterrows():
+        if row["sell_out"] > 0:
+            sources.append(index[channel]); targets.append(index[out_label])
+            values.append(float(min(row["sell_out"], row["sell_in"]))); link_colors.append(_rgba(CHART_COLORS[2], 0.30))
+        if row["sell_in"] - row["sell_out"] > 0:
+            sources.append(index[channel]); targets.append(index[gap_label])
+            values.append(float(row["sell_in"] - row["sell_out"])); link_colors.append(_rgba(CHART_COLORS[1], 0.30))
+    node_colors = ["#65595a"] * len(categories) + [colors["channel"].get(c, CHART_NEUTRAL) for c in channels] + \
+        [CHART_COLORS[2], CHART_COLORS[1]]
+    fig = go.Figure(go.Sankey(node=dict(pad=18, thickness=16, line=dict(color="#ffffff", width=1), label=nodes,
+                                        color=node_colors),
+                              link=dict(source=sources, target=targets, value=values, color=link_colors)))
+    under = by_channel[by_channel["sell_out"] > by_channel["sell_in"]].index.tolist()
+    note = f"Comparable complete {PERIOD_TYPE} flows only. Invoice units are not received stock."
+    if under:
+        note += f" Sell-out exceeds sell-in for: {', '.join(under)} (shown up to sell-in)."
+    return Chart(fig, note, 460)
+
+
+# output id -> (builder, option input, regional manager only, accessible label)
+CHARTS = {
+    "m1_chart9_geo_map": (chart_geo, "m1_c9_metric", True, "Regional execution map by state"),
+    "m1_chart10_sankey": (chart_sankey, None, True, "Sell-in vs sell-out flow diagram"),
+    "m1_chart1_heatmap": (chart_heatmap, None, False, "Stock level heatmap by store and SKU"),
+    "m1_chart2_lost_sales": (chart_lost_sales, "m1_c2_group", True, "Lost sales heuristic trend"),
+    "m1_chart3_duration": (chart_duration, "m1_c3_group", True, "OOS duration distribution"),
+    "m1_chart4_compliance": (chart_compliance, None, False, "Planogram and MSL availability by brand"),
+    "m1_chart5_bubble": (chart_bubble, None, True, "Audited shelf allocation vs invoiced sales"),
+    "m1_chart6_radar": (chart_radar, "m1_c6_group", True, "Execution scorecard radar"),
+    "m1_chart7_discount": (chart_discount, None, False, "Discount vs margin scatter"),
+    "m1_chart8_tradeoff": (chart_tradeoff, None, True, "Trade-off commitment evidence"),
+}
+LOCKED_TITLES = {"m1_chart9_geo_map": "The regional execution map", "m1_chart10_sankey": "The sell-in vs sell-out flow",
+                 "m1_chart2_lost_sales": "The lost sales trend", "m1_chart3_duration": "The OOS duration distribution",
+                 "m1_chart5_bubble": "The shelf allocation vs sales plot", "m1_chart6_radar": "The execution scorecard",
+                 "m1_chart8_tradeoff": "The trade-off evidence"}
+
+
+def render_chart(output_id, item, f, option, colors):
+    """The chart's markup for one principal's data and filters (locked, empty or the figure)."""
+    builder, _, manager_only, label = CHARTS[output_id]
+    if manager_only and not item.manager:
+        return locked(LOCKED_TITLES[output_id])
+    if not f.skus:
+        return state("No SKU selected", "Select at least one product SKU in the filters.")
+    chart = builder(item, f, option, colors)
+    if chart.empty is not None:
+        return state(*chart.empty)
+    element = output_id.replace("_", "-") + "-plot"
+    return TagList(plot(chart.fig, element, label, chart.height, chart.layout),
+                   tags.p(chart.note, class_="ws-muted m1-caveat") if chart.note else None)
+
+
+# ------------------------------------------------------------------ KPI tiles
+
+# Team display targets (not client-approved thresholds): (test, short text, line value(s)) per KPI.
+KPI_TARGETS = {
+    "msl": (lambda v: v >= 90, "≥ 90%", 90),
+    "oos": (lambda v: v <= 5, "≤ 5%", 5),
+    "gap": (lambda v: abs(v) <= 5, "within ±5%", (-5, 5)),
+    "plano": (lambda v: v >= 80, "≥ 80%", 80),
+}
+KPI_TILES = (("msl", "MSL Compliance", "msl", "{:.1f}%", True), ("oos", "Reported OOS Rate", "oos", "{:.1f}%", False),
+             ("gap", "Sell-In vs Sell-Out Gap", "gap_pct", "{:+.1f}%", False),
+             ("shelf", "Shelf Allocation", "allocation", "{:.1f}%", True),
+             ("plano", "Planogram Compliance", "plano", "{:.1f}%", True))
+
+
+def _delta(value, prior, better_up, long=False):
+    """The change vs the prior period of equal length, as a coloured pill (text carries the direction)."""
+    suffix = " vs prior period" if long else ""
+    if value is None or pd.isna(value) or prior is None or pd.isna(prior):
+        return kit.pill("No prior value" + ("" if not long else " to compare"), "outline")
+    delta = round(value - prior, 1)
+    if delta == 0:
+        return kit.pill("No change" + suffix, "outline")
+    return kit.pill(f"{'▲' if delta > 0 else '▼'} {abs(delta):.1f} pts{suffix}", "ok" if (delta > 0) == better_up else "bad")
+
+
+def _target(key, value, long=False):
+    if key not in KPI_TARGETS or value is None or pd.isna(value):
+        return None
+    test, text, _ = KPI_TARGETS[key]
+    meets = test(value)
+    if long:
+        return kit.pill(("Meets" if meets else "Misses") + f" team target {text}", "ok" if meets else "bad")
+    return tags.span(tags.span(class_="m1-dot " + ("ok" if meets else "bad"), **{"aria-hidden": "true"}),
+                     f"Target {text}", tags.span(" · met" if meets else " · missed", class_="m1-sr"),
+                     class_="m1-kpi-target " + ("ok" if meets else "bad"), title="Team display target")
+
+
+def kpi_tiles(c, p, selected="msl"):
+    """Five compact KPI cards (value, change, target); the selected card's detail opens below the row."""
+    tiles = []
+    for key, label, field, pattern, better_up in KPI_TILES:
+        value = c[field]
+        on = key == selected
+        tiles.append(tags.button(
+            tags.span(label, class_="m1-kpi-label"),
+            tags.span(_fmt(value, pattern), class_="m1-kpi-value"),
+            tags.span(_delta(value, p[field], better_up), _target(key, value), class_="m1-kpi-foot"),
+            type="button", class_="m1-kpi" + (" on" if on else ""), id=f"m1-kpi-{key}",
+            onclick=f"Shiny.setInputValue('m1_kpi', '{key}', {{priority: 'event'}})",
+            **{"data-key": key, "aria-pressed": "true" if on else "false",
+               "aria-controls": "m1-kpi-detail"}))
+    return tags.section(*tiles, class_="m1-kpis", id="m1-kpis",
+                        **{"aria-label": "Business performance KPIs for the filtered stores; select one for its trend"})
+
+
+def kpi_notes(key, c):
+    """What the selected number rests on (formerly the small print on each tile)."""
+    gap_dates = f"{c['gap_first']:%b %d} – {c['gap_last']:%b %d, %Y}" if c.get("gap_first") else "no complete period"
+    notes = {
+        "msl": [f"Assessable coverage {_fmt(c['msl_coverage'])} of eligible store-days; "
+                f"{c['msl_unknown'] or 0:,} store-days are Unknown and are not counted as failures."],
+        "oos": [f"{c['oos_known'] or 0:,} store-SKU-days with known inventory; reporting coverage "
+                f"{_fmt(c['coverage'])}. Unknown inventory is never treated as in stock."],
+        "gap": [f"{_fmt(c['gap_units'], '{:+,.0f}')} units over {c['gap_periods']} complete {PERIOD_TYPE} periods "
+                f"({gap_dates}); {c['gap_comparable_rows']:,} of {c['gap_rows']:,} rows comparable.",
+                "Invoice-extract completeness is unconfirmed, so a missing invoice is not read as zero."
+                if c["gap_completeness_unconfirmed"] else None],
+        "shelf": [f"{c['visits']:,} audited category visits. Allocation is among the supplied SKUs of a category "
+                  "(about 100% when every SKU is selected), not Marvel vs competitor shelf share; no target applies."],
+        "plano": [f"{c['audited']:,} audited SKU rows."],
+    }[key]
+    if key in KPI_TARGETS:
+        notes.append("The target line is a team display target, not a client-approved threshold.")
+    return [n for n in notes if n]
+
+
+def trend_chart(key, frame, element_id):
+    """The KPI per week (gap: per complete biweekly period) with its team target."""
+    frame = frame[frame["value"].notna()] if frame is not None and len(frame) else frame
+    if frame is None or not len(frame):
+        return state("No trend for these filters", "No period in the range has a value for this KPI.")
+    x = [pd.Timestamp(v).strftime("%Y-%m-%d") for v in frame["period"]]
+    y = [float(v) for v in frame["value"]]
+    fig = go.Figure(go.Scatter(x=x, y=y, mode="lines+markers", name=KPI_SPECS[key]["title"].replace(" %", ""),
+                               line=dict(color=CHART_COLORS[0], width=2.5), marker=dict(size=7),
+                               hovertemplate=("Biweekly period from" if key == "gap" else "Week of")
+                               + " %{x|%b %d, %Y}<br>%{y:.1f}%<extra></extra>"))
+    lows, highs = [min(y)], [max(y)]
+    target = KPI_TARGETS.get(key)
+    if target:
+        lines = target[2] if isinstance(target[2], tuple) else (target[2],)
+        if key == "gap":
+            fig.add_hrect(y0=lines[0], y1=lines[1], fillcolor="rgba(29,107,69,0.08)", line_width=0, layer="below")
+        for value in lines:
+            fig.add_hline(y=value, line=dict(color="#86121c", width=1.5, dash="dash"),
+                          annotation=dict(text=f"Team target {target[1]}" if value == lines[-1] else "",
+                                          font=dict(size=11, color="#86121c"), xanchor="right", x=1,
+                                          yanchor="bottom"))
+        lows.append(min(lines))
+        highs.append(max(lines))
+    pad = max(2.0, (max(highs) - min(lows)) * 0.15)
+    low, high = min(lows) - pad, max(highs) + pad
+    if key != "gap":
+        low, high = max(0.0, low), min(100.0 + (5 if key == "shelf" else 0), high)
+    layout = dict(showlegend=False, margin=dict(l=16, r=16, t=24, b=16),
+                  yaxis=dict(range=[low, high], ticksuffix="%", title=None),
+                  xaxis=dict(tickformat="%b %d", title=None))
+    return plot(fig, element_id, f"{KPI_SPECS[key]['title']} trend", 300, layout)
+
+
+def kpi_detail(key, c, p, trend, f):
+    """Below the cards: the selected KPI's trend with target, what it rests on, and (collapsed) how it is computed."""
+    spec = KPI_SPECS[key]
+    _, _, field, pattern, better_up = next(t for t in KPI_TILES if t[0] == key)
+    label = spec["title"].replace(" %", "")                  # the full name; the card uses a short one
+    period = "complete biweekly period" if key == "gap" else "week"
+    how = tags.details(tags.summary("How it's calculated"),
+                       tags.dl(tags.dt("Definition"), tags.dd(spec["desc"]), tags.dt("Shared view"),
+                               tags.dd(spec["source"]), tags.dt("Components"), tags.dd(spec["columns"]),
+                               tags.dt("Formula"), tags.dd(spec["formula"]), tags.dt("Rules"), tags.dd(spec["logic"])),
+                       class_="ws-disclosure m1-how", id="m1-kpi-how")
+    return tags.section(
+        tags.div(tags.div(tags.h2(label, class_="ws-h"),
+                          tags.p(f"Trend per {period}, {pd.Timestamp(f.start):%b %d} – {pd.Timestamp(f.end):%b %d, %Y}, "
+                                 "for the filtered stores and products.", class_="ws-muted m1-logic")),
+                 tags.div(tags.span(_fmt(c[field], pattern), class_="m1-detail-value"),
+                          _delta(c[field], p[field], better_up, long=True), _target(key, c[field], long=True),
+                          class_="m1-detail-figures"),
+                 class_="ws-card-head m1-detail-head"),
+        trend_chart(key, trend, f"m1-trend-{key}"),
+        tags.ul(*[tags.li(n) for n in kpi_notes(key, c)], class_="m1-notes"),
+        how,
+        class_="ws-card m1-kpi-detail", id="m1-kpi-detail", **{"aria-live": "polite"})
+
+
+# ------------------------------------------------------------------ server
+
+def module_1_server(input, output, session, context: dict, auth_state: dict):
+    """Hosted entry point. ``context['runtime']`` is the pinned shared source (shared.runtime)."""
+    runtime = context.get("runtime") if isinstance(context, dict) else None
+    if runtime is None:
+        return  # the legacy root app: the UI explains where the module runs; nothing is loaded
+    module_label = context.get("module_label") or "Business Performance"
+    active_module = auth_state.get("active_module") or (lambda: MODULE_KEY)
+    data = reactive.value(None)
+    load_state = reactive.value(("signed_out", ""))
+    choice_info = reactive.value(None)
+    synced = reactive.value(False)          # filters received from the browser after the per-session update
+    generation = reactive.value(0)          # bumped on every identity change; late results are discarded
+    page = reactive.value("overview")
+
+    def principal():
+        pid, authenticated = auth_state.get("principal_id"), auth_state.get("authenticated")
+        if pid is None or authenticated is None or not authenticated() or not pid():
+            return None
+        return pid()
+
+    navigate = auth_state.get("navigate")
+
     @reactive.effect
-    @reactive.event(input.btn_sku_all)
+    @reactive.event(input.m1_open_copilot)
+    def _open_copilot():
+        """Top-bar Copilot button: host navigation only (no question or filter is passed along)."""
+        if navigate is not None and principal() is not None:
+            navigate("module_4")
+
+    @reactive.extended_task
+    async def load_task(pid, gen):
+        def work():
+            item = runtime.module1_pool().get(pid)
+            return item, item.choices()
+        try:
+            item, choices = await asyncio.to_thread(work)
+            return gen, pid, item, choices, None
+        except PermissionError:
+            return gen, pid, None, None, "Your account has no data scope in the shared publication."
+        except Exception as error:  # sanitized: class name only
+            reason = str(error) if type(error).__name__ in ("SourceUnavailable", "DataUnavailable") else \
+                f"Shared data could not be loaded ({type(error).__name__})."
+            return gen, pid, None, None, reason
+
+    @reactive.effect
+    async def _on_principal():
+        pid = principal()
+        with reactive.isolate():
+            generation.set(generation() + 1)
+            data.set(None)
+            choice_info.set(None)
+            synced.set(False)
+            chosen_preset.set(DEFAULT_PRESET)
+            load_state.set(("idle", "") if pid else ("signed_out", ""))
+            page.set("overview")
+            ui.update_navset("m1_pages", selected="overview")
+        await session.send_custom_message("m1-clear", {})
+
+    @reactive.effect
+    def _load_on_first_visit():
+        """The scoped copy is built when the module is first opened, not at sign-in."""
+        pid, kind = principal(), load_state()[0]
+        if pid and kind == "idle" and active_module() == MODULE_KEY:
+            with reactive.isolate():
+                load_state.set(("loading", "Loading your scoped shared data…"))
+                load_task.invoke(pid, generation())
+
+    handled = {"result": None}
+
+    @reactive.effect
+    def _loaded():
+        if load_task.status() != "success":
+            return
+        result = load_task.result()
+        gen, pid, item, choices, reason = result
+        with reactive.isolate():
+            if result is handled["result"]:
+                return
+            handled["result"] = result
+            if gen != generation() or pid != principal() or load_state()[0] != "loading":
+                return  # a late result for a previous sign-in is discarded
+            if item is None:
+                load_state.set(("unavailable", reason))
+                return
+            data.set(item)
+            choice_info.set(choices)
+            load_state.set(("ready", ""))
+            ui.update_checkbox_group("m1_channel", choices=choices["channels"], selected=choices["channels"])
+            ui.update_checkbox_group("m1_region", choices=choices["regions"], selected=choices["regions"])
+            ui.update_checkbox_group("m1_sku", choices=sku_choices(choices), selected=list(choices["products"]))
+            last, first = pd.Timestamp(choices["last_date"]), pd.Timestamp(choices["first_date"])
+            start = preset_start(DEFAULT_PRESET, first, last)
+            ui.update_date_range("m1_dates", start=str(start.date()), end=str(last.date()),
+                                 min=str(first.date()), max=str(last.date()))
+
+    @reactive.effect
+    def _filters_synced():
+        info = choice_info()
+        if info is None or synced.get():
+            return
+        dates = input.m1_dates()
+        # The first values sent back after ui.update_* carry the scoped choices and dates.
+        if input.m1_sku() and dates and str(dates[1]) == str(pd.Timestamp(info["last_date"]).date()):
+            synced.set(True)
+
+    @reactive.effect
+    @reactive.event(input.m1_sku_all)
     def _select_all_skus():
-        ui.update_selectize("sku", selected=list(prods.sku_id))
+        info = choice_info()
+        if info:
+            ui.update_checkbox_group("m1_sku", selected=list(info["products"]))
 
     @reactive.effect
-    @reactive.event(input.btn_sku_none)
+    @reactive.event(input.m1_sku_none)
     def _deselect_all_skus():
-        ui.update_selectize("sku", selected=[])
+        ui.update_checkbox_group("m1_sku", selected=[])
 
-    # Sidebar Scope Indicator
-    @render.ui
-    def sidebar_scope_badge():
-        if active_role() == "Field Rep":
-            rep_id = active_rep()
-            n_stores = (stores["rep_id"] == rep_id).sum()
-            return ui.div(
-                ui.span("Territory Active: ", style="color:#6e6e73;font-size:0.78rem;"),
-                ui.span(f"{rep_id} ({n_stores} Stores)", class_="fw-bold", style="color:#0b594b;font-size:0.8rem;"),
-                class_="mb-1"
-            )
-        return ui.div(
-            ui.span("Portfolio Active: ", style="color:#6e6e73;font-size:0.78rem;"),
-            ui.span(f"All Stores ({len(stores)} Stores)", class_="fw-bold", style="color:#4a8fe7;font-size:0.8rem;"),
-            class_="mb-1"
-        )
+    chosen_preset = reactive.value(DEFAULT_PRESET)      # the preset last picked (several can cover the same weeks)
 
-    # ---------- REACTIVE FILTERING & SCOPE ----------
-    def scope(df_raw, col, a, b):
-        channels = input.channel() if input.channel() else CH
-        regions = input.region() if input.region() else REG
-        skus = input.sku() if input.sku() is not None else list(prods.sku_id)
+    @reactive.effect
+    @reactive.event(input.m1_preset)
+    def _apply_preset():
+        info, key = choice_info(), input.m1_preset()
+        if info and key in DATE_PRESETS:
+            chosen_preset.set(key)
+            start = preset_start(key, info["first_date"], info["last_date"])
+            ui.update_date_range("m1_dates", start=str(start.date()),
+                                 end=str(pd.Timestamp(info["last_date"]).date()))
 
-        m_stores = stores["channel"].isin(channels) & stores["region"].isin(regions)
-        if active_role() == "Field Rep" and active_rep():
-            m_stores &= (stores["rep_id"] == active_rep())
-        valid_store_ids = set(stores.loc[m_stores, "store_id"])
+    @reactive.effect
+    @reactive.event(input.m1_reset)
+    def _reset_filters():
+        info = choice_info()
+        if info:
+            chosen_preset.set(DEFAULT_PRESET)
+            ui.update_checkbox_group("m1_channel", selected=info["channels"])
+            ui.update_checkbox_group("m1_region", selected=info["regions"])
+            ui.update_checkbox_group("m1_sku", selected=list(info["products"]))
+            ui.update_radio_buttons("m1_msl", selected="all")
+            start = preset_start(DEFAULT_PRESET, info["first_date"], info["last_date"])
+            ui.update_date_range("m1_dates", start=str(start.date()),
+                                 end=str(pd.Timestamp(info["last_date"]).date()))
 
-        m = (
-            df_raw[col].between(a, b)
-            & df_raw["store_id"].isin(valid_store_ids)
-            & df_raw["sku_id"].isin(skus)
-        )
-        sub = df_raw[m]
+    @reactive.effect
+    @reactive.event(input.m1_go)
+    async def _go():
+        target = input.m1_go()
+        if target in PAGES:
+            page.set(target)
+            ui.update_navset("m1_pages", selected=target)
+            await session.send_custom_message("m1-scroll-top", {})
 
-        store_meta = ["store_id", "store_name", "channel", "region", "state", "segment_tier", "city", "rep_id"]
-        prod_meta = ["sku_id", "product_name", "category", "brand", "is_msl", "unit_cost", "list_price"]
-        return sub.merge(stores[store_meta], on="store_id").merge(prods[prod_meta], on="sku_id")
-
+    # ---------------------------------------------------------- filters and scope
     @reactive.calc
     def span():
-        dates_val = input.dates()
-        a = pd.Timestamp(dates_val[0])
-        b = pd.Timestamp(dates_val[1])
-        start_snapped = a - pd.Timedelta(days=a.dayofweek)
-        end_snapped = min(b + pd.Timedelta(days=6 - b.dayofweek), pd.Timestamp(MAX_DATE))
-        return start_snapped, end_snapped
+        info = choice_info()
+        req(info and synced())
+        dates = input.m1_dates()
+        req(dates and dates[0] and dates[1])
+        return snap(dates[0], dates[1], info["first_date"], info["last_date"])
+
+    def make_filters(a, b):
+        info = choice_info()
+        channels = tuple(input.m1_channel()) if input.m1_channel() else tuple(info["channels"])
+        regions = tuple(input.m1_region()) if input.m1_region() else tuple(info["regions"])
+        skus = tuple(input.m1_sku()) if input.m1_sku() is not None else tuple(info["products"])
+        msl = input.m1_msl() or "all"
+        if msl in ("msl", "non"):                # the MSL pill narrows the selected SKUs to (non-)MSL products
+            required = set(info.get("msl_products") or ())
+            skus = tuple(s for s in skus if (s in required) == (msl == "msl"))
+        return Filters(channels, regions, skus, set(skus) == set(info["products"]), a.date(), b.date())
 
     @reactive.calc
-    def SO():
-        return scope(so_raw, "date", *span())
+    def checked():
+        """The principal's data after a fresh scope/publication check, or (None, reason)."""
+        item = data()
+        state_kind, reason = load_state()
+        if item is None:
+            return None, reason
+        if synced():  # re-check whenever the filters change
+            input.m1_dates(), input.m1_channel(), input.m1_region(), input.m1_sku(), input.m1_msl()
+        try:
+            item.check()
+            return item, None
+        except Exception as error:
+            return None, ("Your account scope or the shared publication changed; sign out and sign in again "
+                          f"({type(error).__name__}).")
 
     @reactive.calc
-    def SI():
-        return scope(si_raw, "week", *span())
+    def current():
+        item, _ = checked()
+        req(item)
+        a, b = span()
+        return item, make_filters(a, b)
 
     @reactive.calc
-    def AU():
-        return scope(au_raw, "date", *span())
+    def colors():
+        info = choice_info()
+        req(info)
+        return {"channel": palette(info["channels"]), "region": palette(info["regions"]),
+                "tier": palette(info["tiers"]), "category": palette(info["categories"])}
 
-    KPI_SPECS = {
-        "msl": {
-            "title": "MSL Compliance %",
-            "desc": "Percentage of stores with mandatory SKUs available on shelf.",
-            "source": "fact_inventory (or fact_sell_out), dim_products (or dim_store_assortment)",
-            "columns": "store_id, sku_id, is_msl, inventory_level",
-            "formula": "COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100",
-            "logic": "For each store, flag non_compliant_stores = SUM(CASE WHEN is_msl = TRUE AND (inventory_level <= 0 OR inventory_level IS NULL) THEN 1 ELSE 0 END)."
-        },
-        "oos": {
-            "title": "OOS Rate %",
-            "desc": "Out-of-stock rate by SKU, channel, and region.",
-            "source": "fact_inventory (or fact_sell_out)",
-            "columns": "sku_id, store_id, date (or calendar_day), is_out_of_stock",
-            "formula": "SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
-            "logic": "Proportion of observed store-SKU-day observations flagged as out-of-stock."
-        },
-        "gap": {
-            "title": "Sell-in vs. Sell-out Gap %",
-            "desc": "Difference between what Marvel invoices to the distributor and what the end consumer buys.",
-            "source": "fact_sell_in, fact_sell_out",
-            "columns": "fact_sell_in.units_sell_in (units_sold), fact_sell_out.units_sold_daily",
-            "formula": "(SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100",
-            "logic": "Volume disparity between upstream sell-in invoice units and downstream sell-out sales units."
-        },
-        "shelf": {
-            "title": "Shelf Share %",
-            "desc": "Average shelf share by category and channel.",
-            "source": "fact_execution_audits",
-            "columns": "shelf_share_pct, category, channel, region",
-            "formula": "AVG(shelf_share_pct) grouped by category, channel, and region",
-            "logic": "Arithmetic mean of observed percentage shelf frontage dedicated to Marvel products."
-        },
-        "plano": {
-            "title": "Planogram Compliance %",
-            "desc": "Compliance with the display planogram.",
-            "source": "fact_execution_audits",
-            "columns": "planogram_compliance",
-            "formula": "SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
-            "logic": "Proportion of audited store-SKU placements compliant with the designated planogram."
-        }
-    }
-
-    def kpis(a, b):
-        s, i, x = scope(so_raw, "date", a, b), scope(si_raw, "week", a, b), scope(au_raw, "date", a, b)
-        if s.empty:
-            return dict(msl=np.nan, oos=np.nan, gap=0, gap_pct=np.nan, shelf=np.nan, plano=np.nan)
-
-        # 1. MSL Compliance %
-        # Formula: COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100
-        # Logic: For each store, flag non_compliant_stores = SUM(CASE WHEN is_msl = TRUE AND (inventory_level <= 0 OR inventory_level IS NULL) THEN 1 ELSE 0 END)
-        is_non_comp = (s["is_msl"] == True) & ((s["inventory_level"] <= 0) | s["inventory_level"].isna())
-        if s["date"].nunique() <= 1:
-            store_non_comp = is_non_comp.groupby(s["store_id"]).sum()
-            total_stores = s["store_id"].nunique()
-            msl = ((store_non_comp == 0).sum() / total_stores * 100) if total_stores > 0 else np.nan
-        else:
-            store_day_non_comp = is_non_comp.groupby([s["date"], s["store_id"]]).sum()
-            msl = ((store_day_non_comp == 0).sum() / len(store_day_non_comp) * 100) if len(store_day_non_comp) > 0 else np.nan
-
-        # 2. OOS Rate %
-        # Formula: SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100
-        oos_count = (s["is_out_of_stock"] == True).sum()
-        oos = (oos_count / len(s) * 100) if len(s) > 0 else np.nan
-
-        # 3. Sell-in vs. Sell-out Gap %
-        # Formula: (SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100
-        units_sell_in = i["units_sold"].sum() if not i.empty else 0
-        units_sold_daily = s["units_sold_daily"].sum() if not s.empty else 0
-        gap = units_sell_in - units_sold_daily
-        gap_pct = (gap / units_sold_daily * 100) if units_sold_daily > 0 else np.nan
-
-        # 4. Shelf Share %
-        # Formula: AVG(shelf_share_pct) grouped by category, channel, and region
-        shelf = x["shelf_share_pct"].mean() if not x.empty else np.nan
-
-        # 5. Planogram Compliance %
-        # Formula: SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100
-        if not x.empty and len(x) > 0:
-            plano_count = (x["planogram_compliance"] == True).sum()
-            plano = (plano_count / len(x)) * 100
-        else:
-            plano = np.nan
-
-        return dict(msl=msl, oos=oos, gap=gap, gap_pct=gap_pct, shelf=shelf, plano=plano)
-
-    def luxury_tile(title, cur, prv, ok, better_up, txt, foot, prefix="", suffix="", decimals=1, foot_units=None, foot_target=None, spec=None):
-        na = pd.isna(cur)
-        d = None if na or pd.isna(prv) else cur - prv
-        if d is not None:
-            is_good = (d >= 0) == better_up
-            arrow = "▲" if d >= 0 else "▼"
-            badge_class = "delta-positive" if is_good else "delta-negative"
-            delta_tag = ui.span(f"{arrow} {abs(d):.1f} pts vs prior", class_=f"kpi-delta-pill {badge_class}")
-        else:
-            delta_tag = ui.span("– baseline", class_="kpi-delta-pill delta-neutral")
-
-        val_color = "text-muted" if na else "text-success" if ok else "text-danger"
-
-        # Check if foot has secondary unit count to shuffle
-        if foot_units is not None and not pd.isna(foot_units):
-            foot_elem = ui.div(
-                ui.span(
-                    f"{foot_units:+,.0f}{foot_target}",
-                    class_="shuffle-units",
-                    data_target=str(int(foot_units)),
-                    data_suffix=foot_target
-                ),
-                class_="kpi-target-foot"
-            )
-        else:
-            foot_elem = ui.div(foot, class_="kpi-target-foot")
-
-        tooltip_attr = ""
-        info_icon_elem = None
-        if spec:
-            tooltip_attr = (
-                f"{spec['title']}\n"
-                f"• Source: {spec['source']}\n"
-                f"• Columns: {spec['columns']}\n"
-                f"• Formula: {spec['formula']}\n"
-                f"• Logic: {spec.get('logic', '')}"
-            )
-            popover_children = [
-                ui.div(spec["title"], class_="kpi-pop-title"),
-                ui.div(spec.get("desc", ""), class_="kpi-pop-desc"),
-                ui.div(
-                    ui.span("Source CSV / Table", class_="kpi-pop-lbl"),
-                    ui.span(spec["source"], class_="kpi-pop-badge"),
-                    class_="kpi-pop-sec"
-                ),
-                ui.div(
-                    ui.span("Required Columns", class_="kpi-pop-lbl"),
-                    ui.div(spec["columns"], class_="kpi-pop-text"),
-                    class_="kpi-pop-sec"
-                ),
-                ui.div(
-                    ui.span("Aggregation / SQL Formula", class_="kpi-pop-lbl"),
-                    ui.div(spec["formula"], class_="kpi-pop-formula"),
-                    class_="kpi-pop-sec"
-                ),
-            ]
-            if "logic" in spec and spec["logic"]:
-                popover_children.append(
-                    ui.div(
-                        ui.span("Calculation Logic", class_="kpi-pop-lbl"),
-                        ui.div(spec["logic"], class_="kpi-pop-text"),
-                        class_="kpi-pop-sec"
-                    )
-                )
-
-            info_icon_elem = ui.div(
-                ui.span("ⓘ", class_="kpi-info-symbol"),
-                ui.div(*popover_children, class_="kpi-hover-popover"),
-                class_="kpi-info-trigger",
-                tabindex="0",
-                role="tooltip",
-                title=f"Calculation details for {spec['title']}"
-            )
-
-        header_elem = ui.div(
-            ui.div(title, class_="kpi-title"),
-            info_icon_elem,
-            class_="kpi-header-row"
-        )
-
-        return ui.div(
-            header_elem,
-            ui.div(
-                "–" if na else txt,
-                class_=f"kpi-value {val_color} shuffle-number",
-                data_target=f"{cur:.1f}" if not na else "",
-                data_prefix=prefix,
-                data_suffix=suffix,
-                data_decimals=str(decimals)
-            ),
-            delta_tag,
-            foot_elem,
-            class_="kpi-tile",
-            title=tooltip_attr if tooltip_attr else None
-        )
+    # ---------------------------------------------------------- navigation and header
+    @output(suspend_when_hidden=False)               # in the app sidebar, hidden while another module is open
+    @render.ui
+    def m1_nav():
+        if principal() is None:
+            return None
+        return tags.nav(*[kit.nav_item(PAGE_ICONS[key], text, active=page() == key, onclick=f"m1Go('{key}')",
+                                       **{"data-page": key}) for key, text in PAGES.items()],
+                        class_="ws-subnav-items", **{"aria-label": f"{module_label} pages"})
 
     @render.ui
-    def kpi_row():
+    def m1_crumb():
+        return tags.nav(tags.span(module_label), tags.span("/", **{"aria-hidden": "true"}), tags.strong(PAGES[page()]),
+                        class_="ws-crumb", **{"aria-label": "Breadcrumb"})
+
+    @render.ui
+    def m1_user_block():
+        name, title = auth_state["name"](), auth_state["title"]()
+        return None if name is None else kit.user_block(name, title, id="m1-user")
+
+    @output(suspend_when_hidden=False)
+    @render.text
+    def m1_ready():
+        return "yes" if checked()[0] is not None else "no"
+
+    @render.ui
+    @safe
+    def m1_page_head():
+        if principal() is None:
+            return None
+        title, sub = PAGE_HEADS[page()]
+        item, _ = checked()
+        if item is None:  # the welcome screen stands in for the page head while the first load runs
+            return None if load_state()[0] in ("idle", "loading") else kit.page_head(title, sub=sub)
+        scope = item.scope
+        role = "Regional manager view" if item.manager else "Field sales rep view"
+        meta = [tags.span(tags.b(role), f" · {scope['stores']} stores in your demo scope"),
+                tags.span("Data through ", tags.b(str(item.record.get("as_of")))),
+                kit.pill("Reported data only", "outline")]
+        return kit.page_head(title, *meta, sub=sub)
+
+    @render.ui
+    def m1_status():
+        kind, reason = load_state()
+        item, check_reason = checked()
+        if kind in ("signed_out",) or item is not None:
+            return None
+        if kind in ("idle", "loading"):
+            stores = as_of = None
+            try:  # a scope summary only (no rows); the greeting works without it
+                reader = runtime.reader()
+                stores, as_of = reader.principal_scope(principal())["stores"], reader.record.get("as_of")
+            except Exception:  # noqa: BLE001 - the load reports any real problem
+                pass
+            with reactive.isolate():
+                clock = input.m1_client_clock() if "m1_client_clock" in input else None
+            return welcome(auth_state["name"](), clock, stores, as_of)
+        return kit.notice(tags.strong("Business Performance is unavailable. "), check_reason or reason or "",
+                          kind="bad", role="alert", id="m1-unavailable")
+
+    # ---------------------------------------------------------- filter pills
+    def pill_value(text, changed, extra=None):
+        return TagList(tags.span(text, class_="m1-pill-val" + (" set" if changed else "")),
+                       tags.span(extra, class_="m1-pill-extra") if extra else None)
+
+    @render.ui
+    def m1_pill_dates():
+        info = choice_info()
+        req(info)
         a, b = span()
+        key = matching_preset((a, b), info["first_date"], info["last_date"], chosen_preset())
+        dates = f"{a:%b %d} – {b:%b %d, %Y}"
+        if key is None:
+            return pill_value(dates, True)
+        return pill_value(DATE_PRESETS[key], key != DEFAULT_PRESET, dates)
+
+    @render.ui
+    def m1_presets():
+        info = choice_info()
+        req(info)
+        key = matching_preset(span(), info["first_date"], info["last_date"], chosen_preset())
+        return tags.div(*[tags.button(label, type="button", class_="m1-preset" + (" on" if k == key else ""),
+                                      onclick=f"Shiny.setInputValue('m1_preset', '{k}', {{priority: 'event'}})",
+                                      **{"aria-pressed": "true" if k == key else "false"})
+                          for k, label in DATE_PRESETS.items()], class_="m1-presets")
+
+    @render.ui
+    def m1_pill_channel():
+        info = choice_info()
+        req(info)
+        return TagList(tags.span("Channel", class_="m1-pill-key"),
+                       pill_value(*choice_label(input.m1_channel(), {c: c for c in info["channels"]})))
+
+    @render.ui
+    def m1_pill_region():
+        info = choice_info()
+        req(info)
+        return TagList(tags.span("Region", class_="m1-pill-key"),
+                       pill_value(*choice_label(input.m1_region(), {r: r for r in info["regions"]})))
+
+    @render.ui
+    def m1_pill_msl():
+        req(choice_info())
+        value = input.m1_msl() or "all"
+        return TagList(tags.span("Products", class_="m1-pill-key"),
+                       pill_value(MSL_PILL.get(value, MSL_PILL["all"]), value != "all"))
+
+    @render.ui
+    def m1_pill_sku():
+        info = choice_info()
+        req(info)
+        names = info.get("product_names") or info["products"]
+        return TagList(tags.span("SKU", class_="m1-pill-key"),
+                       pill_value(*choice_label(input.m1_sku(), names, empty_means_all=False)))
+
+    @render.ui
+    def m1_sku_count():
+        info = choice_info()
+        req(info)
+        return tags.span(f"{len(input.m1_sku() or ())} of {len(info['products'])} selected", class_="ws-muted")
+
+    @render.ui
+    @safe
+    def m1_filter_summary():
+        info = choice_info()
+        item, f = current()
+        names = info.get("product_names") or info["products"]
+        changed = (choice_label(input.m1_channel(), {c: c for c in info["channels"]})[1]
+                   or choice_label(input.m1_region(), {r: r for r in info["regions"]})[1]
+                   or choice_label(input.m1_sku(), names, empty_means_all=False)[1]
+                   or (input.m1_msl() or "all") != "all"
+                   or matching_preset(span(), info["first_date"], info["last_date"], chosen_preset()) != DEFAULT_PRESET)
+        reset = tags.button("Reset filters", type="button", class_="m1-reset", id="m1-reset",
+                            onclick="Shiny.setInputValue('m1_reset', Date.now(), {priority: 'event'})") \
+            if changed else None
+        return TagList(reset, tags.span("Showing ", tags.b(f"{item.store_count(f)} stores"), " · ",
+                                        tags.b(f"{len(f.skus)} SKUs"), class_="m1-fnote"))
+
+    # ---------------------------------------------------------- KPIs
+    @reactive.calc
+    def kpi_values():
+        item, f = current()
+        a, b = pd.Timestamp(f.start), pd.Timestamp(f.end)
         n = (b - a).days + 1
-        c = kpis(a, b)
-        p = kpis(a - pd.Timedelta(days=n), a - pd.Timedelta(days=1))
-        return ui.div(
-            luxury_tile(
-                "MSL Compliance", c["msl"], p["msl"],
-                c["msl"] >= 90 if not pd.isna(c["msl"]) else False, True,
-                f"{c['msl']:.1f}%" if not pd.isna(c["msl"]) else "–", "Target ≥ 90%",
-                suffix="%", decimals=1, spec=KPI_SPECS["msl"]
-            ),
-            luxury_tile(
-                "OOS Rate", c["oos"], p["oos"],
-                c["oos"] <= 5 if not pd.isna(c["oos"]) else False, False,
-                f"{c['oos']:.1f}%" if not pd.isna(c["oos"]) else "–", "Target ≤ 5%",
-                suffix="%", decimals=1, spec=KPI_SPECS["oos"]
-            ),
-            luxury_tile(
-                "Sell-In vs Sell-Out Gap", c["gap_pct"], p["gap_pct"],
-                abs(c["gap_pct"]) <= 5 if not pd.isna(c["gap_pct"]) else False, False,
-                f"{c['gap_pct']:+.1f}%" if not pd.isna(c["gap_pct"]) else "–",
-                f"{c['gap']:+,.0f} units · target within ±5%",
-                prefix="", suffix="%", decimals=1,
-                foot_units=c["gap"] if not pd.isna(c["gap"]) else None,
-                foot_target=" units · target within ±5%",
-                spec=KPI_SPECS["gap"]
-            ),
-            luxury_tile(
-                "Shelf Share", c["shelf"], p["shelf"],
-                c["shelf"] >= 30 if not pd.isna(c["shelf"]) else False, True,
-                f"{c['shelf']:.1f}%" if not pd.isna(c["shelf"]) else "–", "Target ≥ 30%",
-                suffix="%", decimals=1, spec=KPI_SPECS["shelf"]
-            ),
-            luxury_tile(
-                "Planogram Compliance", c["plano"], p["plano"],
-                c["plano"] >= 80 if not pd.isna(c["plano"]) else False, True,
-                f"{c['plano']:.1f}%" if not pd.isna(c["plano"]) else "–", "Target ≥ 80%",
-                suffix="%", decimals=1, spec=KPI_SPECS["plano"]
-            ),
-            class_="kpi-horizontal-grid"
-        )
+        prior = Filters(f.channels, f.regions, f.skus, f.all_skus, (a - pd.Timedelta(days=n)).date(),
+                        (a - pd.Timedelta(days=1)).date())
+        return item.kpis(f), item.kpis(prior)
+
+    selected_kpi = reactive.value("msl")
+
+    @reactive.effect
+    @reactive.event(input.m1_kpi)
+    def _select_kpi():
+        if input.m1_kpi() in KPI_SPECS:
+            selected_kpi.set(input.m1_kpi())
 
     @render.ui
-    def ctx():
-        a, b = span()
-        s = SO()
-        store_count = s.store_id.nunique() if not s.empty else 0
-        if active_role() == "Field Rep":
-            who_text = f"Field Representative Route · {active_name()} ({active_rep()})"
-            role_badge = ui.span(who_text, class_="badge", style="background:#73fbd3;color:#04362d;font-weight:700;font-size:0.75rem;padding:6px 12px;border-radius:980px;border:1px solid rgba(115,251,211,0.9);box-shadow:0 2px 8px rgba(115,251,211,0.25);")
-        else:
-            who_text = f"Regional Manager Oversight · {active_name()} (All Stores Aggregated)"
-            role_badge = ui.span(who_text, class_="badge", style="background:#4a8fe7;color:#ffffff;font-weight:600;font-size:0.75rem;padding:6px 12px;border-radius:980px;box-shadow:0 2px 8px rgba(74,143,231,0.3);")
-
-        return ui.div(
-            role_badge,
-            ui.span(f"Territory Scope: {store_count} stores active", class_="badge bg-white text-dark border border-secondary border-opacity-25 ms-2", style="font-weight:600;font-size:0.75rem;padding:6px 12px;border-radius:980px;box-shadow:0 1px 3px rgba(0,0,0,0.04);"),
-            ui.span(f"{a:%b %d, %Y} – {b:%b %d, %Y} ({((b - a).days + 1) // 7} Weeks)", class_="badge bg-white text-muted border border-secondary border-opacity-25 ms-2", style="font-weight:500;font-size:0.75rem;padding:6px 12px;border-radius:980px;box-shadow:0 1px 3px rgba(0,0,0,0.04);"),
-            class_="d-flex align-items-center mb-3"
-        )
-
-    def tidy(fig, h=350, is_polar=False, is_geo=False):
-        fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            height=h,
-            margin=dict(l=16, r=16, t=32, b=16),
-            legend=dict(
-                orientation="h",
-                y=-0.22,
-                title=None,
-                font=dict(size=11, color="#6E6E73", family="'Plus Jakarta Sans', -apple-system, sans-serif")
-            ),
-            font=dict(family="'Plus Jakarta Sans', -apple-system, sans-serif", size=12, color="#6E6E73"),
-            hoverlabel=dict(
-                bgcolor="#FFFFFF",
-                font_size=12,
-                font_family="'Plus Jakarta Sans', -apple-system, sans-serif",
-                font_color="#1D1D1F",
-                bordercolor="rgba(0,0,0,0.12)"
-            )
-        )
-        if not is_polar and not is_geo:
-            fig.update_layout(
-                xaxis=dict(
-                    gridcolor="rgba(0,0,0,0.04)",
-                    zerolinecolor="rgba(0,0,0,0.08)",
-                    tickfont=dict(color="#6E6E73", size=11)
-                ),
-                yaxis=dict(
-                    gridcolor="rgba(0,0,0,0.04)",
-                    zerolinecolor="rgba(0,0,0,0.08)",
-                    tickfont=dict(color="#6E6E73", size=11)
-                )
-            )
-        return fig
-
-    def locked_chart(title="Manager Access Required"):
-        fig = go.Figure()
-        fig.add_annotation(
-            text=f"🔒 <b>{title}</b><br><span style='font-size:12px;color:#86868B;'>Access restricted to Regional Management oversight</span>",
-            showarrow=False,
-            font=dict(size=13, color="#1D1D1F")
-        )
-        fig.update_xaxes(visible=False)
-        fig.update_yaxes(visible=False)
-        return tidy(fig, h=420)
-
-    # ==================== OOS & SUPPLY CHAIN INSIGHTS ====================
-
-    @render_widget
-    def chart1_oos_hazard():
-        """Stock Level & OOS Hazard Heatmap (Field Sales Rep Radar)."""
-        s = SO()
-        req(len(s))
-
-        # Filter for mandatory MSL items
-        msl_df = s[s.is_msl == True]
-        if msl_df.empty:
-            msl_df = s
-
-        latest_date = msl_df["date"].max()
-        latest_so = msl_df[msl_df["date"] == latest_date]
-
-        # Field rep view: scoped to their route stores; Manager view: prioritize top 25 hazard stores
-        if active_role() == "Field Rep":
-            sub = latest_so
-        else:
-            if latest_so["store_name"].nunique() > 25:
-                store_hazard = latest_so.groupby("store_name").agg(
-                    oos_count=("is_out_of_stock", "sum"),
-                    avg_inv=("inventory_level", "mean")
-                ).sort_values(by=["oos_count", "avg_inv"], ascending=[False, True])
-                top_stores = store_hazard.index[:25]
-                sub = latest_so[latest_so["store_name"].isin(top_stores)]
-            else:
-                sub = latest_so
-
-        pivot = sub.pivot_table(
-            index="store_name",
-            columns="product_name",
-            values="inventory_level",
-            aggfunc="mean"
-        ).fillna(0)
-
-        # Shorten product names for crisp visual radar
-        pivot.columns = [col.replace("Marvel ", "") for col in pivot.columns]
-
-        fig = px.imshow(
-            pivot,
-            text_auto=".0f",
-            aspect="auto",
-            color_continuous_scale=[
-                [0.0, "#FF3B30"],    # 0 units: Active OOS (Red Hazard)
-                [0.12, "#FF9500"],   # 1-15 units: Impending stockout buffer warning (Amber)
-                [0.35, "#E5E5EA"],   # Mid buffer (Silver)
-                [1.0, "#0071E3"]     # Healthy buffer (Apple Blue)
-            ],
-            labels=dict(color="On-Hand Units", x="", y="")
-        )
-        fig.update_xaxes(side="top", tickangle=-30)
-        h = max(460, min(680, len(pivot) * 24 + 130))
-        return tidy(fig, h=h)
-
-    @render_widget
-    def chart2_lost_sales():
-        """Estimated Lost Sales Trend & Cumulative Loss Area Chart."""
-        if active_role() == "Field Rep":
-            return locked_chart("Estimated Lost Sales Trend")
-        s = SO()
-        req(len(s))
-
-        group_by = input.c2_group() if hasattr(input, "c2_group") and input.c2_group() else "region"
-
-        # Baseline average daily sales per (store_id, sku_id) when in stock
-        in_stock = s[s.is_out_of_stock == 0]
-        if in_stock.empty:
-            in_stock = s
-        base = in_stock.groupby(["store_id", "sku_id"])["units_sold_daily"].mean().rename("baseline_daily")
-        s_calc = s.merge(base, on=["store_id", "sku_id"], how="left")
-        s_calc["baseline_daily"] = s_calc["baseline_daily"].fillna(s_calc["units_sold_daily"]).clip(lower=1)
-
-        # Estimated Lost Revenue = is_out_of_stock * baseline_daily * list_price
-        s_calc["lost_revenue"] = s_calc["is_out_of_stock"] * s_calc["baseline_daily"] * s_calc["list_price"]
-
-        df_loss = s_calc.groupby(["week", group_by])["lost_revenue"].sum().reset_index()
-
-        color_map = {
-            "Northeast": "#0071E3", "Southeast": "#34C759", "Midwest": "#FF9500", "West": "#AF52DE",
-            "Surface Cleaners": "#0071E3", "Dishwashing": "#FF9500", "Laundry": "#AF52DE"
-        }
-
-        fig = px.area(
-            df_loss,
-            x="week",
-            y="lost_revenue",
-            color=group_by,
-            color_discrete_map=color_map,
-            labels={"lost_revenue": "Est. Lost Revenue ($)", "week": "", group_by: group_by.capitalize()}
-        )
-        fig.update_yaxes(tickprefix="$", tickformat=",.0f")
-        return tidy(fig, h=460)
-
-    @render_widget
-    def chart3_oos_duration():
-        """OOS Duration Distribution (Boxplot)."""
-        if active_role() == "Field Rep":
-            return locked_chart("OOS Duration Distribution")
-        s = SO()
-        req(len(s))
-
-        group_col = input.c3_group() if hasattr(input, "c3_group") and input.c3_group() else "channel"
-
-        # Sort and detect consecutive OOS spells
-        s_sorted = s.sort_values(["store_id", "sku_id", "date"]).reset_index(drop=True)
-        s_sorted["spell_block"] = (
-            (s_sorted["is_out_of_stock"] != s_sorted.groupby(["store_id", "sku_id"])["is_out_of_stock"].shift()) |
-            (s_sorted["store_id"] != s_sorted["store_id"].shift()) |
-            (s_sorted["sku_id"] != s_sorted["sku_id"].shift())
-        ).cumsum()
-
-        oos_only = s_sorted[s_sorted["is_out_of_stock"] == 1]
-        if oos_only.empty:
-            fig = go.Figure()
-            fig.add_annotation(text="Zero OOS incidents recorded in selected period", showarrow=False)
-            return tidy(fig, h=450)
-
-        incidents = oos_only.groupby(["spell_block", "store_id", "sku_id", group_col]).agg(
-            consecutive_days=("date", "count")
-        ).reset_index()
-
-        fig = px.box(
-            incidents,
-            x=group_col,
-            y="consecutive_days",
-            color=group_col,
-            color_discrete_map=COL if group_col == "channel" else {
-                "Tier 1": "#0071E3", "Tier 2": "#FF9500", "Tier 3": "#8E8E93"
-            },
-            points="outliers",
-            labels={"consecutive_days": "Consecutive Days OOS per Incident", group_col: ""}
-        )
-        return tidy(fig, h=450)
-
-    # ==================== SHELF EXECUTION & COMPLIANCE ====================
-
-    @render_widget
-    def chart4_compliance_gauge():
-        """Planogram & MSL Compliance Gauge / Progress Bar Matrix."""
-        x, s = AU(), SO()
-        req(len(x))
-
-        plano = x.groupby(["category", "brand"])["planogram_compliance"].mean().mul(100).reset_index()
-
-        s_msl = s[s.is_msl == True]
-        if s_msl.empty:
-            s_msl = s
-        msl = s_msl.groupby(["category", "brand"])["is_out_of_stock"].apply(
-            lambda v: (1 - v.mean()) * 100
-        ).reset_index(name="msl_availability")
-
-        merged = plano.merge(msl, on=["category", "brand"], how="left").fillna(0)
-        merged["brand_key"] = merged["category"] + " · " + merged["brand"]
-
-        melted = merged.melt(
-            id_vars=["brand_key", "category", "brand"],
-            value_vars=["planogram_compliance", "msl_availability"],
-            var_name="Metric",
-            value_name="Percentage"
-        )
-        melted["Metric"] = melted["Metric"].map({
-            "planogram_compliance": "Planogram Compliance %",
-            "msl_availability": "MSL Availability %"
-        })
-
-        fig = px.bar(
-            melted,
-            y="brand_key",
-            x="Percentage",
-            color="Metric",
-            barmode="group",
-            orientation="h",
-            text_auto=".1f",
-            color_discrete_map={
-                "Planogram Compliance %": "#0071E3",
-                "MSL Availability %": "#34C759"
-            },
-            labels={"Percentage": "Compliance Rate (%)", "brand_key": ""}
-        )
-
-        fig.add_vline(
-            x=85, line_dash="dash", line_color="#34C759", line_width=2,
-            annotation_text="85% Target Line",
-            annotation_position="top right",
-            annotation_font=dict(size=10, color="#1B873F")
-        )
-        fig.add_vline(
-            x=62, line_dash="dot", line_color="#86868B", line_width=1.5,
-            annotation_text="62% Baseline",
-            annotation_position="bottom right",
-            annotation_font=dict(size=10, color="#86868B")
-        )
-        fig.update_xaxes(range=[0, 105], ticksuffix="%")
-        return tidy(fig, h=480)
-
-    @render_widget
-    def chart5_shelf_bubble():
-        """Actual Shelf Share vs. Target Bubble Plot."""
-        if active_role() == "Field Rep":
-            return locked_chart("Actual Shelf Share vs Target")
-        x, i = AU(), SI()
-        req(len(x))
-
-        shelf_store = x.groupby("store_id")["shelf_share_pct"].mean().reset_index()
-        sales_store = i.groupby("store_id")["net_sales"].sum().reset_index()
-
-        store_attrs = stores[["store_id", "store_name", "channel", "region", "segment_tier"]].drop_duplicates()
-        df_bubble = store_attrs.merge(shelf_store, on="store_id").merge(sales_store, on="store_id")
-
-        tier_sizes = {"Tier 1": 26, "Tier 2": 16, "Tier 3": 10}
-        df_bubble["bubble_size"] = pd.to_numeric(
-            df_bubble["segment_tier"].astype(str).map(tier_sizes).fillna(12),
-            errors="coerce"
-        ).astype(float)
-
-        fig = px.scatter(
-            df_bubble,
-            x="shelf_share_pct",
-            y="net_sales",
-            size="bubble_size",
-            color="channel",
-            hover_name="store_name",
-            hover_data={"segment_tier": True, "region": True, "shelf_share_pct": ":.1f%", "net_sales": ":$,.0f", "bubble_size": False},
-            color_discrete_map=COL,
-            labels={"shelf_share_pct": "Average Shelf Share %", "net_sales": "Total Net Sales ($)", "channel": "Channel"}
-        )
-        fig.add_vline(
-            x=30, line_dash="dash", line_color="#FF9500", line_width=1.8,
-            annotation_text="Target Shelf Share (≥30%)",
-            annotation_position="top left",
-            annotation_font=dict(size=10, color="#C97200")
-        )
-        fig.update_xaxes(ticksuffix="%")
-        fig.update_yaxes(tickprefix="$", tickformat=",.0f")
-        return tidy(fig, h=480)
-
-    @render_widget
-    def chart6_radar_scorecard():
-        """Multi-Dimensional Execution Scorecard (Radar Chart)."""
-        if active_role() == "Field Rep":
-            return locked_chart("Execution Scorecard")
-        x, s = AU(), SO()
-        req(len(x))
-
-        rad_axes = ["Planogram Compliance %", "MSL Availability %", "Secondary Display %", "Shelf Share %", "In-Stock Rate %"]
-        group_col = input.c6_group() if hasattr(input, "c6_group") and input.c6_group() else "region"
-
-        groups = sorted(x[group_col].unique().tolist())
-        palette = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF2D55"]
-
-        fig = go.Figure()
-        for idx, grp in enumerate(groups):
-            sub_x = x[x[group_col] == grp]
-            sub_s = s[s[group_col] == grp]
-            sub_msl = sub_s[sub_s.is_msl == True]
-            if sub_msl.empty:
-                sub_msl = sub_s
-
-            p_val = sub_x["planogram_compliance"].mean() * 100 if not sub_x.empty else 0
-            m_val = (1 - sub_msl["is_out_of_stock"].mean()) * 100 if not sub_msl.empty else 0
-            d_val = sub_x["secondary_display"].mean() * 100 if not sub_x.empty else 0
-            sh_val = sub_x["shelf_share_pct"].mean() if not sub_x.empty else 0
-            i_val = (1 - sub_s["is_out_of_stock"].mean()) * 100 if not sub_s.empty else 0
-
-            vals = [p_val, m_val, d_val, sh_val, i_val]
-            vals.append(vals[0])
-
-            col_accent = palette[idx % len(palette)]
-            fig.add_trace(go.Scatterpolar(
-                r=vals,
-                theta=rad_axes + [rad_axes[0]],
-                fill="toself",
-                name=grp,
-                line=dict(color=col_accent, width=2.5)
-            ))
-
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100],
-                    gridcolor="rgba(0,0,0,0.06)",
-                    tickfont=dict(size=10, color="#86868B")
-                ),
-                angularaxis=dict(
-                    gridcolor="rgba(0,0,0,0.06)",
-                    tickfont=dict(size=11, color="#1D1D1F")
-                )
-            )
-        )
-        return tidy(fig, h=480, is_polar=True)
-
-    # ==================== TRADE TERMS & NEGOTIATIONS ====================
-
-    @render_widget
-    def chart7_discount_margin():
-        """Effective Discount vs Margin Realization Scatter Plot with Guardrails."""
-        i = SI()
-        req(len(i))
-
-        si_g = i.merge(guardrails, on=["channel", "category"], how="left")
-
-        agg = si_g.groupby(["store_id", "store_name", "channel", "region", "category"]).agg(
-            units_sold=("units_sold", "sum"),
-            net_sales=("net_sales", "sum"),
-            gross_sales=("units_sold", lambda u: (u * si_g.loc[u.index, "list_price"]).sum()),
-            cogs=("units_sold", lambda u: (u * si_g.loc[u.index, "unit_cost"]).sum()),
-            max_discount_pct=("max_discount_pct", "first"),
-            min_target_margin=("min_target_margin", "first")
-        ).reset_index()
-
-        agg["effective_discount_pct"] = (1 - (agg["net_sales"] / agg["gross_sales"])).mul(100).clip(lower=0)
-        agg["realized_margin_pct"] = ((agg["net_sales"] - agg["cogs"]) / agg["net_sales"]).mul(100)
-
-        agg["is_breach"] = (agg["effective_discount_pct"] > agg["max_discount_pct"]) | (agg["realized_margin_pct"] < agg["min_target_margin"])
-        agg["zone_status"] = np.where(agg["is_breach"], "Red Zone (Requires Approval)", "Safe Zone (Compliant)")
-
-        fig = px.scatter(
-            agg,
-            x="effective_discount_pct",
-            y="realized_margin_pct",
-            color="zone_status",
-            color_discrete_map={
-                "Red Zone (Requires Approval)": "#FF3B30",
-                "Safe Zone (Compliant)": "#0071E3"
-            },
-            hover_name="store_name",
-            hover_data={
-                "channel": True,
-                "category": True,
-                "effective_discount_pct": ":.1f%",
-                "max_discount_pct": ":.1f%",
-                "realized_margin_pct": ":.1f%",
-                "min_target_margin": ":.1f%",
-                "zone_status": True
-            },
-            labels={
-                "effective_discount_pct": "Effective Discount Rate %",
-                "realized_margin_pct": "Realized Margin %",
-                "zone_status": "Policy Status"
-            }
-        )
-
-        avg_max_disc = agg["max_discount_pct"].mean()
-        avg_min_mrg = agg["min_target_margin"].mean()
-        fig.add_vline(
-            x=avg_max_disc, line_dash="dash", line_color="#FF3B30", line_width=1.5,
-            annotation_text=f"Max Discount Cap (~{avg_max_disc:.1f}%)",
-            annotation_position="top right",
-            annotation_font=dict(size=10, color="#D70015")
-        )
-        fig.add_hline(
-            y=avg_min_mrg, line_dash="dash", line_color="#FF9500", line_width=1.5,
-            annotation_text=f"Min Target Margin (~{avg_min_mrg:.1f}%)",
-            annotation_position="bottom right",
-            annotation_font=dict(size=10, color="#C97200")
-        )
-        fig.update_xaxes(ticksuffix="%")
-        fig.update_yaxes(ticksuffix="%")
-        return tidy(fig, h=480)
-
-    @render_widget
-    def chart8_tradeoff_compliance():
-        """Trade-off Execution Commitment Compliance (Grouped Bar Chart)."""
-        if active_role() == "Field Rep":
-            return locked_chart("Trade-off Commitment Compliance")
-        x = AU()
-        req(len(x))
-
-        store_audit = x.groupby("store_id").agg(
-            avg_shelf_share=("shelf_share_pct", "mean"),
-            avg_sec_display=("secondary_display", "mean"),
-            avg_plano=("planogram_compliance", "mean")
-        ).reset_index().merge(stores[["store_id", "channel"]], on="store_id")
-
-        store_trades = store_audit.merge(guardrails[["channel", "required_exec_tradeoff"]].drop_duplicates(), on="channel")
-
-        def eval_tradeoff(row):
-            t = row["required_exec_tradeoff"]
-            if "+10%" in t:
-                return "Met (Delivered)" if (row["avg_shelf_share"] >= 30.0 or row["avg_sec_display"] >= 0.4) else "Unfulfilled (Breach)"
-            elif "+15%" in t:
-                return "Met (Delivered)" if (row["avg_shelf_share"] >= 35.0 or row["avg_sec_display"] >= 0.5) else "Unfulfilled (Breach)"
-            elif "endcap" in t:
-                return "Met (Delivered)" if (row["avg_sec_display"] >= 0.45) else "Unfulfilled (Breach)"
-            elif "100% MSL" in t or "planogram" in t:
-                return "Met (Delivered)" if (row["avg_plano"] >= 0.82) else "Unfulfilled (Breach)"
-            return "Met (Delivered)"
-
-        store_trades["status"] = store_trades.apply(eval_tradeoff, axis=1)
-
-        short_map = {
-            "Secure +10% shelf share or place 1 secondary display": "+10% Shelf Share / Sec. Display",
-            "Commit to featured endcap placement for 4 weeks": "Featured Endcap (4 Weeks)",
-            "Secure +15% shelf share or place 1 secondary display": "+15% Shelf Share / Sec. Display",
-            "Achieve 100% MSL compliance + planogram adherence": "100% MSL & Planogram Adherence"
-        }
-        store_trades["tradeoff_label"] = store_trades["required_exec_tradeoff"].map(short_map).fillna(store_trades["required_exec_tradeoff"])
-
-        counts = store_trades.groupby(["tradeoff_label", "status"]).size().reset_index(name="store_count")
-
-        fig = px.bar(
-            counts,
-            x="tradeoff_label",
-            y="store_count",
-            color="status",
-            barmode="group",
-            text_auto=True,
-            color_discrete_map={
-                "Met (Delivered)": "#34C759",
-                "Unfulfilled (Breach)": "#FF3B30"
-            },
-            labels={"store_count": "Number of Stores / Accounts", "tradeoff_label": "", "status": "Execution Status"}
-        )
-        return tidy(fig, h=460)
-
-    # ==================== COMMERCIAL STRATEGY & GEOSPATIAL ====================
-
-    @render_widget
-    def chart9_geo_map():
-        """Regional Execution vs Revenue Performance Map (Choropleth Map)."""
-        if active_role() == "Field Rep":
-            return locked_chart("Regional Execution Map")
-        i, x, s = SI(), AU(), SO()
-        req(len(i))
-
-        metric_choice = input.c9_metric() if hasattr(input, "c9_metric") and input.c9_metric() else "health_score"
-
-        st_sales = i.groupby("state")["net_sales"].sum().reset_index()
-        st_plano = x.groupby("state")["planogram_compliance"].mean().mul(100).reset_index()
-        st_stock = s.groupby("state")["is_out_of_stock"].apply(lambda v: (1 - v.mean()) * 100).reset_index(name="in_stock_rate")
-        st_stores = stores.groupby("state")["store_id"].count().reset_index(name="store_count")
-
-        state_df = st_sales.merge(st_plano, on="state").merge(st_stock, on="state").merge(st_stores, on="state")
-        state_df["health_score"] = (state_df["planogram_compliance"] * 0.5 + state_df["in_stock_rate"] * 0.5).round(1)
-
-        fig = px.choropleth(
-            state_df,
-            locations="state",
-            locationmode="USA-states",
-            color=metric_choice,
-            scope="usa",
-            hover_name="state",
-            hover_data={
-                "health_score": ":.1f",
-                "net_sales": ":$,.0f",
-                "planogram_compliance": ":.1f%",
-                "in_stock_rate": ":.1f%",
-                "store_count": True,
-                "state": False
-            },
-            color_continuous_scale="Blues",
-            labels={
-                "health_score": "Execution Health Score",
-                "net_sales": "Net Sales ($)"
-            }
-        )
-        fig.update_layout(
-            geo=dict(
-                bgcolor="rgba(0,0,0,0)",
-                lakecolor="rgba(245,245,247,0.5)",
-                showlakes=True,
-                landcolor="#F5F5F7",
-                subunitcolor="rgba(0,0,0,0.12)"
-            )
-        )
-        return tidy(fig, h=520, is_geo=True)
-
-    @render_widget
-    def chart10_sankey_velocity():
-        """Sell-In vs Sell-Out Inventory Velocity (Sankey Flow Diagram)."""
-        if active_role() == "Field Rep":
-            return locked_chart("Inventory Velocity Flow")
-        i, s = SI(), SO()
-        req(len(i))
-
-        # Stage 1: Category -> Channel (Sell-In Volume)
-        cat_chan = i.groupby(["category", "channel"])["units_sold"].sum().reset_index()
-
-        # Stage 2: Channel -> Consumer Offtake vs Holding Buffer
-        chan_so = s.groupby("channel")["units_sold_daily"].sum().reset_index(name="sell_out_units")
-        chan_si = i.groupby("channel")["units_sold"].sum().reset_index(name="sell_in_units")
-        chan_flow = chan_si.merge(chan_so, on="channel")
-        chan_flow["buffer_units"] = (chan_flow["sell_in_units"] - chan_flow["sell_out_units"]).clip(lower=0)
-
-        categories = sorted(i["category"].unique().tolist())
-        channels = sorted(i["channel"].unique().tolist())
-        destinations = ["Consumer Offtake (Sell-Out)", "Channel Stock Buffer (Holding)"]
-
-        all_nodes = categories + channels + destinations
-        node_idx = {name: idx for idx, name in enumerate(all_nodes)}
-
-        node_colors = [
-            "#0071E3", "#34C759", "#AF52DE",  # Categories
-            "#FF9500", "#5856D6", "#FF2D55",  # Channels
-            "#1B873F", "#8E8E93"              # Destinations
-        ]
-
-        sources, targets, values, link_colors = [], [], [], []
-
-        for _, row in cat_chan.iterrows():
-            if row["units_sold"] > 0:
-                sources.append(node_idx[row["category"]])
-                targets.append(node_idx[row["channel"]])
-                values.append(row["units_sold"])
-                link_colors.append("rgba(0, 113, 227, 0.22)")
-
-        for _, row in chan_flow.iterrows():
-            if row["sell_out_units"] > 0:
-                sources.append(node_idx[row["channel"]])
-                targets.append(node_idx["Consumer Offtake (Sell-Out)"])
-                values.append(row["sell_out_units"])
-                link_colors.append("rgba(52, 199, 89, 0.28)")
-
-            if row["buffer_units"] > 0:
-                sources.append(node_idx[row["channel"]])
-                targets.append(node_idx["Channel Stock Buffer (Holding)"])
-                values.append(row["buffer_units"])
-                link_colors.append("rgba(255, 149, 0, 0.28)")
-
-        fig = go.Figure(data=[go.Sankey(
-            node=dict(
-                pad=18,
-                thickness=20,
-                line=dict(color="rgba(0,0,0,0.15)", width=0.8),
-                label=all_nodes,
-                color=node_colors[:len(all_nodes)]
-            ),
-            link=dict(
-                source=sources,
-                target=targets,
-                value=values,
-                color=link_colors
-            )
-        )])
-        return tidy(fig, h=480)
+    @safe
+    def m1_kpis():
+        if not current()[1].skus:
+            return state("No SKU selected", "Select at least one product SKU, or another MSL option, in the filters.")
+        return kpi_tiles(*kpi_values(), selected=selected_kpi())
+
+    @reactive.calc
+    def kpi_trend():
+        item, f = current()
+        return item.kpi_trend(f, selected_kpi())
+
+    @render.ui
+    @safe
+    def m1_kpi_detail():
+        item, f = current()
+        if not f.skus:
+            return None
+        c, p = kpi_values()
+        return kpi_detail(selected_kpi(), c, p, kpi_trend(), f)
+
+    # ---------------------------------------------------------- charts
+    for output_id, (_, option_id, _, _) in CHARTS.items():
+        def bind(output_id=output_id, option_id=option_id):
+            @output(id=output_id)
+            @render.ui
+            @safe
+            def _chart():
+                item, f = current()
+                option = input[option_id]() if option_id else None
+                return render_chart(output_id, item, f, option, colors())
+        bind()

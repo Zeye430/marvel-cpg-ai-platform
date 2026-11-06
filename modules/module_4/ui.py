@@ -156,7 +156,7 @@ def module_4_ui(dataset: Dict[str, Any]) -> ui.Tag:
         kit.plotly_dependency(),
         ui.tags.style(_CSS),
         ui.tags.script(_SCRIPT),
-        kit.topbar((label, "Ask"), ui.output_ui("m4_user_block")),
+        kit.topbar((label, "Ask"), *kit.topbar_actions(ui.output_ui("m4_user_block"), copilot=False)),
         ui.div(
             ui.div(
                 ui.div(ui.output_text("m4_has_turns"), class_="ws-hidden"),

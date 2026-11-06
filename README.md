@@ -12,7 +12,7 @@ The platform is structured into four decoupled, independent business modules orc
 marvel-cpg-ai-platform/
 │
 ├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
-├── integrated_app.py           # Module 2 + Module 4 on one shared publication (demo sign-in); the app the Docker image starts
+├── integrated_app.py           # Modules 1, 2 and 4 on one shared publication (demo sign-in); the app the Docker image starts
 ├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
 ├── Dockerfile                  # Production container definition for local & Render deployments
 ├── docker-compose.yml          # Container service definition with environment variable injection
@@ -132,14 +132,15 @@ The common Bronze/Silver/Gold layer supplies reported business data through June
    ```
    Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-   To run only Module 2 (stockout risk) and Module 4 (Commercial Copilot) on one shared publication,
-   see the [integrated app guide](docs/integrated-app.md).
+   To run Module 1 (business performance), Module 2 (stockout risk) and Module 4 (Commercial Copilot)
+   on one shared publication, see the [integrated app guide](docs/integrated-app.md). Module 1 now runs
+   only there; the root app's Module 1 tab points to it.
 
 ---
 
 ### Option 2: Run with Docker Compose
 
-The image starts `integrated_app.py` (Modules 2 and 4). It holds no business data: set the source in `.env`,
+The image starts `integrated_app.py` (Modules 1, 2 and 4). It holds no business data: set the source in `.env`,
 as described in the [integrated app guide](docs/integrated-app.md#run-it-in-docker).
 
 1. **Build and Run**:

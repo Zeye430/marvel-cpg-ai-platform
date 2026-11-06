@@ -1,4 +1,4 @@
-"""Integrated Module 2 + Module 4 on the marked, disposable synthetic local PostgreSQL only.
+"""Integrated Modules 1, 2 and 4 on the marked, disposable synthetic local PostgreSQL only.
 
 Skipped unless the test database is configured (see compose.postgres-test.yml); fails instead of
 skipping when SHARED_POSTGRES_REQUIRE_TEST_DB=1. No cloud connection, client data or real model.
@@ -10,6 +10,24 @@ import unittest
 
 from tests import postgres_fixtures as fx
 from tests.test_postgres_integration import PgCase
+
+
+def chart_payload(markup):
+    """A rendered Module 1 chart with floats at 9 significant digits (sum order differs by backend)."""
+    import json
+    import re
+
+    def rounded(value):
+        if isinstance(value, float):
+            return float(f"{value:.9g}")
+        if isinstance(value, list):
+            return [rounded(v) for v in value]
+        if isinstance(value, dict):
+            return {k: rounded(v) for k, v in value.items()}
+        return value
+    text = str(markup)
+    return re.sub(r"var f=\{.*?\};var el=", "", text, flags=re.S), \
+        [rounded(json.loads(m)) for m in re.findall(r"var f=(\{.*?\});var el=", text, flags=re.S)]
 
 
 def setUpModule():
@@ -70,6 +88,56 @@ class IntegratedPgTests(PgCase):
                     with pg_box.lock, local_box.lock:              # raw rows: NULL stays None (no NaN)
                         self.assertEqual(pg_box.con.execute(query).fetchall(),
                                          local_box.con.execute(query).fetchall(), table)
+
+    def test_module1_kpis_and_charts_match_local_and_postgres(self):
+        from datetime import date
+        from data_platform.access import ServingReader
+        from modules.module_1 import server as m1
+        from modules.module_1.data import Filters, Module1Pool
+        runtime = self.runtime()
+        pg_pool = runtime.module1_pool()
+        self.assertIs(pg_pool.reader, runtime.reader())               # the shared reader, not a second source
+        local_pool = Module1Pool(ServingReader(self.sources["model"]))
+        for principal in ("demo:manager", "demo:rep-b"):
+            local, cloud = local_pool.get(principal), pg_pool.get(principal)
+            self.addCleanup(local.close)
+            self.addCleanup(cloud.close)
+            self.assertEqual(local.choices(), cloud.choices())
+            info = local.choices()
+            colors = {"channel": m1.palette(info["channels"]), "region": m1.palette(info["regions"]),
+                      "tier": m1.palette(info["tiers"]), "category": m1.palette(info["categories"])}
+            skus = tuple(info["products"])
+            cases = [Filters(tuple(info["channels"]), tuple(info["regions"]), skus, True,
+                             date(2026, 4, 6), date(2026, 6, 28)),
+                     Filters(tuple(info["channels"][:1]), tuple(info["regions"]), skus[:2], False,
+                             date(2026, 5, 4), date(2026, 6, 28))]
+            for f in cases:
+                with self.subTest(principal=principal, filters=f):
+                    self.assertEqual(local.kpis(f), cloud.kpis(f))
+                    for name, call in (("latest", lambda d: d.latest_inventory(f)),
+                                       ("episodes", lambda d: d.oos_episodes(f, "channel")),
+                                       ("trade", lambda d: d.trade_terms(f)),
+                                       ("flow", lambda d: d.flow_by_channel(f)),
+                                       ("score", lambda d: d.scorecard(f, "region")),
+                                       ("states", lambda d: d.state_execution(f))):
+                        a, b = call(local), call(cloud)
+                        keys = list(a.columns)  # total order: several rows can share leading keys
+                        self.assertEqual(a.sort_values(keys).reset_index(drop=True).to_dict("records"),
+                                         b.sort_values(keys).reset_index(drop=True).to_dict("records"), name)
+                    for output_id in m1.CHARTS:                     # the rendered charts match too
+                        self.assertEqual(chart_payload(m1.render_chart(output_id, local, f, None, colors)),
+                                         chart_payload(m1.render_chart(output_id, cloud, f, None, colors)), output_id)
+
+    def test_module1_postgres_cache_fails_closed_after_scope_revocation(self):
+        pool = self.runtime().module1_pool()
+        data = pool.get("demo:rep-a")
+        self.addCleanup(data.close)
+        self.scopes(self.without("demo:rep-a"), "revoked-m1")
+        with self.assertRaises(PermissionError):
+            data.check()
+        self.assertTrue(data.closed)
+        with self.assertRaises(PermissionError):
+            pool.get("demo:rep-a")
 
     def test_module2_scope_change_during_load_fails_closed(self):
         from modules.module_2.service import Module2Service, Principal

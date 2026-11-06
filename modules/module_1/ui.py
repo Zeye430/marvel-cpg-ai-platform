@@ -1,526 +1,262 @@
 """
 modules/module_1/ui.py
 ======================
-UI layout for Module 1: Commercial Execution Analytics Dashboard.
-Features:
-- Left panel: Workflow card with portfolio filters (Date range, channels, regions, SKUs)
-- Right panel: Commercial Execution Intelligence Hero Card, 5 KPI Tiles, and 4 Visual Sections.
+Layout for Module 1: Business Performance (Commercial Execution Analytics), in the shared
+workspace design (shared/ui_kit: Module 2's design).
+
+Hosted in the workspace shell, the app sidebar lists Module 1's pages (``pages_nav_ui``):
+Overview (five KPI cards; the selected card's trend with its target, notes and calculation open
+below them) and one page per dashboard section:
+Geography & flow, Out-of-stock, Shelf execution and Trade terms. Every page has the portfolio
+filters (date range, channel, region, MSL products, product SKU) as one row of filter pills: each pill shows its
+current value and opens its options on click. While the first load runs, the page shows a welcome
+greeting instead. Every number and chart is rendered by the server from the signed-in user's
+scoped shared publication; nothing here is fixed.
+
+Without the shared runtime (the legacy root ``app.py``) the module shows where it runs instead
+of reading the legacy CSV loader.
 """
 
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict
+
+from htmltools import HTMLDependency
 from shiny import ui
-from shinywidgets import output_widget
-from shared.data import DEFAULT_START, DEFAULT_END
+
+from shared import ui_kit as kit
+
+_CSS = (Path(__file__).with_name("module1.css")).read_text()
+ASSETS = Path(__file__).resolve().parent / "assets"
+GEO_VERSION = "1.0"
+# Served by the app itself so the state map never fetches map data from a CDN.
+TOPOJSON_URL = f"lib/m1-geo-{GEO_VERSION}/"
+
+PAGES = {"overview": "Overview", "geo": "Geography & flow", "oos": "Out-of-stock", "shelf": "Shelf execution",
+         "trade": "Trade terms"}
+PAGE_ICONS = {"overview": "home", "geo": "chart", "oos": "pulse", "shelf": "shelf", "trade": "scale"}
+
+_SCRIPT = """
+window.jQuery(document).on('shiny:connected', function () {
+  if (window.__m1Handlers) { return; }
+  window.__m1Handlers = true;
+  // Sign-out / identity switch: drop previously rendered scoped content immediately.
+  Shiny.addCustomMessageHandler('m1-clear', function (message) {
+    document.querySelectorAll('#m1-root .shiny-html-output').forEach(function (e) { e.innerHTML = ''; });
+  });
+  Shiny.addCustomMessageHandler('m1-scroll-top', function (message) {
+    setTimeout(function () { window.scrollTo({top: 0, behavior: 'instant'}); }, 0);
+  });
+});
+function m1Go(page) { Shiny.setInputValue('m1_go', page, {priority: 'event'}); }
+// The browser's local time, for the welcome greeting (the server's clock may be in another time zone).
+window.jQuery(document).on('shiny:connected', function () {
+  var now = new Date();
+  Shiny.setInputValue('m1_client_clock', {hour: now.getHours(),
+    day: now.toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric'})});
+});
+// Filter pills: one open at a time; a click outside or Escape closes it.
+document.addEventListener('toggle', function (event) {
+  var pill = event.target;
+  if (!pill.classList || !pill.classList.contains('m1-pill') || !pill.open) { return; }
+  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (other) {
+    if (other !== pill) { other.removeAttribute('open'); }
+  });
+  var search = pill.querySelector('.m1-sku-search');
+  if (search) { search.focus(); }
+}, true);
+document.addEventListener('click', function (event) {
+  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (pill) {
+    if (!pill.contains(event.target)) { pill.removeAttribute('open'); }
+  });
+});
+document.addEventListener('keydown', function (event) {
+  if (event.key !== 'Escape') { return; }
+  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (pill) {
+    pill.removeAttribute('open'); pill.querySelector('summary').focus();
+  });
+});
+// SKU pill: type to filter the list; category headings between the groups.
+function m1SkuSearch(box) {
+  var term = box.value.trim().toLowerCase();
+  document.querySelectorAll('#m1_sku .checkbox').forEach(function (row) {
+    row.hidden = term !== '' && row.textContent.toLowerCase().indexOf(term) === -1;
+  });
+  m1SkuHeadings();
+}
+function m1SkuHeadings() {
+  var list = document.querySelector('#m1_sku .shiny-options-group');
+  if (!list) { return; }
+  list.querySelectorAll('.m1-sku-group').forEach(function (h) { h.remove(); });
+  var last = null;
+  list.querySelectorAll('.checkbox').forEach(function (row) {
+    var cat = row.querySelector('[data-category]');
+    cat = cat ? cat.getAttribute('data-category') : '';
+    if (!row.hidden && cat !== last) {
+      var h = document.createElement('div');
+      h.className = 'm1-sku-group'; h.textContent = cat; h.setAttribute('aria-hidden', 'true');
+      row.parentNode.insertBefore(h, row);
+      last = cat;
+    }
+  });
+}
+window.jQuery(document).on('shiny:updateinput', function (event) {
+  if (event.target && event.target.id === 'm1_sku') { setTimeout(m1SkuHeadings, 0); }
+});
+"""
 
 
-def module_1_ui(dataset: Dict[str, Any]) -> ui.Tag:
-    """Renders the complete Module 1 workspace layout."""
-    CH = dataset["channels"]
-    REG = dataset["regions"]
-    SKU_CHOICES = dataset["sku_choices"]
-    prods = dataset["prods"]
-    MIN_DATE = dataset["min_date"]
-    MAX_DATE = dataset["max_date"]
+def geo_dependency():
+    """Plotly's US states topology (usa_110m.json), bundled; see assets/geo/README.md."""
+    return HTMLDependency("m1-geo", GEO_VERSION, source={"subdir": str(ASSETS / "geo")}, all_files=True)
 
+
+def _pill(key, title, *body, icon=None):
+    """One filter pill: the summary shows the current value (server-rendered); the options open below it."""
+    return ui.tags.details(
+        ui.tags.summary(kit.icon(icon, 15) if icon else None, ui.output_ui(f"m1_pill_{key}", inline=True),
+                        ui.span("▾", class_="m1-caret", **{"aria-hidden": "true"}),
+                        class_="m1-pill-face", **{"aria-label": f"{title} filter"}),
+        ui.div(ui.tags.h3(title, class_="m1-pop-title"), *body, class_="m1-pop", role="group",
+               **{"aria-label": title}),
+        class_="m1-pill", id=f"m1-pill-{key}")
+
+
+def _filters():
+    """The portfolio filters as one row of pills, kept in view while the page scrolls."""
     return ui.div(
-        # Subtle Ambient Backdrop
-        ui.div(class_="ambient-glow ambient-glow-1"),
-        ui.div(class_="ambient-glow ambient-glow-2"),
-        ui.div(class_="ambient-grid"),
+        _pill("dates", "Date range",
+              ui.output_ui("m1_presets"),
+              ui.input_date_range("m1_dates", "Custom range (snaps to full weeks)", start="2026-06-30",
+                                  end="2026-06-30"),
+              icon="calendar"),
+        _pill("channel", "Channel", ui.input_checkbox_group("m1_channel", None, [])),
+        _pill("region", "Region", ui.input_checkbox_group("m1_region", None, [])),
+        _pill("msl", "MSL products",
+              ui.input_radio_buttons("m1_msl", None, {"all": "All products", "msl": "MSL products only",
+                                                      "non": "Non-MSL products only"}, selected="all"),
+              ui.tags.p("MSL = must-stock list (is_msl). Narrows the selected SKUs.", class_="ws-muted m1-pop-note")),
+        _pill("sku", "Product SKU",
+              ui.tags.input(type="search", class_="form-control m1-sku-search", placeholder="Search products",
+                            oninput="m1SkuSearch(this)", **{"aria-label": "Search products"}),
+              ui.div(ui.output_ui("m1_sku_count", inline=True),
+                     ui.div(ui.input_action_link("m1_sku_all", "Select all"), ui.span("·", **{"aria-hidden": "true"}),
+                            ui.input_action_link("m1_sku_none", "Clear"), class_="m1-sku-actions"),
+                     class_="m1-sku-head"),
+              ui.div(ui.input_checkbox_group("m1_sku", None, []), class_="m1-sku-list")),
+        ui.output_ui("m1_filter_summary", class_="m1-fsum"),
+        class_="m1-fbar", id="m1_filter_box", role="search", **{"aria-label": "Filters"})
 
+
+def _chart_card(output_id, title, logic, control=None, wide=True):
+    """One chart: title, the data and logic behind it, an optional view control, the chart."""
+    return ui.div(
+        ui.div(ui.div(ui.tags.h2(title, class_="ws-h"), ui.tags.p(logic, class_="ws-muted m1-logic")),
+               control, class_="ws-card-head m1-chart-head"),
+        ui.output_ui(output_id),
+        class_="ws-card m1-chart-card" + (" m1-wide" if wide else ""))
+
+
+def _radio(input_id, choices, selected):
+    return ui.div(ui.input_radio_buttons(input_id, None, choices, selected=selected, inline=True),
+                  class_="m1-toggle", role="group")
+
+
+def _pages():
+    overview = ui.nav_panel(
+        "overview",
+        ui.output_ui("m1_kpis"),
+        ui.output_ui("m1_kpi_detail"))
+    geo = ui.nav_panel(
+        "geo",
+        _chart_card("m1_chart9_geo_map", "Regional execution vs revenue performance map",
+                    "State-level invoiced net sales (sell_in_events), audited planogram compliance (execution_visits) "
+                    "and observed in-stock rate (store_sku_daily). The execution index is an equal-weight display "
+                    "index, not a shared KPI.",
+                    _radio("m1_c9_metric", {"health_score": "Execution index", "net_sales": "Invoiced net sales"},
+                           "health_score")),
+        _chart_card("m1_chart10_sankey", "Sell-in vs sell-out flow",
+                    "Comparable biweekly flows from commercial_period: invoiced units from category to channel, then "
+                    "observed consumer sell-out versus invoiced units above sell-out. Invoice units are not received "
+                    "stock, so the excess is a flow gap, not a measured inventory buffer."))
+    oos = ui.nav_panel(
+        "oos",
+        _chart_card("m1_chart1_heatmap", "Stock level and OOS hazard heatmap (mandatory MSL SKUs)",
+                    "Reported store_sku_daily inventory for mandatory MSL SKUs on the latest date in range. Zero is "
+                    "red, low buffers amber; a store-SKU without a report that day stays Unknown and is never shown "
+                    "as zero."),
+        _chart_card("m1_chart2_lost_sales", "Lost sales heuristic trend",
+                    "Heuristic only: observed zero-stock days × the store-SKU's observed in-stock average daily units "
+                    "× static list price. This is not the shared missing-day estimator and not measured lost revenue.",
+                    _radio("m1_c2_group", {"region": "By region", "category": "By category"}, "region")),
+        _chart_card("m1_chart3_duration", "OOS duration distribution",
+                    "Consecutive observed zero-stock calendar days per store-SKU (store_sku_daily). Any missing or "
+                    "Unknown day ends an episode, so gaps are never counted as continuous outage.",
+                    _radio("m1_c3_group", {"channel": "By channel", "segment_tier": "By tier"}, "channel")))
+    shelf = ui.nav_panel(
+        "shelf",
+        _chart_card("m1_chart4_compliance", "Planogram and MSL availability by brand",
+                    "Planogram compliance from audited SKU rows (execution_visits) and observed MSL SKU-day "
+                    "availability (store_sku_daily) by category and brand. Missing bars are N/A, not zero. Reference "
+                    "lines: 85% team display target and the brief's 62% baseline."),
+        _chart_card("m1_chart5_bubble", "Audited shelf allocation vs invoiced sales",
+                    "Store-level audited SKU shelf allocation per visit (execution_visits) against invoiced net sales "
+                    "(sell_in_events), sized by segment tier. Allocation is within supplied category SKUs, not "
+                    "competitor shelf share, so no target line is drawn."),
+        _chart_card("m1_chart6_radar", "Multi-dimensional execution scorecard",
+                    "Five shared components by region, tier or channel: planogram and secondary-display shares of "
+                    "audited SKU rows, audited SKU allocation, and observed MSL and overall in-stock rates. Gaps are "
+                    "N/A, not zero.",
+                    _radio("m1_c6_group", {"region": "By region", "segment_tier": "By tier", "channel": "By channel"},
+                           "region")))
+    trade = ui.nav_panel(
+        "trade",
+        _chart_card("m1_chart7_discount", "Effective discount vs margin realization with guardrails",
+                    "Reported invoices (sell_in_events) by store and category: gross-value-weighted trade discount "
+                    "versus margin at static product cost, compared with the source discount reference from "
+                    "negotiation_context. Source rules are Requires review, not approvals."),
+        _chart_card("m1_chart8_tradeoff", "Trade-off commitment evidence",
+                    "Audit evidence (planogram and secondary-display shares of audited SKU rows) grouped by the source "
+                    "required trade-off text. No approved rule maps evidence to Met/Breach, so no commitment is shown "
+                    "as verified."))
+    return ui.navset_hidden(overview, geo, oos, shelf, trade, id="m1_pages", selected="overview")
+
+
+def pages_nav_ui():
+    """Module 1's page navigation for the host's sidebar (rendered by the Module 1 server)."""
+    return ui.output_ui("m1_nav")
+
+
+def _not_hosted():
+    return ui.div(
+        kit.kit_dependency(),
+        kit.card(ui.tags.h2("Business Performance runs in the integrated workspace", class_="ws-h"),
+                 ui.tags.p("This dashboard reads the shared, account-scoped business publication. Start the "
+                           "integrated app (shiny run integrated_app.py; see docs/integrated-app.md). It no longer "
+                           "reads the legacy CSV loader.", class_="ws-sub"),
+                 id="m1-not-hosted"),
+        class_="ws m1", id="m1-root")
+
+
+def module_1_ui(dataset: Dict[str, Any] = None) -> ui.Tag:
+    """Module 1 page. ``dataset`` is the host context; data never comes from it."""
+    context = dataset if isinstance(dataset, dict) else {}
+    if context.get("runtime") is None:
+        return _not_hosted()
+    actions = kit.topbar_actions(ui.output_ui("m1_user_block"),
+                                 copilot_id="m1_open_copilot" if context.get("copilot_nav") else None)
+    topbar = ui.div(ui.div(ui.output_ui("m1_crumb"), class_="ws-crumb-wrap"),
+                    ui.div(*actions, class_="ws-topbar-actions"), class_="ws-topbar")
+    return ui.div(
+        kit.kit_dependency(),
+        kit.plotly_dependency(),
+        geo_dependency(),
+        ui.tags.style(_CSS),
+        ui.tags.script(_SCRIPT),
+        topbar,
         ui.div(
-ui.tags.main(
-    # -----------------------------------------------------
-    # 1. WORKFLOW CARD -> PORTFOLIO FILTERS (.panel-left)
-    # -----------------------------------------------------
-    ui.tags.section(
-        ui.div(
-            # Card Header Row
-            ui.div(
-                ui.div(
-                    ui.HTML("""
-                    <svg class="header-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" y1="21" x2="4" y2="14"/>
-                        <line x1="4" y1="10" x2="4" y2="3"/>
-                        <line x1="12" y1="21" x2="12" y2="12"/>
-                        <line x1="12" y1="8" x2="12" y2="3"/>
-                        <line x1="20" y1="21" x2="20" y2="16"/>
-                        <line x1="20" y1="12" x2="20" y2="3"/>
-                        <line x1="1" y1="14" x2="7" y2="14"/>
-                        <line x1="9" y1="8" x2="15" y2="8"/>
-                        <line x1="17" y1="16" x2="23" y2="16"/>
-                    </svg>
-                    """),
-                    ui.h2("PORTFOLIO FILTERS", class_="section-title"),
-                    class_="header-title-box"
-                ),
-                ui.div(
-                    ui.span("LIVE SCOPE", class_="live-clock-label"),
-                    class_="live-clock-badge"
-                ),
-                class_="card-header-row"
-            ),
-
-            # Active Scope Badge
-            ui.output_ui("sidebar_scope_badge"),
-            ui.hr(class_="filter-divider"),
-
-            # Date Range Selector
-            ui.div(
-                ui.input_date_range(
-                    "dates",
-                    "Date range (snaps to full weeks)",
-                    start=DEFAULT_START,
-                    end=DEFAULT_END,
-                    min=MIN_DATE,
-                    max=MAX_DATE
-                ),
-                class_="filter-group"
-            ),
-
-            # Channel Selector
-            ui.div(
-                ui.input_checkbox_group("channel", "Channel", CH, selected=CH),
-                class_="filter-group"
-            ),
-
-            # Region Selector
-            ui.div(
-                ui.input_selectize("region", "Region", REG, selected=REG, multiple=True),
-                class_="filter-group"
-            ),
-
-            # SKU Selector with Quick Action Buttons
-            ui.div(
-                ui.div(
-                    ui.span("Product SKU (23 Available)", class_="control-label fw-bold", style="font-size:0.8rem;color:#1d1d1f;"),
-                    ui.div(
-                        ui.input_action_button("btn_sku_all", "Select All", class_="btn-sku-action"),
-                        ui.input_action_button("btn_sku_none", "Deselect All", class_="btn-sku-action"),
-                        class_="d-flex gap-1"
-                    ),
-                    class_="d-flex align-items-center justify-content-between mb-1"
-                ),
-                ui.input_selectize(
-                    "sku",
-                    None,
-                    SKU_CHOICES,
-                    selected=list(prods.sku_id),
-                    multiple=True,
-                    options={
-                        "placeholder": "Type to search & select products...",
-                        "plugins": ["remove_button"],
-                        "closeAfterSelect": False
-                    }
-                ),
-                class_="filter-group mb-2"
-            ),
-
-            ui.hr(class_="filter-divider"),
-
-            # KPI Definitions Accordion
-            ui.accordion(
-                ui.accordion_panel(
-                    "KPI Definitions & Formulas",
-                    ui.tags.small(
-                        ui.tags.ul(
-                            ui.tags.li(
-                                ui.tags.b("MSL Compliance %: "),
-                                "COUNT(DISTINCT CASE WHEN non_compliant_stores = 0 THEN store_id END) / COUNT(DISTINCT store_id) * 100",
-                                ui.tags.br(),
-                                ui.tags.span("Source: fact_sell_out (or fact_inventory), dim_products · Target ≥ 90%", class_="text-muted", style="font-size:0.68rem;")
-                            ),
-                            ui.tags.li(
-                                ui.tags.b("OOS Rate %: "),
-                                "SUM(CASE WHEN is_out_of_stock = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
-                                ui.tags.br(),
-                                ui.tags.span("Source: fact_sell_out (or fact_inventory) · Target ≤ 5%", class_="text-muted", style="font-size:0.68rem;")
-                            ),
-                            ui.tags.li(
-                                ui.tags.b("Sell-in vs Sell-out Gap %: "),
-                                "(SUM(units_sell_in) - SUM(units_sold_daily)) / SUM(units_sold_daily) * 100",
-                                ui.tags.br(),
-                                ui.tags.span("Source: fact_sell_in, fact_sell_out · Target within ±5%", class_="text-muted", style="font-size:0.68rem;")
-                            ),
-                            ui.tags.li(
-                                ui.tags.b("Shelf Share %: "),
-                                "AVG(shelf_share_pct) grouped by category, channel, and region",
-                                ui.tags.br(),
-                                ui.tags.span("Source: fact_execution_audits · Target ≥ 30%", class_="text-muted", style="font-size:0.68rem;")
-                            ),
-                            ui.tags.li(
-                                ui.tags.b("Planogram Compliance %: "),
-                                "SUM(CASE WHEN planogram_compliance = TRUE THEN 1 ELSE 0 END) / COUNT(*) * 100",
-                                ui.tags.br(),
-                                ui.tags.span("Source: fact_execution_audits · Target ≥ 80%", class_="text-muted", style="font-size:0.68rem;")
-                            ),
-                            style="padding-left:14px;margin-bottom:0;"
-                        )
-                    )
-                ),
-                open=False,
-                class_="sidebar-accordion"
-            ),
-
-            ui.div(
-                ui.tags.small("Source: Marvel Enterprise Data Warehouse (dim_products, dim_stores, fact_execution_audits, fact_sell_in, fact_sell_out)"),
-                class_="mt-3 text-muted",
-                style="font-size:0.7rem;line-height:1.4;"
-            ),
-            class_="sleek-card workflow-card"
-        ),
-        class_="panel-left"
-    ),
-
-    # -----------------------------------------------------
-    # 2. VOICE CHAT CARD -> DASHBOARD (KEEP GOING DOWN)
-    # -----------------------------------------------------
-    ui.tags.section(
-        # Dashboard Top Hero Card (Header, Preset Chips, Scope, & 5-Metric KPI Row)
-        ui.div(
-            ui.div(
-                ui.div(
-                    ui.HTML("""
-                    <svg class="header-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                        <line x1="8" y1="21" x2="16" y2="21"/>
-                        <line x1="12" y1="17" x2="12" y2="21"/>
-                    </svg>
-                    """),
-                    ui.h2("Commercial Execution Intelligence", class_="section-title"),
-                    class_="header-title-box"
-                ),
-                ui.div(
-                    ui.span("LIVE TELEMETRY STREAM", class_="badge-telemetry-live"),
-                    class_="header-actions"
-                ),
-                class_="card-header-row mb-2"
-            ),
-
-            # Presets Tray (modeled from Amirlan prompt-chips-tray)
-            ui.div(
-                ui.span("Quick Focus:", class_="tray-label"),
-                ui.span("All Portfolio Channels", class_="prompt-chip chip-active"),
-                ui.span("Modern Trade Hypermarkets", class_="prompt-chip"),
-                ui.span("Traditional Trade Bodegas", class_="prompt-chip"),
-                ui.span("Mandatory MSL Priority", class_="prompt-chip"),
-                ui.span("High OOS Risk", class_="prompt-chip chip-alert"),
-                ui.span("Contractual Guardrails", class_="prompt-chip"),
-                class_="prompt-chips-tray"
-            ),
-
-            # Live Context Scope Bar
-            ui.output_ui("ctx"),
-
-            # 5-Metric Horizontal KPI Grid
-            ui.output_ui("kpi_row"),
-
-            class_="sleek-card dashboard-hero-card"
-        ),
-
-        # ==================== 1. COMMERCIAL STRATEGY & GEOSPATIAL ====================
-        ui.div(
-            ui.div(
-                ui.span("COMMERCIAL STRATEGY & GEOSPATIAL EXECUTION", class_="section-badge badge-geo"),
-                ui.h5("Geospatial Territory Health & Multi-Stage Inventory Velocity", class_="section-heading"),
-                ui.p("Target Users: Regional Manager & Commercial Operations · Allocates field rep routes and synchronizes channel Sell-In with store Sell-Out.", class_="section-subheading"),
-                class_="section-header-block"
-            ),
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    # Regional Execution Map: Full-width sleek-card
-                    ui.div(
-                        ui.div(
-                            ui.div(
-                                ui.span("Regional Execution vs Revenue Performance Map (Choropleth)", class_="chart-card-title"),
-                                ui.div(
-                                    ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                    "Combines state-level invoiced sales from fact_sell_in, planogram adherence from fact_execution_audits, and store in-stock rates from fact_sell_out into a composite commercial health score across US territory states.",
-                                    class_="chart-logic-desc"
-                                )
-                            ),
-                            ui.input_radio_buttons("c9_metric", None, {"health_score": "Health Score", "net_sales": "Net Sales ($)"}, selected="health_score", inline=True),
-                            class_="chart-header-row"
-                        ),
-                        output_widget("chart9_geo_map"),
-                        class_="sleek-card chart-sleek-card mb-4"
-                    ),
-                    # Inventory Velocity Sankey: Full-width sleek-card
-                    ui.div(
-                        ui.div(
-                            ui.div(
-                                ui.span("Sell-In vs Sell-Out Inventory Velocity (Sankey Flow Diagram)", class_="chart-card-title"),
-                                ui.div(
-                                    ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                    "Visualizes multi-echelon supply flow from product category to trade channels using fact_sell_in invoiced volume and tracks throughput into consumer offtake versus channel holding buffer using fact_sell_out daily units.",
-                                    class_="chart-logic-desc"
-                                ),
-                                class_="d-flex flex-column"
-                            ),
-                            class_="chart-header-row"
-                        ),
-                        output_widget("chart10_sankey_velocity"),
-                        class_="sleek-card chart-sleek-card mb-4"
-                    )
-                )
-            ),
-            ui.panel_conditional(
-                "input.user_role_state == 'rep'",
-                ui.div(
-                    ui.HTML("""
-                    <div style="width:52px;height:52px;border-radius:16px;background:rgba(255,59,48,0.08);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;border:1px solid rgba(255,59,48,0.2);">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                        </svg>
-                    </div>
-                    """),
-                    ui.h5("Regional Manager Access Required", class_="fw-bold mb-2", style="color:#1d1d1f;"),
-                    ui.div(
-                        "Commercial Strategy & Geospatial Execution (Regional Execution Choropleth Map & Multi-Stage Inventory Velocity Sankey) is restricted to Regional Commercial Directors and Supply Chain Operations. Field Sales Representatives have route access scoped to their assigned territory.",
-                        class_="text-muted small mb-3",
-                        style="max-width:540px;margin:0 auto;line-height:1.5;"
-                    ),
-                    ui.span("Active Account Role: Field Sales Representative", class_="badge bg-light text-secondary border px-3 py-2 rounded-pill"),
-                    class_="sleek-card text-center p-5 mb-4"
-                )
-            ),
-            class_="dashboard-section"
-        ),
-
-        # ==================== 2. OOS & SUPPLY CHAIN INSIGHTS ====================
-        ui.div(
-            ui.div(
-                ui.span("OUT-OF-STOCK (OOS) & SUPPLY CHAIN INSIGHTS", class_="section-badge badge-oos"),
-                ui.h5("Real-Time Store Inventory Radar & Lost Sales Mitigation", class_="section-heading"),
-                ui.p("Target Users: Field Sales Representative & Regional Operations · Tracks mandatory MSL items, highlights impending stockouts, and quantifies commercial loss.", class_="section-subheading"),
-                class_="section-header-block"
-            ),
-            # Stock Level & OOS Heatmap: Full-width sleek-card
-            ui.div(
-                ui.div(
-                    ui.div(
-                        ui.span("Stock Level & OOS Hazard Heatmap (Mandatory MSL Items · Red = Active OOS · Amber = Impending Stockout Hazard)", class_="chart-card-title"),
-                        ui.div(
-                            ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                            "Built from fact_sell_out daily on-hand store inventory levels across mandatory MSL items from dim_products, mapping zero inventory units to high-priority red out-of-stock hazard alerts and low buffers (1–15 units) to amber warnings on the latest date.",
-                            class_="chart-logic-desc"
-                        )
-                    ),
-                    ui.span("Target: Field Sales Rep Pre-Visit Radar", class_="badge bg-light text-secondary border"),
-                    class_="chart-header-row"
-                ),
-                output_widget("chart1_oos_hazard"),
-                class_="sleek-card chart-sleek-card mb-4"
-            ),
-            # Lost Sales Trend: Full-width sleek-card
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Estimated Lost Sales Trend & Cumulative Loss (Stacked Area Chart)", class_="chart-card-title"),
-                            ui.div(
-                                ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                "Created by joining fact_sell_out and dim_products, aggregating weekly lost revenue by multiplying active out-of-stock store-SKU days by their in-stock average daily unit baseline and list price.",
-                                class_="chart-logic-desc"
-                            )
-                        ),
-                        ui.input_radio_buttons("c2_group", None, {"region": "By Region", "category": "By Category"}, selected="region", inline=True),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart2_lost_sales"),
-                    class_="sleek-card chart-sleek-card mb-4"
-                )
-            ),
-            # OOS Duration: Full-width sleek-card
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("OOS Duration Distribution (Boxplot)", class_="chart-card-title"),
-                            ui.div(
-                                ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                "Calculated from chronological store-SKU-date observations in fact_sell_out, measuring consecutive days in out-of-stock state to distinguish transient single-day spikes from persistent replenishment delays across channels and tiers.",
-                                class_="chart-logic-desc"
-                            )
-                        ),
-                        ui.input_radio_buttons("c3_group", None, {"channel": "By Channel", "segment_tier": "By Tier"}, selected="channel", inline=True),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart3_oos_duration"),
-                    class_="sleek-card chart-sleek-card mb-4"
-                )
-            ),
-            ui.panel_conditional(
-                "input.user_role_state == 'rep'",
-                ui.div(
-                    ui.HTML("""
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <span style="font-size:0.95rem;">🔒</span>
-                        <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Macro Financial & Replenishment Analytics Restricted</span>
-                    </div>
-                    """),
-                    ui.div(
-                        "Estimated Lost Sales Trend & OOS Duration Distribution are restricted to Regional Management & Operations oversight. Field Sales Representatives have operational access to the store-level Stock Level & OOS Hazard Radar above.",
-                        class_="small text-muted"
-                    ),
-                    class_="sleek-card p-3 mb-4"
-                )
-            ),
-            class_="dashboard-section"
-        ),
-
-        # ==================== 3. SHELF EXECUTION & COMPLIANCE ====================
-        ui.div(
-            ui.div(
-                ui.span("SHELF EXECUTION & COMPLIANCE OPTIMIZATION", class_="section-badge badge-shelf"),
-                ui.h5("Planogram, MSL Availability & Shelf Real Estate Health", class_="section-heading"),
-                ui.p("Target Users: Field Sales Rep & Regional Manager · Converts store audit compliance into revenue-generating shelf real estate.", class_="section-subheading"),
-                class_="section-header-block"
-            ),
-            # Planogram & MSL Compliance: Full-width sleek-card
-            ui.div(
-                ui.div(
-                    ui.div(
-                        ui.span("Planogram & MSL Compliance Gauge Matrix (Target Benchmark ≥ 85% vs Historical Baseline 62%)", class_="chart-card-title"),
-                        ui.div(
-                            ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                            "Combines planogram compliance adherence rates from fact_execution_audits with in-stock MSL product availability from fact_sell_out, grouped by product category and brand against the 85% target benchmark.",
-                            class_="chart-logic-desc"
-                        )
-                    ),
-                    ui.span("Actionable Store-Fix Checklist", class_="badge bg-light text-secondary border"),
-                    class_="chart-header-row"
-                ),
-                output_widget("chart4_compliance_gauge"),
-                class_="sleek-card chart-sleek-card mb-4"
-            ),
-            # Shelf Share Bubble: Full-width sleek-card
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Actual Shelf Share vs. Target Bubble Plot", class_="chart-card-title"),
-                            ui.div(
-                                ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                "Plots store-level average category shelf share from fact_execution_audits against total invoiced net sales from fact_sell_in, sizing bubbles by commercial segment tier from dim_stores to highlight revenue conversion vs. the 30% shelf target.",
-                                class_="chart-logic-desc"
-                            )
-                        ),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart5_shelf_bubble"),
-                    class_="sleek-card chart-sleek-card mb-4"
-                )
-            ),
-            # Execution Scorecard Radar: Full-width sleek-card
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Multi-Dimensional Execution Scorecard (Radar Chart)", class_="chart-card-title"),
-                            ui.div(
-                                ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                "Synthesizes 5 key execution dimensions across fact_execution_audits and fact_sell_out (planogram adherence, MSL availability, secondary displays, shelf share %, and general in-stock rate) grouped by territory region or channel.",
-                                class_="chart-logic-desc"
-                            )
-                        ),
-                        ui.input_radio_buttons("c6_group", None, {"region": "By Region", "segment_tier": "By Tier", "channel": "By Channel"}, selected="region", inline=True),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart6_radar_scorecard"),
-                    class_="sleek-card chart-sleek-card mb-4"
-                )
-            ),
-            ui.panel_conditional(
-                "input.user_role_state == 'rep'",
-                ui.div(
-                    ui.HTML("""
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <span style="font-size:0.95rem;">🔒</span>
-                        <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Territory-Wide Shelf Share & Multi-KPI Scorecard Restricted</span>
-                    </div>
-                    """),
-                    ui.div(
-                        "Actual Shelf Share vs. Target Bubble Plot & Multi-Dimensional Radar Scorecard are restricted to Regional Management oversight. Field Sales Representatives have store audit access via the Planogram & MSL Compliance Checklist above.",
-                        class_="small text-muted"
-                    ),
-                    class_="sleek-card p-3 mb-4"
-                )
-            ),
-            class_="dashboard-section"
-        ),
-
-        # ==================== 4. TRADE TERMS & NEGOTIATIONS ====================
-        ui.div(
-            ui.div(
-                ui.span("TRADE TERMS & COMMERCIAL GUARDRAILS", class_="section-badge badge-trade"),
-                ui.h5("Real-Time Negotiation Boundaries & Concession Enforcement", class_="section-heading"),
-                ui.p("Target Users: Field Sales Rep & Regional Manager · Eliminates data-free negotiations, flags policy-breaching discounts, and verifies execution concessions.", class_="section-subheading"),
-                class_="section-header-block"
-            ),
-            # Discount vs Margin: Full-width sleek-card
-            ui.div(
-                ui.div(
-                    ui.div(
-                        ui.span("Effective Discount vs Margin Realization Scatter Plot with Guardrails", class_="chart-card-title"),
-                        ui.div(
-                            ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                            "Integrates weekly transaction revenue and cost from fact_sell_in with dim_guardrails commercial caps, comparing effective invoice discount percentage against gross margin to flag policy-breaching transactions requiring managerial override.",
-                            class_="chart-logic-desc"
-                        )
-                    ),
-                    class_="chart-header-row"
-                ),
-                output_widget("chart7_discount_margin"),
-                class_="sleek-card chart-sleek-card mb-4"
-            ),
-            # Trade-off Compliance: Full-width sleek-card
-            ui.panel_conditional(
-                "input.user_role_state == 'manager'",
-                ui.div(
-                    ui.div(
-                        ui.div(
-                            ui.span("Trade-off Execution Commitment Compliance (Grouped Bar Chart)", class_="chart-card-title"),
-                            ui.div(
-                                ui.span("Data & Logic: ", class_="fw-semibold text-dark"),
-                                "Evaluates customer concession fulfillment by comparing audit observations in fact_execution_audits (shelf share %, secondary displays, planogram rates) against required retailer trade-off commitments defined in dim_guardrails.",
-                                class_="chart-logic-desc"
-                            )
-                        ),
-                        class_="chart-header-row"
-                    ),
-                    output_widget("chart8_tradeoff_compliance"),
-                    class_="sleek-card chart-sleek-card mb-4"
-                )
-            ),
-            ui.panel_conditional(
-                "input.user_role_state == 'rep'",
-                ui.div(
-                    ui.HTML("""
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <span style="font-size:0.95rem;">🔒</span>
-                        <span class="fw-bold" style="font-size:0.82rem;color:#1d1d1f;">Contractual Concession Oversight Restricted</span>
-                    </div>
-                    """),
-                    ui.div(
-                        "Trade-off Execution Commitment Compliance evaluates contractual concessions and required trade-offs across regional accounts and is restricted to Regional Management. Field Sales Reps have real-time negotiation boundary guidance via the Effective Discount vs Margin Realization chart above.",
-                        class_="small text-muted"
-                    ),
-                    class_="sleek-card p-3 mb-4"
-                )
-            ),
-            class_="dashboard-section"
-        ),
-        class_="panel-right"
-    ),
-    class_="workspace-grid"
-),
-            class_="app-container"
-        )
-    )
+            ui.output_ui("m1_page_head"),
+            ui.output_ui("m1_status"),
+            ui.div(ui.output_text("m1_ready"), class_="ws-hidden", id="m1-ready-flag"),
+            ui.panel_conditional("output.m1_ready === 'yes'", _filters(), _pages()),
+            class_="ws-content"),
+        class_="ws ws-controls m1", id="m1-root")

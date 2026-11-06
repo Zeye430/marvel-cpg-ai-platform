@@ -599,8 +599,8 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         if estimate["estimate"] is not None:
             notes.append(f"Estimated elasticity for {category} in your stores: {estimate['estimate']:.2f} "
                          f"(approximate 95% interval {estimate['low']:.2f} to {estimate['high']:.2f}; "
-                         f"{estimate['n']:,} in-stock store-SKU-days with a shelf price). It compares days within the "
-                         "same store, product and month, so store size and season do not drive it.")
+                         f"{estimate['n']:,} in-stock store-SKU-days with a shelf price, retail accounts only). It compares "
+                         "days within the same store, product and month, so store size and season do not drive it.")
         rng = estimate.get("price_range")
         if rng is not None and p * through / 100 > 100 * rng[1] + 1e-9:
             notes.append(f"Extrapolation: shelf prices in the data were at most {100 * rng[1]:+.1f}% above the reference "
@@ -608,7 +608,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
                          "from temporary promotions, so a lasting increase of this size is outside the data.")
         notes.append(f"Baseline: {base['units']:,.0f} units of reported sell-out on in-stock days over the last 13 weeks "
                      f"({pd.Timestamp(base['first']):%b %d} – {pd.Timestamp(base['last']):%b %d, %Y}), {base['skus']} "
-                     f"product(s); not complete demand. Revenue at the reference list price less the recent trade "
+                     f"product(s), retail accounts only (distributors have no meaningful sell-out); not complete demand. Revenue at the reference list price less the recent trade "
                      f"discount ({base['trade_discount']:.1f}%), which is assumed unchanged.")
         notes.append("Not modelled: pack-size changes, switching between Marvel products or to competitors, and "
                      "competitor reactions. This is a what-if, not a forecast.")

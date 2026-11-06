@@ -75,6 +75,17 @@ class Module3DataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rep.baseline("region", "x")
 
+    def test_price_change_reads_retail_accounts_only(self):
+        manager = self.data("demo:manager")
+        category = manager.categories()[0]
+        sql = """SELECT sum(units_sold_observed) AS units FROM store_sku_daily WHERE category = $category {}
+                   AND inventory_observed > 0 AND units_sold_observed IS NOT NULL
+                   AND date > (SELECT max(date) FROM store_sku_daily) - INTERVAL 91 DAY"""
+        everyone = manager.q(sql.format(""), {"category": category})["units"].iloc[0]
+        retail = manager.q(sql.format("AND channel <> 'Distributor'"), {"category": category})["units"].iloc[0]
+        self.assertGreater(everyone, retail)
+        self.assertEqual(manager.baseline("category", category)["units"].sum(), retail)
+
 
 if __name__ == "__main__":
     unittest.main()

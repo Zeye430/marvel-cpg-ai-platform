@@ -128,7 +128,7 @@ identity's scoped copy that Business Performance builds, so they open at once af
   the measured ≈ 0%). Rules version `m3-rules.v0-proposed`.
 - **Price change.** A list-price increase (0–15%) on a category or one product, with the share passed on
   to the shelf price. The baseline is reported sell-out on in-stock days in the last 13 weeks for your
-  stores. The elasticity is estimated on the same scoped history (log units on log shelf price within
+  retail accounts (distributors are wholesale accounts without meaningful sell-out data). The elasticity is estimated on the same scoped history (log units on log shelf price within
   store × product × month; approximate interval shown) or set by you; a positive estimate means no
   measurable price response and is used as 0. The page shows volume, revenue and gross-profit change, the
   response curve with the elasticity band, the elasticity at which revenue stays flat, and an

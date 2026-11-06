@@ -10,6 +10,7 @@ simply has no rows.
   the guardrail and its required commitment, stock and audit evidence).
 - Scenario B: observed in-stock sell-out of the last 13 weeks for a SKU or category, the reference
   prices and the recent trade discount, and a price elasticity estimated from the same scoped history.
+  Retail accounts only: distributors are wholesale accounts without meaningful sell-out data.
 """
 
 from __future__ import annotations
@@ -83,12 +84,12 @@ class Module3Data:
         """Per SKU: observed units on in-stock days in the last 13 weeks, reference prices and the recent
         reported trade discount. Units are reported sell-out, not complete demand."""
         frame = self.q(f"""WITH d AS (SELECT * FROM store_sku_daily d WHERE {self._where(kind, value)}
-                              AND d.date > (SELECT max(date) FROM store_sku_daily) - INTERVAL {BASELINE_DAYS} DAY),
+                              AND d.channel <> 'Distributor' AND d.date > (SELECT max(date) FROM store_sku_daily) - INTERVAL {BASELINE_DAYS} DAY),
                      units AS (SELECT sku_id, sum(units_sold_observed) AS units, count(*) AS instock_days,
                                       count(DISTINCT store_id) AS stores, min(date) AS first_day, max(date) AS last_day
                                FROM d WHERE inventory_observed > 0 AND units_sold_observed IS NOT NULL GROUP BY 1),
                      disc AS (SELECT sku_id, sum(gross_sales_reported_28d) AS gross, sum(net_sales_reported_28d) AS net
-                              FROM negotiation_context GROUP BY 1)
+                              FROM negotiation_context WHERE channel <> 'Distributor' GROUP BY 1)
                 SELECT p.sku_id, p.product_name, p.category, CAST(p.list_price AS DOUBLE) AS list_price,
                        CAST(p.unit_cost AS DOUBLE) AS unit_cost, CAST(p.consumer_price AS DOUBLE) AS consumer_price,
                        u.units, u.instock_days, u.stores, u.first_day, u.last_day,
@@ -107,7 +108,7 @@ class Module3Data:
             return self._elasticity[category]
         row = self.q("""WITH d AS (SELECT store_id, sku_id, date_trunc('month', date) AS m,
                                       ln(units_sold_observed + 0.5) AS y, ln(consumer_price_observed) AS x
-                               FROM store_sku_daily WHERE category = $category AND inventory_observed > 0
+                               FROM store_sku_daily WHERE category = $category AND channel <> 'Distributor' AND inventory_observed > 0
                                  AND units_sold_observed IS NOT NULL AND consumer_price_observed > 0),
                        f AS (SELECT y - avg(y) OVER w AS y, x - avg(x) OVER w AS x FROM d
                              WINDOW w AS (PARTITION BY store_id, sku_id, m))
@@ -119,7 +120,8 @@ class Module3Data:
         span = self.q("""SELECT min(d.consumer_price_observed / p.consumer_price) - 1 AS lo,
                                  max(d.consumer_price_observed / p.consumer_price) - 1 AS hi
                           FROM store_sku_daily d JOIN products p USING (sku_id)
-                          WHERE d.category = $category AND d.consumer_price_observed > 0 AND p.consumer_price > 0""",
+                          WHERE d.category = $category AND d.channel <> 'Distributor' AND d.consumer_price_observed > 0
+                            AND p.consumer_price > 0""",
                       {"category": category}).iloc[0].to_dict()
         n, sxx = int(row.get("n") or 0), _num(row.get("sxx"))
         result = {"category": category, "estimate": None, "se": None, "low": None, "high": None, "n": n,

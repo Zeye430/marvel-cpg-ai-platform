@@ -11,8 +11,10 @@ Hosted in the workspace shell, the app sidebar lists its two pages (``pages_nav_
 - Price change (brief Scenario B): a list-price increase on a SKU or category, with the volume,
   revenue and gross-profit response from a price elasticity estimated on the user's stores.
 
-Every number is rendered by the server from the signed-in user's scoped shared publication. Rules
-the client has not confirmed are switchable assumptions in the page.
+The store, product and quantity (and the price change's target) are filter pills like Module 1's;
+each chart's "?" explains how to read it. Every number is rendered by the server from the signed-in
+user's scoped shared publication. Rules the client has not confirmed are switchable assumptions in
+the page.
 
 Without the shared runtime (the legacy root ``app.py``) the module shows where it runs instead.
 """
@@ -64,7 +66,9 @@ def rules_panel():
     """The rules and assumptions in words (static; no data)."""
     return ui.tags.div(
         ui.tags.p(f"Rule version {RULES_VERSION}. These are the pricing policy's (MCPG-05) rules under the brief's "
-               "verdict names; the client has not yet confirmed them.", class_="ws-muted"),
+               "verdict names; the client has not yet confirmed them. While the source guardrail is \"Requires "
+               "review\", every verdict is a provisional simulation: it does not authorise offering or agreeing a "
+               "deal, and this app has no approval workflow.", class_="ws-muted"),
         ui.tags.ul(ui.tags.li(ui.tags.b("APPROVED: "), "the compared discount is at or below the cap and the gross margin is at "
                         "or above the minimum."),
                 ui.tags.li(ui.tags.b("APPROVED WITH CONDITIONS: "), "above the cap, margin still at or above the minimum, and "
@@ -73,7 +77,9 @@ def rules_panel():
                         "to manager review without a shelf commitment."),
                 ui.tags.li(ui.tags.b("REJECTED: "), "below the minimum margin (needs senior approval), or above the cap "
                         "without the commitment."),
-                ui.tags.li(ui.tags.b("CANNOT ASSESS: "), "a price, cost or guardrail value is missing."),
+                ui.tags.li(ui.tags.b("CANNOT ASSESS: "), "a price, cost or guardrail value is missing, or the account "
+                        "has no invoice in the last 28 days, so its current discount (and with it the total discount "
+                        "and the margin) is unknown. Nothing is assumed in its place."),
                 class_="m3-rule-list"),
         ui.tags.p("Margin = (net price − unit cost) / net price, with net price = list price × (1 − total discount). "
                "Reference list price and cost are static; currency is not supplied. Execution uplift is an "
@@ -87,16 +93,29 @@ def _deal_page():
     return ui.nav_panel(
         "deal",
         ui.div(
-            ui.div(ui.input_selectize("m3_store", "Account (store)", [], options={"placeholder": "Choose a store…"}),
-                   ui.input_selectize("m3_sku", "Product", [], options={"placeholder": "Choose a product…"}),
-                   ui.input_numeric("m3_qty", "Order quantity (units)", 100, min=1, step=10),
-                   class_="m3-pick"),
-            class_="ws-card m3-pick-card"),
+            kit.filter_pill("m3-pill-store", "Account (store)", kit.pill_face("Store", "m3_store", empty="Choose", narrows=False),
+                            ui.input_selectize("m3_store", None, [], options={"placeholder": "Search stores…"}),
+                            icon_name="home", **{"data-autoclose": ""}),
+            kit.filter_pill("m3-pill-sku", "Product", kit.pill_face("Product", "m3_sku", empty="Choose", narrows=False),
+                            ui.input_selectize("m3_sku", None, [], options={"placeholder": "Search products…"}),
+                            **{"data-autoclose": ""}),
+            kit.filter_pill("m3-pill-qty", "Order quantity", kit.pill_face("Quantity", "m3_qty", unit="units"),
+                            ui.input_numeric("m3_qty", "Units in this order", 100, min=1, step=10)),
+            class_="ws-fbar m3-fbar", role="search", **{"aria-label": "Deal"}),
         ui.output_ui("m3_context"),
+        ui.output_ui("m3_banner"),
         ui.div(*[_scenario(k) for k in SCENARIOS], class_="m3-scenarios", id="m3-scenarios"),
-        ui.div(ui.div(ui.tags.h2("Margin by scenario", class_="ws-h"),
-                      ui.tags.p("Gross margin on net price for each proposal, against the guardrail's minimum. "
-                                "Bars carry the verdict.", class_="ws-muted m3-logic"), class_="ws-card-head"),
+        ui.div(ui.div(ui.div(ui.tags.h2("Margin by scenario", class_="ws-h"),
+                             kit.help_tip("Margin by scenario",
+                                          ui.tags.ul(ui.tags.li("One bar per proposal: the gross margin left after "
+                                                                "its total discount."),
+                                                     ui.tags.li("The dashed line is the guardrail's minimum margin; a "
+                                                                "bar below it fails."),
+                                                     ui.tags.li("The label on each bar is its verdict.")),
+                                          ui.tags.p("Margin = (net price − unit cost) / net price, at the static "
+                                                    "reference list price and cost.", class_="ws-help-data"),
+                                          id="m3-chart-help"),
+                             class_="ws-title-row"), class_="ws-card-head"),
                ui.output_ui("m3_chart"), class_="ws-card m3-chart-card"),
         ui.tags.details(
             ui.tags.summary("Assumptions and rules (pending client confirmation)"),
@@ -112,11 +131,15 @@ def _price_page():
     return ui.nav_panel(
         "price",
         ui.div(
-            ui.div(ui.input_radio_buttons("m3_b_kind", "Apply the increase to", {"category": "A category",
-                                                                                 "sku": "One product"},
-                                          selected="category", inline=True),
-                   ui.input_selectize("m3_b_target", "Category or product", []),
-                   class_="m3-pick m3-pick-b"),
+            kit.filter_pill("m3-pill-kind", "Apply the increase to", kit.pill_face("Apply to", "m3_b_kind", narrows=False),
+                            ui.input_radio_buttons("m3_b_kind", None, {"category": "A category",
+                                                                       "sku": "One product"}, selected="category"),
+                            **{"data-autoclose": ""}),
+            kit.filter_pill("m3-pill-target", "Category or product",
+                            kit.pill_face("Target", "m3_b_target", empty="Choose", narrows=False),
+                            ui.input_selectize("m3_b_target", None, []), **{"data-autoclose": ""}),
+            class_="ws-fbar m3-fbar", role="search", **{"aria-label": "Price change target"}),
+        ui.div(
             ui.div(ui.input_slider("m3_b_increase", "List-price increase", 0, 15, 5, step=0.5, post="%"),
                    ui.input_slider("m3_b_pass", "Passed on to the shelf price", 0, 100, 100, step=5, post="%"),
                    ui.div(ui.input_radio_buttons("m3_b_source", "Price elasticity",
@@ -128,11 +151,20 @@ def _price_page():
                    class_="m3-pick m3-pick-b2"),
             class_="ws-card m3-pick-card"),
         ui.output_ui("m3_b_results"),
-        ui.div(ui.div(ui.tags.h2("Response to the price increase", class_="ws-h"),
-                      ui.tags.p("Revenue and gross profit change across increases of 0–15%, at the chosen "
-                                "elasticity; the band is the elasticity's approximate 95% interval.",
-                                class_="ws-muted m3-logic"), class_="ws-card-head"),
-               ui.output_ui("m3_b_chart"), ui.output_ui("m3_b_notes"), class_="ws-card m3-chart-card"))
+        ui.output_ui("m3_b_warnings"),
+        ui.div(ui.div(ui.div(ui.tags.h2("Response to the price increase", class_="ws-h"),
+                             kit.help_tip("Response to the price increase",
+                                          ui.tags.ul(ui.tags.li("The lines show how revenue and gross profit change "
+                                                                "for increases from 0% to 15%."),
+                                                     ui.tags.li("The marker is the increase chosen above; the shaded "
+                                                                "band is the range the elasticity could plausibly "
+                                                                "take (about 95%)."),
+                                                     ui.tags.li("Where a line crosses 0, the increase stops paying "
+                                                                "off.")),
+                                          ui.div(ui.output_ui("m3_b_notes"), class_="ws-help-data"),
+                                          id="m3-b-chart-help"),
+                             class_="ws-title-row"), class_="ws-card-head"),
+               ui.output_ui("m3_b_chart"), class_="ws-card m3-chart-card"))
 
 
 def pages_nav_ui():

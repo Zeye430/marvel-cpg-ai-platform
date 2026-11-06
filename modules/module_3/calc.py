@@ -6,7 +6,10 @@ Scenario A, and the price response for Scenario B.
 
 The guardrail rules are a proposal pending client confirmation (``RULES_VERSION``): which discount the
 cap applies to and the execution uplift are switchable assumptions, never silent defaults. A verdict
-is a guardrail check result, not an approval: a deal above the cap goes to manager review.
+is a guardrail check result, not an approval: a deal above the cap goes to manager review, and while
+the source policy is not confirmed every verdict is a provisional simulation that authorises nothing.
+Unknown inputs (price, cost, guardrail, or the account's current discount when the cap or the margin
+depends on it) give CANNOT ASSESS; they are never replaced by zero.
 """
 
 from __future__ import annotations
@@ -16,6 +19,9 @@ import re
 from dataclasses import dataclass
 
 RULES_VERSION = "m3-rules.v0-proposed"
+# Source policy states under which a within-cap verdict may be described as within the rep's authority.
+# The shared negotiation context currently publishes only "Requires review".
+CONFIRMED_POLICY = frozenset({"Approved"})
 
 APPROVED = "APPROVED"
 CONDITIONS = "APPROVED WITH CONDITIONS"
@@ -75,10 +81,16 @@ class Deal:
     cap: float | None                  # max_discount_pct_source
     floor: float | None                # min_target_margin_source (gross margin on net price, %)
     tradeoff: str = ""
+    policy_status: str | None = None   # the source guardrail's status ("Requires review" today)
 
     @property
     def distributor(self):
         return self.channel == "Distributor"
+
+    @property
+    def provisional(self):
+        """True unless the source policy is confirmed: verdicts are then simulations, not authority."""
+        return self.policy_status not in CONFIRMED_POLICY
 
 
 def unit_economics(list_price, unit_cost, discount_pct):
@@ -95,28 +107,27 @@ def scenario(deal, additional, commitment=None, quantity=None, basis="total", up
     """One proposal: economics, the three guardrail checks, the verdict and its reason.
 
     ``commitment``: a Commitment key the account offers, or None. ``quantity``: order units for money
-    amounts (None: per unit only)."""
+    amounts (None: per unit only). Without the account's current discount the total discount and the
+    margin are unknown, so the proposal cannot be assessed (only the additional-discount cap check can
+    still be shown when that basis is chosen)."""
     if basis not in CAP_BASIS or uplift_source not in UPLIFT_SOURCES:
         raise ValueError("Unknown rule option")
     additional = max(0.0, float(additional or 0))
-    current_known = deal.current_discount is not None
-    current = deal.current_discount if current_known else 0.0
-    total = current + additional
+    current = deal.current_discount
+    total = None if current is None else current + additional
     net, margin, unit_gp = unit_economics(deal.list_price, deal.unit_cost, total)
     _, _, base_gp = unit_economics(deal.list_price, deal.unit_cost, current)
     compared = total if basis == "total" else additional
     options = {c.key: c for c in commitments(deal.tradeoff)}
     offered = options.get(commitment)
-    result = {"additional": additional, "current": deal.current_discount, "total": total, "compared": compared,
+    result = {"additional": additional, "current": current, "total": total, "compared": compared, "basis": basis,
               "net": net, "margin": margin, "unit_gp": unit_gp, "commitment": offered,
-              "cap_ok": None if deal.cap is None else compared <= deal.cap + 1e-9,
+              "cap_ok": None if deal.cap is None or compared is None else compared <= deal.cap + 1e-9,
               "floor_ok": None if margin is None or deal.floor is None else margin >= deal.floor - 1e-9,
-              "notes": []}
-    if not current_known and basis == "total":
-        result["notes"].append("No invoice in the last 28 days: the current discount is unknown, so the cap is "
-                               "compared with the additional discount only.")
-        result["compared"] = compared = additional
-        result["cap_ok"] = None if deal.cap is None else compared <= deal.cap + 1e-9
+              "provisional": deal.provisional, "notes": []}
+    if current is None:
+        result["notes"].append("No invoice in the last 28 days: the account's current discount is unknown, so the "
+                               "total discount and the margin are unknown too. Nothing is assumed in its place.")
     # Money for the order, and whether the commitment's assumed volume uplift pays for the extra discount.
     uplift = (offered.uplift or 0.0) if (offered and uplift_source == "client") else 0.0
     result["uplift"] = uplift
@@ -127,31 +138,44 @@ def scenario(deal, additional, commitment=None, quantity=None, basis="total", up
     if quantity:
         q = float(quantity)
         result.update(revenue=None if net is None else q * net,
-                      discount_cost=None if deal.list_price is None else q * deal.list_price * total / 100,
+                      discount_cost=None if deal.list_price is None or total is None else q * deal.list_price * total / 100,
                       gross_profit=None if unit_gp is None else q * unit_gp,
                       gross_profit_with_uplift=None if unit_gp is None else q * (1 + uplift) * unit_gp)
     result["verdict"], result["reason"] = verdict(deal, result, offered)
     return result
 
 
+PROVISIONAL = (" Provisional simulation: the guardrail rules await client confirmation, so this result does not "
+               "authorise offering or agreeing anything.")
+
+
 def verdict(deal, result, offered):
-    """(verdict, reason) under RULES_VERSION. Missing inputs are never a pass."""
+    """(verdict, reason) under RULES_VERSION. Missing inputs are never a pass; while the source policy is not
+    confirmed the reason says the result is provisional and gives no permission to agree a deal."""
+    suffix = PROVISIONAL if deal.provisional else ""
+    if result["current"] is None:
+        return NOT_ASSESSED, ("The account's current discount is unknown (no invoice in the last 28 days), so the "
+                              "total discount and margin cannot be checked." + suffix)
     if deal.cap is None or deal.floor is None or result["margin"] is None:
-        return NOT_ASSESSED, "A price, cost or guardrail value is missing, so this proposal cannot be checked."
+        return NOT_ASSESSED, "A price, cost or guardrail value is missing, so this proposal cannot be checked." + suffix
     if not result["floor_ok"]:
         return REJECTED, (f"Gross margin {result['margin']:.1f}% is below the {deal.floor:.2f}% minimum; "
-                          "this needs senior approval and is not offered.")
+                          "this would need senior approval." + suffix)
     if result["cap_ok"]:
-        return APPROVED, (f"Within the {deal.cap:.2f}% cap and above the margin minimum: the rep can agree it "
-                          "(rules pending client confirmation).")
+        if deal.provisional:
+            return APPROVED, (f"Within the {deal.cap:.2f}% cap and above the margin minimum under the proposed "
+                              "rules." + suffix)
+        return APPROVED, (f"Within the {deal.cap:.2f}% cap and above the margin minimum of the confirmed policy: "
+                          "within the rep's authority.")
     if deal.distributor:
         return CONDITIONS, (f"Above the {deal.cap:.2f}% cap: distributor proposals above the cap go to manager "
-                            "review (volume thresholds were not supplied). Do not confirm it to the account yet.")
+                            "review (volume thresholds were not supplied). Do not confirm it to the account."
+                            + suffix)
     if offered is not None:
         return CONDITIONS, (f"Above the {deal.cap:.2f}% cap with the required commitment ({offered.label}): "
-                            "prepare it for manager review; do not confirm it to the account yet.")
+                            "it would go to manager review; do not confirm it to the account." + suffix)
     return REJECTED, (f"Above the {deal.cap:.2f}% cap without the required commitment "
-                      f"({deal.tradeoff or 'not supplied'}).")
+                      f"({deal.tradeoff or 'not supplied'})." + suffix)
 
 
 # ---------------------------------------------------------------- Scenario B: price change

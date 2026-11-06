@@ -72,9 +72,13 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
 - **One source for both modules.** The sidebar shows the source (local publication or shared
   PostgreSQL) and its data date. Module 2's page header and the copilot's status show the same date
   and publication; both use the signed-in identity's account scope from that publication.
-- **Demo sign-in only.** Manager, Sales Rep A and Sales Rep B are fixed demo identities chosen on the
-  server; no password is checked and this is not production authentication. Store access comes from
-  the account scope configured for that identity in the shared data. Signing out (at the bottom of
+- **Demo sign-in only.** Three demo accounts with fictional names and illustrated portraits: Elena
+  Rostova (regional manager, `elena.rostova`), Alex Mercer and Beatrice Vance (field sales reps A and B,
+  `alex.mercer`, `beatrice.vance`). The sign-in page asks for a user name and password and fills in the
+  chosen account's (demo password `marvel-demo`); the server matches them to that account's fixed demo
+  identity. This is not production authentication. Store access comes from the account scope configured
+  for that identity in the shared data. To use photo portraits, add `manager`, `rep_a` and `rep_b`
+  images to `shared/assets/avatars/` (see its README). Signing out (at the bottom of
   the sidebar) or switching identity clears both modules; a copilot answer still running for
   the previous identity is cancelled and never shown.
 - **Failures are explicit.** If the source cannot be opened, a notice above the module explains what to configure,
@@ -139,9 +143,13 @@ identity's scoped copy that Business Performance builds, so they open at once af
 
 - **Content.** The dashboard's five KPI tiles (MSL compliance, reported out-of-stock rate, sell-in vs
   sell-out gap, audited SKU shelf allocation, planogram compliance), its filters and its ten charts. The
-  filters are one row of pills (date range with presets, snapped to full weeks; channel; region; product
-  SKU with search): each pill shows its current value, a changed filter is highlighted and "Reset filters"
-  restores the defaults (last 13 weeks, everything selected). The charts: state execution map and sell-in/sell-out
+  filters are one row of pills (date range with presets in whole Monday-to-Sunday weeks: last week and
+  last 4 weeks are the latest complete weeks, then month, quarter and year to date and all data; channel;
+  region; MSL products, which narrows the SKU list to those products; product SKU with search): each pill
+  shows its current value, a changed filter is highlighted and "Reset filters" restores the defaults (last
+  4 weeks, everything selected). A KPI change is green when it is better for that KPI and red when worse
+  (a falling OOS rate is green). Each chart's "?" explains how to read it and what the data is; the
+  Stockout Risk and Negotiation Simulator filters use the same pills. The charts: state execution map and sell-in/sell-out
   flow (Geography & flow); stock heatmap, lost-sales heuristic trend and out-of-stock duration
   (Out-of-stock); planogram/MSL by brand, shelf allocation vs invoiced sales and the execution scorecard
   (Shelf execution); discount vs margin and trade-off evidence (Trade terms). The regional manager sees

@@ -62,7 +62,7 @@ async function openPage(viewport) {
   if (viewport.mobile) await s("Emulation.setTouchEmulationEnabled", { enabled: true });
   await s("Page.navigate", { url: BASE });
   const page = { s, targetId, viewport };
-  await waitFor(page, "window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected() && !!document.querySelector('#shell_signin_manager')", 60000, "app connected");
+  await waitFor(page, "window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected() && !!document.querySelector('#shell-signin')", 60000, "app connected");
   await sleep(300);
   return page;
 }
@@ -107,7 +107,8 @@ const pageText = (p) => evaluate(p, "document.body.innerText");
 // ---------------------------------------------------------------- app steps
 async function signIn(p, key, principal) {
   if (!(await visible(p, "#shell-login"))) await signOut(p);
-  await click(p, `#shell_signin_${key}`);
+  await click(p, `#shell-account-${key}`);       // fills in that demo account's user name and password
+  await click(p, "#shell-signin");
   await waitFor(p, `document.querySelector('#shell-identity')?.dataset.principal === '${principal}'`, 20000, "signed in " + principal);
   await waitFor(p, "document.querySelector('#shell-panel-module_1')?.offsetParent !== null", 20000, "module 1 shown");
   await idle(p);
@@ -151,8 +152,8 @@ async function watchWelcome(p) {
 // Filter pills: current values on the pills, a changed filter is highlighted with Reset, Reset restores defaults.
 async function filterPillChecks(p) {
   const pill = (key) => txt(p, `#m1-pill-${key} > summary`);
-  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "date pill");
-  check("filters: one row of pills with the current values", /Last 13 weeks/.test(await pill("dates")) && /Channel\s*All/.test(await pill("channel")) && /Region\s*All/.test(await pill("region")) && /SKU\s*All \d+/.test(await pill("sku")) && !(await evaluate(p, "!!document.querySelector('#m1-reset')")), [await pill("dates"), await pill("channel"), await pill("sku")].join(" | "));
+  await waitFor(p, "/Last 4 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "date pill");
+  check("filters: one row of pills with the current values", /Last 4 weeks/.test(await pill("dates")) && /Channel\s*All/.test(await pill("channel")) && /Region\s*All/.test(await pill("region")) && /SKU\s*All \d+/.test(await pill("sku")) && !(await evaluate(p, "!!document.querySelector('#m1-reset')")), [await pill("dates"), await pill("channel"), await pill("sku")].join(" | "));
   check("filters: options stay closed until a pill is opened", !(await evaluate(p, "[...document.querySelectorAll('#m1-root details.m1-pill')].some(d => d.open)")));
   await click(p, "#m1-pill-sku > summary");
   await waitFor(p, "document.querySelector('#m1-pill-sku')?.open && document.querySelector('#m1-pill-sku .m1-pop').checkVisibility()", 10000, "SKU options");
@@ -168,21 +169,21 @@ async function filterPillChecks(p) {
   await click(p, "#m1-pill-dates > summary");
   await waitFor(p, "document.querySelector('#m1-pill-dates')?.open && document.querySelector('#m1-pill-dates .m1-pop').checkVisibility()", 10000, "date options");
   await click(p, "#m1-pill-dates .m1-preset:nth-child(1)");
-  await waitFor(p, "/Last 4 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "4-week preset");
+  await waitFor(p, "/Last week/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "last-week preset");
   await idle(p);
   check("filters: a date preset sets the range and highlights the pill", await evaluate(p, "!!document.querySelector('#m1-pill-dates .m1-pill-val.set') && !!document.querySelector('#m1-reset')"));
   await click(p, "#m1-reset");
-  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset");
+  await waitFor(p, "/Last 4 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset");
   await idle(p);
-  // Every preset answers, including one that covers the same weeks as the current range.
+  check("filters: the date presets are last week, last 4 weeks, month, quarter and year to date, all data", (await evaluate(p, "[...document.querySelectorAll('#m1-pill-dates .m1-preset')].map(b => b.textContent.trim()).join('|')")) === "Last week|Last 4 weeks|Month to date|Quarter to date|Year to date|All data");
   await click(p, "#m1-pill-dates > summary");
   await waitFor(p, "document.querySelector('#m1-pill-dates')?.open", 10000, "date options again");
-  await click(p, "#m1-pill-dates .m1-preset:nth-child(3)");
+  await click(p, "#m1-pill-dates .m1-preset:nth-child(4)");
   await waitFor(p, "/Quarter to date/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '')", 20000, "quarter-to-date preset");
   await idle(p);
-  check("filters: Quarter to date is shown as chosen (even where it covers the last 13 weeks)", await evaluate(p, "document.querySelector('#m1-pill-dates .m1-preset.on')?.innerText === 'Quarter to date' && !!document.querySelector('#m1-reset')"));
+  check("filters: Quarter to date is shown as chosen", await evaluate(p, "document.querySelector('#m1-pill-dates .m1-preset.on')?.innerText === 'Quarter to date' && !!document.querySelector('#m1-reset')"));
   await click(p, "#m1-reset");
-  await waitFor(p, "/Last 13 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset again");
+  await waitFor(p, "/Last 4 weeks/.test(document.querySelector('#m1-pill-dates > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "dates reset again");
   await idle(p);
 }
 // KPI cards: compact; the selected card's trend (with target), notes and collapsed calculation open below.
@@ -192,7 +193,13 @@ async function kpiDetailChecks(p) {
   await idle(p);
   check("KPI cards: the first card is selected and its trend shows below with the team target line", (await evaluate(p, "document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'true'")) && (await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || (g.layout.shapes || []).some(s => s.type === 'line'); })()")) && /Team target ≥ 90%|No trend/.test(await txt(p, "#m1-kpi-detail")));
   check("KPI cards: no small print or calculation inside the cards", !/How it's calculated|coverage|not market share|known SKU-days/i.test(await txt(p, "#m1-kpis")), await txt(p, "#m1-kpis"));
-  check("KPI detail: notes below the chart, calculation collapsed", /team display target/.test(await txt(p, "#m1-kpi-detail .m1-notes")) && !(await evaluate(p, "document.querySelector('#m1-kpi-how').open")));
+  check("KPI detail: no small print under the chart; what the number rests on is in the collapsed calculation", /team display target/.test(await txt(p, "#m1-kpi-how .m1-notes")) && !(await evaluate(p, "document.querySelector('#m1-kpi-how').open")) && !(await evaluate(p, "[...document.querySelectorAll('#m1-kpi-detail > ul, #m1-kpi-detail > p')].some(e => e.checkVisibility())")));
+  check("KPI detail: the trend has no grid lines", await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || (g.layout.xaxis.showgrid === false && g.layout.yaxis.showgrid === false); })()"));
+  check("KPI cards: the change colour says better or worse for that KPI (tooltip)", await evaluate(p, "[...document.querySelectorAll('#m1-kpis [data-trend]')].every(e => /(Better|Worse|No better or worse) than the previous period .*(higher|lower|closer to 0) is better/.test(e.title))"));
+  await click(p, "#m1-kpi-help > summary");
+  check("KPI detail: the ? explains how to read the trend", await evaluate(p, "document.querySelector('#m1-kpi-help').open && document.querySelector('#m1-kpi-help .ws-help-pop').checkVisibility()") && /dotted line is the team's target/.test(await txt(p, "#m1-kpi-help")));
+  await click(p, "#m1-kpi-detail h2");
+  check("KPI detail: a click outside closes the ?", !(await evaluate(p, "document.querySelector('#m1-kpi-help').open")));
   await click(p, "#m1-kpi-how > summary");
   check("KPI detail: the calculation opens on request", await evaluate(p, "document.querySelector('#m1-kpi-how').open") && /Formula/.test(await txt(p, "#m1-kpi-how")));
   await click(p, "#m1-kpi-oos");
@@ -212,6 +219,7 @@ async function kpiDetailChecks(p) {
   await idle(p);
   const after = await skus();
   check("filters: MSL only is highlighted and counts only must-stock products", (await evaluate(p, "!!document.querySelector('#m1-pill-msl .m1-pill-val.set')")) && after > 0 && after <= before, `${before} -> ${after}`);
+  check("filters: MSL only leaves only must-stock products in the SKU list, all ticked", new RegExp(`SKU\\s*All ${after}\\b`).test(await txt(p, "#m1-pill-sku > summary")) && (await evaluate(p, "document.querySelectorAll('#m1_sku input').length")) === after && (await evaluate(p, "document.querySelectorAll('#m1_sku input:checked').length")) === after, await txt(p, "#m1-pill-sku > summary"));
   await click(p, "#m1-reset");
   await waitFor(p, "/Products\\s*All/.test(document.querySelector('#m1-pill-msl > summary')?.innerText || '') && !document.querySelector('#m1-reset')", 20000, "MSL reset");
   await idle(p);
@@ -225,6 +233,7 @@ async function moduleThreeChecks(p, tag, stores, full) {
   check(`${tag}: Negotiation Simulator reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Rules pending client confirmation/.test(head), head);
   check(`${tag}: Module 3 pages listed under Negotiation Simulator`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_3'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "deal,price");
   const accounts = await evaluate(p, "Object.keys(document.querySelector('#m3_store').selectize.options).length");
+  check(`${tag}: store, product and quantity are pills showing the current choice`, await evaluate(p, "['store', 'sku', 'qty'].every(k => { const v = document.querySelector(`#m3-pill-${k} .ws-fpill-val`); return !!v && v.textContent.trim() !== '' && v.textContent !== 'Choose'; }) && /units$/.test(document.querySelector('#m3-pill-qty .ws-fpill-val').textContent)"), await txt(p, "#m3-root .m3-fbar"));
   check(`${tag}: only accounts in the signed-in scope can be chosen`, accounts > 0 && (stores === null || accounts <= stores), `${accounts}`);
   const verdict = (k) => `document.querySelector('#m3_verdict_${k} [data-verdict]')?.dataset.verdict`;
   await waitFor(p, `!!${verdict("a")} && !!${verdict("b")} && !!${verdict("c")}`, 30000, "verdicts");
@@ -281,6 +290,7 @@ async function moduleOneChecks(p, tag, stores, manager) {
     counts[page] = await evaluate(p, `[${pane}.querySelectorAll('.js-plotly-plot').length, ${pane}.querySelectorAll('.m1-locked').length]`);
   }
   check(`${tag}: every Module 1 chart renders (manager: 10) or is locked for the rep (3 shown, 7 locked)`, JSON.stringify(counts) === JSON.stringify(manager ? M1_PAGES : M1_REP), JSON.stringify(counts));
+  check(`${tag}: every Module 1 chart has a ? (how to read it) and no small print under it`, (await evaluate(p, "document.querySelectorAll('#m1-root .m1-chart-card').length")) === 10 && (await evaluate(p, "[...document.querySelectorAll('#m1-root .m1-chart-card')].every(c => !!c.querySelector('.ws-card-head details.ws-help .ws-help-pop li') && !c.querySelector('.m1-caveat, .m1-logic'))")));
   check(`${tag}: no Module 1 widget error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m1-root .shiny-output-error, #m1-root .m1-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
   await evaluate(p, "m1Go('overview') || true");
   await idle(p);
@@ -325,14 +335,34 @@ async function moduleTwoChecks(p, tag, stores) {
   check(`${tag}: Module 2 scope is the principal's ${stores} stores`, head.includes(`${stores} assigned stores`), head);
   await waitFor(p, "document.querySelectorAll('#m2-top10-table tr[data-open-store]').length > 0", 30000, "top rows");
   check(`${tag}: no raw None ranks in tables`, !/\bNone\b/.test(await evaluate(p, "document.querySelector('#m2-root').innerText")));
+  const m2pills = () => evaluate(p, "[...document.querySelectorAll('#m2_filter_box details.ws-fpill .ws-fpill-val')].map(v => v.textContent).join('|')");
+  check(`${tag}: Module 2 filters are pills (channel, region, tier, urgency), all at All`, (await m2pills()) === "All|All|All|All", await m2pills());
+  const channel = await evaluate(p, "document.querySelectorAll('#m2_f_channel input')[1]?.value || ''");
+  if (channel) {
+    await click(p, "#m2-pill-channel > summary");
+    await click(p, "#m2_f_channel .radio:nth-child(2) label");
+    await waitFor(p, `document.querySelector('#m2-pill-channel .ws-fpill-val')?.textContent === ${JSON.stringify(channel)} && !document.querySelector('#m2-pill-channel').open`, 10000, "channel pill");
+    await idle(p);
+    check(`${tag}: choosing a channel shows it on the pill, closes it and highlights it`, await evaluate(p, "document.querySelector('#m2-pill-channel .ws-fpill-val').classList.contains('set')"));
+    await click(p, "#m2-pill-channel > summary");
+    await click(p, "#m2_f_channel .radio:nth-child(1) label");
+    await waitFor(p, "document.querySelector('#m2-pill-channel .ws-fpill-val')?.textContent === 'All'", 10000, "channel all again");
+    await idle(p);
+  }
 }
 
 // ---------------------------------------------------------------- scenarios
 async function scenarioMain() {
   const p = await openPage({ name: "desktop", w: 1440, h: 900 });
   const login = await txt(p, "#shell-login");
-  check("login: demo-only sign-in is stated", /Demo sign-in only/.test(login) && /not production authentication/.test(login), login);
-  check("login: lists the four modules by name, all in this build", /Business Performance\s*Module 1 · Sales, distribution/.test(login) && /Stockout Risk\s*Module 2 · Predicted stockouts/.test(login) && /Negotiation Simulator\s*Module 3 · Test deal terms/.test(login) && /Commercial Copilot\s*Module 4 · Ask questions/.test(login) && !/not in this build/.test(login), login);
+  check("login: demo accounts with fictional people, not production sign-in", /Demo accounts with fictional people, not production sign-in/.test(login) && /Elena Rostova/.test(login) && /Alex Mercer/.test(login) && /Beatrice Vance/.test(login), login);
+  check("login: each account has a portrait and its credentials are filled in", (await evaluate(p, "[...document.querySelectorAll('#shell-login .ws-account img.ws-avatar')].filter(i => i.complete && i.naturalWidth > 0).length")) === 3 && (await evaluate(p, "document.querySelector('#shell-username').value === 'elena.rostova' && document.querySelector('#shell-password').value.length > 0 && document.querySelector('#shell-password').type === 'password'")));
+  await click(p, "#shell-account-rep_b");
+  check("login: choosing an account fills in its user name", await evaluate(p, "document.querySelector('#shell-username').value === 'beatrice.vance' && document.querySelector('#shell-account-rep_b').getAttribute('aria-checked') === 'true'"));
+  await evaluate(p, "(() => { document.querySelector('#shell-password').value = 'wrong-password'; return true; })()");
+  await click(p, "#shell-signin");
+  await waitFor(p, "/not right/.test(document.querySelector('#shell_login_error')?.innerText || '')", 10000, "wrong password message");
+  check("login: a wrong password does not sign in", await visible(p, "#shell-login") && !(await visible(p, "#shell-app")));
   check("login: workspace hidden while signed out", !(await visible(p, "#shell-app")));
   await shot(p, "1-login");
 
@@ -343,7 +373,7 @@ async function scenarioMain() {
   check("shell: Business Performance is the start module", (await evaluate(p, "document.querySelector(\"#shell-nav button[data-module='module_1']\").getAttribute('aria-current')")) === "page");
   await moduleOneReady(p);
   const greeted = await evaluate(p, "window.__m1Welcome || []");
-  check("start: a welcome greeting for the signed-in user is shown while Business Performance loads", greeted.some((g) => /(Good morning|Good afternoon|Good evening|Working late), Manager\b/.test(g) && /Getting your business performance ready/.test(g)), JSON.stringify(greeted).slice(0, 300));
+  check("start: a welcome greeting for the signed-in user is shown while Business Performance loads", greeted.some((g) => /(Good morning|Good afternoon|Good evening|Working late), Elena Rostova\b/.test(g) && /Getting your business performance ready/.test(g)), JSON.stringify(greeted).slice(0, 300));
   check("start: the welcome makes way for the KPIs", !(await evaluate(p, "!!document.querySelector('#m1-welcome')")) && (await evaluate(p, "document.querySelectorAll('#m1-root .m1-kpi').length")) === 5);
   await openModule(p, "module_2");
   const nav = await evaluate(p, "[...document.querySelectorAll('#shell-nav > button[data-module]')].map(b => ({key: b.dataset.module, text: b.innerText.replace(/\\s+/g, ' ').trim(), disabled: b.getAttribute('aria-disabled') === 'true'}))");
@@ -471,7 +501,7 @@ async function scenarioMain() {
   await watchWelcome(p);
   await signIn(p, "manager", "demo:manager");
   await moduleOneReady(p);
-  check("identity switch: Module 1 reloads for the new identity (welcome shown, not the rep's figures)", (await evaluate(p, "(window.__m1Welcome || []).some((g) => /, Manager\\b/.test(g))")) && !(await evaluate(p, "(window.__m1Welcome || []).some((g) => /Rep A/.test(g))")));
+  check("identity switch: Module 1 reloads for the new identity (welcome shown, not the rep's figures)", (await evaluate(p, "(window.__m1Welcome || []).some((g) => /, Elena Rostova\\b/.test(g))")) && !(await evaluate(p, "(window.__m1Welcome || []).some((g) => /Alex Mercer/.test(g))")));
   await moduleOneChecks(p, "manager", EXPECT.manager, true);
   await filterPillChecks(p);
   await kpiDetailChecks(p);
@@ -593,19 +623,14 @@ async function scenarioCandidate() {
   const p = await openPage({ name: "desktop", w: 1440, h: 900 });
   await signIn(p, "manager", "demo:manager");
   await moduleTwoReady(p);
-  await waitFor(p, "!!document.querySelector('#m2-model-status')", 20000, "candidate label");
-  check("candidate: overview label", /review candidate, not an approved production model/.test(await txt(p, "#m2-model-status")));
-  check("candidate: banner separates predictions from estimates", /predictions from a model under review/.test(await txt(p, "#m2-estimate-note")) && /estimates/.test(await txt(p, "#m2-estimate-note")));
-  await evaluate(p, "m2Go('analytics') || true");
-  await waitFor(p, "!!document.querySelector('#m2-oos-note')", 30000, "analytics");
-  check("candidate: analytics label", await visible(p, "#m2-model-status"));
+  await waitFor(p, "!!document.querySelector('#m2-estimate-note')", 20000, "estimate note");
+  check("candidate: the page states only that some figures are estimates (no model status)", /^Because parts of the reported data are missing, some figures are estimates\.$/.test((await txt(p, "#m2-estimate-note")).trim()) && !/review candidate|model under review/.test(await txt(p, "#m2-root")), await txt(p, "#m2-estimate-note"));
   await evaluate(p, "m2Go('overview') || true");
   await waitFor(p, "document.querySelector('#m2-root .tab-pane[data-value=overview]')?.classList.contains('active') && document.querySelectorAll('#m2-top10-table tr[data-open-store]').length > 0", 30000, "overview rows");
   await idle(p); await sleep(300);
   await click(p, "#m2-top10-table tr[data-open-store] a.m2-store-link");
-  await waitFor(p, "!!document.querySelector('#m2-detail-model-status')", 30000, "detail label");
-  check("candidate: store detail label", /review candidate/.test(await txt(p, "#m2-detail-model-status")));
-  check("candidate: store detail banner", await visible(p, "#m2-estimate-note"));
+  await waitFor(p, "document.querySelector('#m2-root .tab-pane[data-value=detail]')?.classList.contains('active')", 30000, "store detail");
+  check("candidate: store detail states the estimates, not the model status", await visible(p, "#m2-estimate-note") && !/review candidate/.test(await txt(p, "#m2-root .tab-pane[data-value=detail]")));
   await shot(p, "1-detail");
   await openModule(p, "module_4");
   await waitFor(p, "/Data through/.test(document.querySelector('#m4-root .m4-status')?.textContent || '')", 30000, "copilot status");
@@ -672,7 +697,35 @@ async function scenarioUnreleased() {
   await shot(p, "1-module4");
 }
 
-const SCENARIOS = { main: scenarioMain, unavailable: scenarioUnavailable, nomodel: scenarioNoModel,
+// Slow scope lookups (test double): the welcome must not wait for them, and a late result for a previous
+// sign-in must never reach the next identity's page.
+async function scenarioSlow() {
+  const p = await openPage({ name: "desktop", w: 1440, h: 900 });
+  await watchWelcome(p);
+  let t0 = Date.now();
+  await click(p, "#shell-account-rep_a"); await click(p, "#shell-signin");
+  const fast = await soft(p, "!!document.querySelector('#m1-welcome')", 2500, "welcome at once");
+  check("slow scope: the welcome appears at once (not after the scope lookup)", fast, `${(Date.now() - t0) / 1000}s`);
+  check("slow scope: the welcome line waits for the store count instead of blocking",
+        /Getting your business performance ready\.$/.test((await txt(p, "#m1-welcome .m1-welcome-sub")).trim()),
+        await txt(p, "#m1-welcome .m1-welcome-sub"));
+  await sleep(500);                                   // rep A's scope lookup is still running (4 s)
+  await evaluate(p, "window.__m1Welcome = []; true");
+  await signOut(p);
+  t0 = Date.now();
+  await click(p, "#shell-account-manager"); await click(p, "#shell-signin");
+  check("slow scope: switching identity while loading shows the new welcome at once",
+        await soft(p, "/Elena Rostova/.test(document.querySelector('#m1-welcome')?.innerText || '')", 2500, "manager welcome"),
+        `${(Date.now() - t0) / 1000}s`);
+  await moduleOneReady(p);
+  const seen = await evaluate(p, "window.__m1Welcome || []");
+  check("slow scope: a late scope result for the previous sign-in never reaches the next identity",
+        !seen.some((g) => new RegExp(`for ${EXPECT.rep} stores`).test(g)), JSON.stringify(seen).slice(0, 400));
+  const head = await txt(p, "#shell-panel-module_1 .ws-pagehead");
+  check("slow scope: the KPIs that arrive are the manager's", head.includes(`${EXPECT.manager} stores in your demo scope`) && (await evaluate(p, "document.querySelectorAll('#m1-root .m1-kpi').length")) === 5, head);
+  await shot(p, "1-slow-manager");
+}
+const SCENARIOS = { slow: scenarioSlow, main: scenarioMain, unavailable: scenarioUnavailable, nomodel: scenarioNoModel,
   candidate: scenarioCandidate, pg: scenarioPg, pgrevoked: scenarioPgRevoked, unreleased: scenarioUnreleased };
 try {
   await SCENARIOS[SCENARIO]();

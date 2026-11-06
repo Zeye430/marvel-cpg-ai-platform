@@ -76,5 +76,96 @@ class Module3DataTests(unittest.TestCase):
             rep.baseline("region", "x")
 
 
+class FakeItem:
+    """A scoped copy whose access check can be revoked at a chosen check (counts every check)."""
+
+    def __init__(self, revoke_at=None):
+        import pandas as pd
+        self.pd, self.checks, self.queries, self.revoke_at = pd, 0, 0, revoke_at
+        self.record, self.scope, self.manager = {"as_of": "2026-06-30"}, {"stores": 1}, False
+
+    def check(self):
+        self.checks += 1
+        if self.revoke_at is not None and self.checks >= self.revoke_at:
+            raise PermissionError("scope revoked")
+        return self.scope
+
+    def query(self, sql, params=None):
+        self.queries += 1
+        return self.pd.DataFrame({"category": ["Laundry"], "n": [0], "slope": [None], "sxx": [None], "syy": [None],
+                                  "sxy": [None], "lo": [None], "hi": [None]})
+
+
+class AccessCheckTests(unittest.TestCase):
+    """Codex TASK-0017 R-03: every read is between two access checks, cached results are re-checked, and a
+    revocation before, during or after a read returns nothing."""
+
+    def data(self, **kwargs):
+        from modules.module_3.data import Module3Data
+        item = FakeItem(**kwargs)
+        return Module3Data(item), item
+
+    def test_every_read_is_checked_before_and_after(self):
+        data, item = self.data()
+        data.categories()
+        self.assertEqual((item.checks, item.queries), (2, 1))
+
+    def test_revocation_before_or_during_a_read_returns_nothing(self):
+        for revoke_at, queries in ((1, 0), (2, 1)):          # before the query; after it (in flight)
+            with self.subTest(revoke_at=revoke_at):
+                data, item = self.data(revoke_at=revoke_at)
+                with self.assertRaises(PermissionError):
+                    data.categories()
+                self.assertEqual(item.queries, queries)
+
+    def test_cached_results_are_rechecked_and_not_served_after_revocation(self):
+        data, item = self.data()
+        first = data.elasticity("Laundry")
+        reads = item.queries
+        self.assertEqual(data.elasticity("Laundry"), first)  # cached: no new query, but a fresh check
+        self.assertEqual(item.queries, reads)
+        item.revoke_at = item.checks + 1
+        with self.assertRaises(PermissionError):
+            data.elasticity("Laundry")
+
+
+class IncompleteBaselineTests(unittest.TestCase):
+    """Codex TASK-0017 R-04: unknown price, cost or discount is excluded and counted, never filled."""
+
+    def frame(self, rows):
+        import pandas as pd
+        columns = ["sku_id", "units", "list_price", "unit_cost", "trade_discount", "stores", "first_day", "last_day"]
+        return pd.DataFrame([dict(zip(columns, r)) for r in rows])
+
+    def test_unequal_volumes_are_weighted(self):
+        from modules.module_3.server import weighted_unit
+        unit = weighted_unit(self.frame([("A", 300, 4.0, 2.0, 10.0, 5, "2026-04-01", "2026-06-30"),
+                                         ("B", 100, 8.0, 3.0, 20.0, 4, "2026-04-01", "2026-06-30")]))
+        self.assertAlmostEqual(unit["unit_net"], (300 * 4.0 * 0.9 + 100 * 8.0 * 0.8) / 400)
+        self.assertAlmostEqual(unit["unit_cost"], (300 * 2.0 + 100 * 3.0) / 400)
+        self.assertAlmostEqual(unit["trade_discount"], (300 * 10 + 100 * 20) / 400)
+        self.assertEqual((unit["excluded_skus"], unit["excluded_units"]), (0, 0.0))
+
+    def test_partly_missing_inputs_are_excluded_and_disclosed(self):
+        from modules.module_3.server import weighted_unit
+        nan = float("nan")
+        rows = [("A", 300, 4.0, 2.0, 10.0, 5, "2026-04-01", "2026-06-30"),
+                ("B", 100, nan, 3.0, 20.0, 4, "2026-04-01", "2026-06-30"),       # no list price
+                ("C", 50, 6.0, nan, 15.0, 4, "2026-04-01", "2026-06-30"),        # no cost
+                ("D", 25, 6.0, 2.5, None, 4, "2026-04-01", "2026-06-30")]        # no recent discount
+        unit = weighted_unit(self.frame(rows))
+        self.assertEqual((unit["units"], unit["skus"], unit["excluded_skus"], unit["excluded_units"]),
+                         (300.0, 1, 3, 175.0))
+        self.assertAlmostEqual(unit["unit_net"], 4.0 * 0.9)              # only the complete product
+        self.assertAlmostEqual(unit["trade_discount"], 10.0)             # the missing discount is not 0
+
+    def test_wholly_missing_inputs_give_no_baseline(self):
+        from modules.module_3.server import weighted_unit
+        nan = float("nan")
+        self.assertIsNone(weighted_unit(self.frame([("A", 300, nan, 2.0, 10.0, 5, "2026-04-01", "2026-06-30"),
+                                                    ("B", 100, 8.0, 3.0, None, 4, "2026-04-01", "2026-06-30")])))
+        self.assertIsNone(weighted_unit(self.frame([("A", 0, 4.0, 2.0, 10.0, 5, "2026-04-01", "2026-06-30")])))
+
+
 if __name__ == "__main__":
     unittest.main()

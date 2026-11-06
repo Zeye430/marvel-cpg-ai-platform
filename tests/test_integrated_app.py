@@ -65,8 +65,31 @@ class ShellTests(unittest.TestCase):
     def test_demo_identities_are_server_owned_and_labelled(self):
         from shared.shell import DEMO_ACCOUNTS
         self.assertEqual([a.principal_id for a in DEMO_ACCOUNTS], ["demo:manager", "demo:rep-a", "demo:rep-b"])
-        self.assertTrue(all("(demo)" in a.name for a in DEMO_ACCOUNTS))
+        self.assertTrue(all("demo account" in a.title for a in DEMO_ACCOUNTS))
         self.assertEqual({a.role for a in DEMO_ACCOUNTS}, {"Regional Manager", "Field Rep"})
+        self.assertEqual(len({a.username for a in DEMO_ACCOUNTS}), 3)
+        self.assertTrue(all(a.avatar and a.avatar.endswith(f"/avatars/{a.key}.svg") for a in DEMO_ACCOUNTS))
+
+    def test_sign_in_needs_the_account_password(self):
+        from shared.shell import DEMO_ACCOUNTS, match_account
+        rep = DEMO_ACCOUNTS[1]
+        self.assertIs(match_account(rep.username, rep.password), rep)
+        self.assertIs(match_account(" Alex.Mercer ", rep.password), rep)          # user name: case and spaces
+        self.assertIsNone(match_account(rep.username, "wrong"))
+        self.assertIsNone(match_account(rep.username, ""))
+        self.assertIsNone(match_account("demo:rep-a", rep.password))              # never a principal id
+        self.assertIsNone(match_account(None, None))
+
+    def test_sign_in_page_fills_in_the_first_account(self):
+        from shared.shell import DEMO_ACCOUNTS, _login
+        page = str(_login())
+        first = DEMO_ACCOUNTS[0]
+        self.assertIn(f'value="{first.username}"', page)
+        self.assertIn('autocomplete="current-password"', page)
+        for demo in DEMO_ACCOUNTS:
+            self.assertIn(f'id="shell-account-{demo.key}"', page)
+            self.assertIn(demo.name, page)
+        self.assertNotIn("demo:manager", page)                                   # no principal reaches the browser
 
     def test_module_specs_must_be_distinct(self):
         from shared.shell import ModuleSpec, build_app

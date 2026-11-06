@@ -7,7 +7,8 @@ and holds Help, Settings, the user card and Sign out. Hosted in the workspace sh
 (``hosted`` option), the shell's single app sidebar holds those and shows Module 2's pages
 (``pages_nav_ui``) under the module; Module 2 renders only its top bar and pages. The top bar has store search, placeholder
 buttons (Copilot, messages, notifications, calendar: visible, no behaviour) and the user.
-Every number is rendered by the server from the published serving data; nothing here is fixed.
+The filters are pills (shared/ui_kit, as in Module 1). Every number is rendered by the server from the
+published serving data; nothing here is fixed.
 """
 
 from pathlib import Path
@@ -100,10 +101,6 @@ document.addEventListener('toggle', function (event) {
     window.dispatchEvent(new Event('resize'));
   }
 }, true);
-document.addEventListener('DOMContentLoaded', function () {
-  var box = document.getElementById('m2_filter_box');
-  if (box && window.matchMedia('(max-width: 640px)').matches) { box.removeAttribute('open'); }
-});
 """
 
 
@@ -156,16 +153,18 @@ def _topbar(copilot=False):
 
 
 def _filters():
-    return ui.tags.details(
-        ui.tags.summary("Filters"),
-        ui.div(
-            ui.input_select("m2_f_channel", "Channel", {"": "All channels"}),
-            ui.input_select("m2_f_region", "Region", {"": "All regions"}),
-            ui.input_select("m2_f_tier", "Tier", {"": "All tiers"}),
-            ui.input_select("m2_f_urgency", "Urgency", {"": "All urgency", "urgent": "Urgent", "high": "High",
-                                                        "monitor": "Monitor"}),
-            class_="m2-filters"),
-        id="m2_filter_box", class_="m2-filter-box m2-card-flat", open="open")
+    """Filter pills (the workspace's pattern, as in Module 1): each shows its value and opens its choices."""
+    def pill(key, title, input_id, choices):
+        return kit.filter_pill(f"m2-pill-{key}", title, kit.pill_face(title, input_id),
+                               ui.input_radio_buttons(input_id, None, choices, selected=""),
+                               **{"data-autoclose": ""})
+    return ui.div(
+        pill("channel", "Channel", "m2_f_channel", {"": "All channels"}),
+        pill("region", "Region", "m2_f_region", {"": "All regions"}),
+        pill("tier", "Tier", "m2_f_tier", {"": "All tiers"}),
+        pill("urgency", "Urgency", "m2_f_urgency", {"": "All urgency", "urgent": "Urgent", "high": "High",
+                                                    "monitor": "Monitor"}),
+        id="m2_filter_box", class_="ws-fbar m2-fbar", role="search", **{"aria-label": "Filters"})
 
 
 def _business_pages():
@@ -283,4 +282,4 @@ def module_2_ui(dataset: Dict[str, Any] = None) -> ui.Tag:
                              main if hosted else
                              ui.layout_sidebar(_sidebar(), main, fillable=False, border=False, border_radius=False,
                                                class_="m2-shell")),
-        class_="m2", id="m2-root")
+        class_="m2" if hosted else "m2 ws", id="m2-root")      # standalone: the kit's .ws scope (filter pills)

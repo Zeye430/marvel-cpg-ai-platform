@@ -5,12 +5,13 @@ Layout for Module 1: Business Performance (Commercial Execution Analytics), in t
 workspace design (shared/ui_kit: Module 2's design).
 
 Hosted in the workspace shell, the app sidebar lists Module 1's pages (``pages_nav_ui``):
-Overview (five KPI cards; the selected card's trend with its target, notes and calculation open
-below them) and one page per dashboard section:
+Overview (five KPI cards; the selected card's trend with its target and, collapsed, how it is
+calculated open below them) and one page per dashboard section:
 Geography & flow, Out-of-stock, Shelf execution and Trade terms. Every page has the portfolio
-filters (date range, channel, region, MSL products, product SKU) as one row of filter pills: each pill shows its
-current value and opens its options on click. While the first load runs, the page shows a welcome
-greeting instead. Every number and chart is rendered by the server from the signed-in user's
+filters (date range, channel, region, MSL products, product SKU) as one row of filter pills (the
+workspace's ``ws-fpill``): each pill shows its current value and opens its options on click. Every
+chart has a "?" next to its title that explains how to read it and what the data is; there is no
+small print under the charts. While the first load runs, the page shows a welcome greeting instead. Every number and chart is rendered by the server from the signed-in user's
 scoped shared publication; nothing here is fixed.
 
 Without the shared runtime (the legacy root ``app.py``) the module shows where it runs instead
@@ -54,27 +55,6 @@ window.jQuery(document).on('shiny:connected', function () {
   Shiny.setInputValue('m1_client_clock', {hour: now.getHours(),
     day: now.toLocaleDateString('en-US', {weekday: 'long', month: 'long', day: 'numeric'})});
 });
-// Filter pills: one open at a time; a click outside or Escape closes it.
-document.addEventListener('toggle', function (event) {
-  var pill = event.target;
-  if (!pill.classList || !pill.classList.contains('m1-pill') || !pill.open) { return; }
-  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (other) {
-    if (other !== pill) { other.removeAttribute('open'); }
-  });
-  var search = pill.querySelector('.m1-sku-search');
-  if (search) { search.focus(); }
-}, true);
-document.addEventListener('click', function (event) {
-  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (pill) {
-    if (!pill.contains(event.target)) { pill.removeAttribute('open'); }
-  });
-});
-document.addEventListener('keydown', function (event) {
-  if (event.key !== 'Escape') { return; }
-  document.querySelectorAll('#m1-root details.m1-pill[open]').forEach(function (pill) {
-    pill.removeAttribute('open'); pill.querySelector('summary').focus();
-  });
-});
 // SKU pill: type to filter the list; category headings between the groups.
 function m1SkuSearch(box) {
   var term = box.value.trim().toLowerCase();
@@ -111,14 +91,9 @@ def geo_dependency():
 
 
 def _pill(key, title, *body, icon=None):
-    """One filter pill: the summary shows the current value (server-rendered); the options open below it."""
-    return ui.tags.details(
-        ui.tags.summary(kit.icon(icon, 15) if icon else None, ui.output_ui(f"m1_pill_{key}", inline=True),
-                        ui.span("▾", class_="m1-caret", **{"aria-hidden": "true"}),
-                        class_="m1-pill-face", **{"aria-label": f"{title} filter"}),
-        ui.div(ui.tags.h3(title, class_="m1-pop-title"), *body, class_="m1-pop", role="group",
-               **{"aria-label": title}),
-        class_="m1-pill", id=f"m1-pill-{key}")
+    """One filter pill: the face shows the current value (server-rendered); the options open below it."""
+    return kit.filter_pill(f"m1-pill-{key}", title, ui.output_ui(f"m1_pill_{key}", inline=True), *body,
+                           icon_name=icon, class_="m1-pill", pop_class="m1-pop")
 
 
 def _filters():
@@ -126,15 +101,18 @@ def _filters():
     return ui.div(
         _pill("dates", "Date range",
               ui.output_ui("m1_presets"),
-              ui.input_date_range("m1_dates", "Custom range (snaps to full weeks)", start="2026-06-30",
+              ui.input_date_range("m1_dates", "Custom range (whole weeks, Monday to Sunday)", start="2026-06-30",
                                   end="2026-06-30"),
               icon="calendar"),
-        _pill("channel", "Channel", ui.input_checkbox_group("m1_channel", None, [])),
-        _pill("region", "Region", ui.input_checkbox_group("m1_region", None, [])),
+        _pill("channel", "Channel", ui.input_checkbox_group("m1_channel", None, []),
+              ui.tags.p("No box ticked means all channels.", class_="ws-muted m1-pop-note")),
+        _pill("region", "Region", ui.input_checkbox_group("m1_region", None, []),
+              ui.tags.p("No box ticked means all regions.", class_="ws-muted m1-pop-note")),
         _pill("msl", "MSL products",
               ui.input_radio_buttons("m1_msl", None, {"all": "All products", "msl": "MSL products only",
                                                       "non": "Non-MSL products only"}, selected="all"),
-              ui.tags.p("MSL = must-stock list (is_msl). Narrows the selected SKUs.", class_="ws-muted m1-pop-note")),
+              ui.tags.p("MSL = must-stock list. The SKU list then shows only these products.",
+                        class_="ws-muted m1-pop-note")),
         _pill("sku", "Product SKU",
               ui.tags.input(type="search", class_="form-control m1-sku-search", placeholder="Search products",
                             oninput="m1SkuSearch(this)", **{"aria-label": "Search products"}),
@@ -147,10 +125,12 @@ def _filters():
         class_="m1-fbar", id="m1_filter_box", role="search", **{"aria-label": "Filters"})
 
 
-def _chart_card(output_id, title, logic, control=None, wide=True):
-    """One chart: title, the data and logic behind it, an optional view control, the chart."""
+def _chart_card(output_id, title, read, data, control=None, wide=True):
+    """One chart: its title with a "?" (how to read it; what the data is), an optional view control, the chart."""
+    tip = kit.help_tip(title, ui.tags.ul(*[ui.tags.li(line) for line in read]),
+                       ui.tags.p(data, class_="ws-help-data"), id=f"{output_id}-help")
     return ui.div(
-        ui.div(ui.div(ui.tags.h2(title, class_="ws-h"), ui.tags.p(logic, class_="ws-muted m1-logic")),
+        ui.div(ui.div(ui.tags.h2(title, class_="ws-h"), tip, class_="ws-title-row"),
                control, class_="ws-card-head m1-chart-head"),
         ui.output_ui(output_id),
         class_="ws-card m1-chart-card" + (" m1-wide" if wide else ""))
@@ -169,55 +149,86 @@ def _pages():
     geo = ui.nav_panel(
         "geo",
         _chart_card("m1_chart9_geo_map", "Regional execution vs revenue performance map",
-                    "State-level invoiced net sales (sell_in_events), audited planogram compliance (execution_visits) "
-                    "and observed in-stock rate (store_sku_daily). The execution index is an equal-weight display "
-                    "index, not a shared KPI.",
+                    ["Each state is shaded by the measure chosen on the right: darker means higher.",
+                     "Hover a state for its sales, planogram compliance, in-stock rate and store count.",
+                     "Compare the two views to find states that sell well but execute poorly, or the reverse.",
+                     "Blank states have no stores in your scope."],
+                    "Invoiced net sales (no currency in the source), audited planogram compliance and observed "
+                    "in-stock rate. The execution index is an equal-weight average of the last two, for display; it "
+                    "is not a shared KPI.",
                     _radio("m1_c9_metric", {"health_score": "Execution index", "net_sales": "Invoiced net sales"},
                            "health_score")),
         _chart_card("m1_chart10_sankey", "Sell-in vs sell-out flow",
-                    "Comparable biweekly flows from commercial_period: invoiced units from category to channel, then "
-                    "observed consumer sell-out versus invoiced units above sell-out. Invoice units are not received "
-                    "stock, so the excess is a flow gap, not a measured inventory buffer."))
+                    ["Read left to right: invoiced units flow from each category to its channels.",
+                     "Each channel then splits into what consumers bought (sell-out) and what was invoiced on top "
+                     "of that (the gap).",
+                     "A wide gap band means stock is being invoiced faster than it sells."],
+                    "Complete biweekly periods where both flows are known. Invoiced units are not received stock, so "
+                    "the gap is a flow difference, not measured inventory. Where sell-out exceeds sell-in, the "
+                    "flow is shown up to sell-in."))
     oos = ui.nav_panel(
         "oos",
-        _chart_card("m1_chart1_heatmap", "Stock level and OOS hazard heatmap (mandatory MSL SKUs)",
-                    "Reported store_sku_daily inventory for mandatory MSL SKUs on the latest date in range. Zero is "
-                    "red, low buffers amber; a store-SKU without a report that day stays Unknown and is never shown "
-                    "as zero."),
-        _chart_card("m1_chart2_lost_sales", "Lost sales heuristic trend",
-                    "Heuristic only: observed zero-stock days × the store-SKU's observed in-stock average daily units "
-                    "× static list price. This is not the shared missing-day estimator and not measured lost revenue.",
+        _chart_card("m1_chart1_heatmap", "Stock level heatmap (mandatory MSL SKUs)",
+                    ["Rows are stores, columns are must-stock products; each cell is the units on hand on the "
+                     "latest day in your date range.",
+                     "Red is zero stock, amber is a low buffer, blue is well stocked.",
+                     "Grey cells marked Unknown were not reported that day: they are not zero stock.",
+                     "Managers see the 25 stores with the most zero-stock products."],
+                    "Reported daily store inventory for products on the must-stock list."),
+        _chart_card("m1_chart2_lost_sales", "Lost sales estimate trend (heuristic)",
+                    ["Each band is the estimated value of sales lost to stockouts per week, by region or category.",
+                     "A rising band means stockouts are costing more; compare bands to see where.",
+                     "It is a rough estimate to prioritise, not measured lost revenue."],
+                    "Days observed at zero stock × the product's usual daily sales in that store × list price "
+                    "(no currency in the source). Days without a usual-sales baseline are left out, not estimated.",
                     _radio("m1_c2_group", {"region": "By region", "category": "By category"}, "region")),
-        _chart_card("m1_chart3_duration", "OOS duration distribution",
-                    "Consecutive observed zero-stock calendar days per store-SKU (store_sku_daily). Any missing or "
-                    "Unknown day ends an episode, so gaps are never counted as continuous outage.",
+        _chart_card("m1_chart3_duration", "How long stockouts last",
+                    ["Each box shows how many days in a row products stayed out of stock, by channel or tier.",
+                     "The line in the box is the typical length; the box covers the middle half of stockouts.",
+                     "Dots are unusually long stockouts worth a closer look."],
+                    "Consecutive days observed at zero stock per store and product. A missing or Unknown day ends a "
+                    "stockout, so gaps in reporting are never counted as continuous outage.",
                     _radio("m1_c3_group", {"channel": "By channel", "segment_tier": "By tier"}, "channel")))
     shelf = ui.nav_panel(
         "shelf",
         _chart_card("m1_chart4_compliance", "Planogram and MSL availability by brand",
-                    "Planogram compliance from audited SKU rows (execution_visits) and observed MSL SKU-day "
-                    "availability (store_sku_daily) by category and brand. Missing bars are N/A, not zero. Reference "
-                    "lines: 85% team display target and the brief's 62% baseline."),
-        _chart_card("m1_chart5_bubble", "Audited shelf allocation vs invoiced sales",
-                    "Store-level audited SKU shelf allocation per visit (execution_visits) against invoiced net sales "
-                    "(sell_in_events), sized by segment tier. Allocation is within supplied category SKUs, not "
-                    "competitor shelf share, so no target line is drawn."),
-        _chart_card("m1_chart6_radar", "Multi-dimensional execution scorecard",
-                    "Five shared components by region, tier or channel: planogram and secondary-display shares of "
-                    "audited SKU rows, audited SKU allocation, and observed MSL and overall in-stock rates. Gaps are "
-                    "N/A, not zero.",
+                    ["Two bars per brand: planogram compliance and must-stock availability.",
+                     "The dashed line is the team's 85% display target; the dotted line is the brief's 62% "
+                     "starting point.",
+                     "Brands left of the dashed line need attention. A missing bar means no data, not zero."],
+                    "Audited planogram rows from store visits, and observed daily availability of must-stock "
+                    "products. The 85% line is a team display target, not a client-approved threshold."),
+        _chart_card("m1_chart5_bubble", "Shelf allocation vs invoiced sales",
+                    ["Each bubble is a store: further right means more shelf allocated to the selected products, "
+                     "higher means more sales.",
+                     "Bigger bubbles are higher-tier stores; colour is the channel.",
+                     "Stores high and to the left sell well on little shelf. It shows an association, not cause."],
+                    "Shelf allocation per audited visit, among the client's own products in a category (not share "
+                    "versus competitors), and invoiced net sales. No shelf-share target applies."),
+        _chart_card("m1_chart6_radar", "Execution scorecard",
+                    ["Each shape is a region, tier or channel scored on five execution measures (0–100%).",
+                     "A bigger, rounder shape is stronger all-round; a dent shows the weak measure.",
+                     "A gap in a shape means no data for that measure."],
+                    "Planogram compliance and secondary displays from audits, shelf allocation, and observed "
+                    "must-stock and overall in-stock rates.",
                     _radio("m1_c6_group", {"region": "By region", "segment_tier": "By tier", "channel": "By channel"},
                            "region")))
     trade = ui.nav_panel(
         "trade",
-        _chart_card("m1_chart7_discount", "Effective discount vs margin realization with guardrails",
-                    "Reported invoices (sell_in_events) by store and category: gross-value-weighted trade discount "
-                    "versus margin at static product cost, compared with the source discount reference from "
-                    "negotiation_context. Source rules are Requires review, not approvals."),
+        _chart_card("m1_chart7_discount", "Discount vs margin",
+                    ["Each dot is a store and category: further right is a deeper trade discount, higher is a "
+                     "better margin.",
+                     "Red dots are above the discount reference; the dashed line marks that reference.",
+                     "Dots far right and low give away the most margin."],
+                    "Reported invoices, discount weighted by gross value, margin at static product cost. The "
+                    "discount reference comes from the client's guardrail table, which still awaits review: it is "
+                    "not an approved rule."),
         _chart_card("m1_chart8_tradeoff", "Trade-off commitment evidence",
-                    "Audit evidence (planogram and secondary-display shares of audited SKU rows) grouped by the source "
-                    "required trade-off text. No approved rule maps evidence to Met/Breach, so no commitment is shown "
-                    "as verified."))
+                    ["Bars group stores by the execution commitment their terms require.",
+                     "Each pair shows how often audits found the planogram met and a secondary display in place.",
+                     "Low bars suggest commitments that are not being delivered."],
+                    "Audit evidence only: no approved rule turns these shares into Met or Breach, so no commitment "
+                    "is shown as verified."))
     return ui.navset_hidden(overview, geo, oos, shelf, trade, id="m1_pages", selected="overview")
 
 

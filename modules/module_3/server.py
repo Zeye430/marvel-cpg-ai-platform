@@ -129,7 +129,7 @@ def context_panel(context, deal):
                 fact("Sell-out, last 28 days", f"{_num(context.get('sell_out_units_observed_28d')) or 0:,.0f} units",
                      f"{int(_num(context.get('observed_sales_days_28d')) or 0)} of "
                      f"{int(_num(context.get('expected_days_28d')) or 0)} days reported"),
-                fact("Last audit", audit_text, (f"{age:.0f} days ago · " if age is not None else "")
+                fact("Last audit", audit_text, (f"{age:.0f} day{'' if round(age) == 1 else 's'} ago · " if age is not None else "")
                      + (", ".join(execution) if execution else "no execution evidence")),
                 class_="m3-facts"),
             rule, class_="m3-context-grid"),

@@ -28,6 +28,8 @@ VIEWS = ("stores", "products", "store_sku_daily", "store_day", "commercial_perio
 PERIOD_TYPE = "biweek"  # recommended for every channel; families are never mixed
 SKU_SCOPE = "Individual audited SKU"
 REPORTED = "reported_only"
+ABOVE_CEILING = "Above standard + maximum additional (manager review range)"
+WITHIN_CEILING = "Within standard + maximum additional"
 
 
 @dataclass(frozen=True)
@@ -349,10 +351,20 @@ class Module1Data:
         return out
 
     def references(self):
-        """Source guardrail references per channel x category; inconsistent versions are not resolved."""
-        return self._df("""SELECT channel, category, count(DISTINCT (max_discount_pct_source, min_target_margin_source,
-                       required_exec_tradeoff, rule_version)) AS variants,
+        """Source guardrail references per channel x category; inconsistent versions are not resolved.
+
+        ``discount_ceiling_pct`` is the provisional total discount without manager review: standard plus
+        maximum additional discount. A release without the standard (an earlier guardrail table) has no
+        ceiling, so no store is placed above or below it."""
+        columns = set(self._df("SELECT column_name FROM information_schema.columns "
+                               "WHERE table_name = 'negotiation_context'")["column_name"])
+        standard = ("CAST(standard_discount_pct_source AS DOUBLE)" if "standard_discount_pct_source" in columns
+                    else "CAST(NULL AS DOUBLE)")
+        return self._df(f"""SELECT channel, category, count(DISTINCT ({standard}, max_discount_pct_source,
+                       min_target_margin_source, required_exec_tradeoff, rule_version)) AS variants,
+                   any_value({standard}) AS standard_discount_pct_source,
                    any_value(CAST(max_discount_pct_source AS DOUBLE)) AS max_discount_pct_source,
+                   any_value({standard} + CAST(max_discount_pct_source AS DOUBLE)) AS discount_ceiling_pct,
                    any_value(CAST(min_target_margin_source AS DOUBLE)) AS min_target_margin_source,
                    any_value(required_exec_tradeoff) AS required_exec_tradeoff, any_value(rule_version) AS rule_version,
                    any_value(policy_status) AS policy_status
@@ -372,12 +384,12 @@ class Module1Data:
         merged = frame.merge(refs, on=["channel", "category"], how="left")
 
         def status(row):
-            if pd.isna(row["variants"]) or row["variants"] != 1 or pd.isna(row["max_discount_pct_source"]) \
+            if pd.isna(row["variants"]) or row["variants"] != 1 or pd.isna(row["discount_ceiling_pct"]) \
                     or row["trade_discount_pct"] is None:
                 return "No single source reference"
-            if row["trade_discount_pct"] > row["max_discount_pct_source"]:
-                return "Above source discount reference (requires review)"
-            return "Within source discount reference (requires review)"
+            if row["trade_discount_pct"] > row["discount_ceiling_pct"] + 1e-9:
+                return ABOVE_CEILING
+            return WITHIN_CEILING
         merged["reference_status"] = merged.apply(status, axis=1) if len(merged) else []
         return merged
 

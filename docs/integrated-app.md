@@ -113,23 +113,28 @@ Two pages under Negotiation Simulator in the sidebar (brief Scenarios A and B). 
 identity's scoped copy that Business Performance builds, so they open at once after the dashboard has loaded.
 
 - **Deal simulator.** Choose an account (only stores in your scope) and a product. The context shows the
-  reference list price and cost (static; currency not supplied), the recent 28-day trade discount and the
-  headroom to the cap, reported stock, sell-out, the last audit, and the channel × category guardrail
-  (cap, minimum margin, required commitment) marked *Requires review*. Three proposals side by side each
-  take an additional discount and an execution commitment and show total discount, net price, gross
-  margin, money for the order quantity, the three checks and a verdict:
-  - **APPROVED**: the compared discount is at or below the cap and the margin at or above the minimum;
-  - **APPROVED WITH CONDITIONS**: above the cap with the required commitment (any listed option), margin
-    still above the minimum; it goes to manager review and is not confirmed to the account. Distributors
-    above the cap go to manager review without a shelf commitment;
-  - **REJECTED**: below the minimum margin, or above the cap without the commitment;
-  - **CANNOT ASSESS**: a price, cost or guardrail value is missing.
+  reference list price and cost (static; currency not supplied), the channel × category standard discount,
+  the recent 28-day invoiced discount (history only, not the standard), reported stock, sell-out, the last
+  audit, and the guardrail (standard, maximum additional discount and its commitment, minimum margin)
+  marked *Requires review*. Three proposals side by side each take an additional discount on top of the
+  standard and an execution commitment, and show total discount (standard + additional), net price, gross
+  margin, money for the order quantity, the checks and a verdict under the Owner's provisional rules
+  (`m3-rules.v1-provisional`, pending client confirmation and confirmation of Sales authority):
+  - **APPROVED**: no additional discount, margin at or above the minimum;
+  - **APPROVED WITH CONDITIONS**: an additional discount up to and including the maximum, with the
+    required commitment (any listed option), margin at or above the minimum;
+  - **MANAGER REVIEW**: above the maximum with the margin at or above the minimum; for distributors any
+    additional discount (their commitments are not confirmed). A status only: nothing is sent or saved;
+  - **REJECTED**: below the minimum margin, a total of 100% or more, or an additional discount within the
+    maximum without the commitment;
+  - **CANNOT ASSESS**: a price, cost, standard, maximum, minimum or commitment is missing, or the
+    additional discount is empty or negative. A data release from before the standard discount existed
+    shows this for every proposal, with a note.
 
-  Each proposal also shows the volume uplift needed to keep today's gross profit and whether the
-  commitment's assumed uplift covers it. Under *Assumptions and rules* you can switch which discount the
-  cap applies to (total = current + additional, the default, or the additional discount only) and the
+  Each proposal also shows the volume uplift needed to keep the gross profit at the standard discount and
+  whether the commitment's assumed uplift covers it. Under *Assumptions and rules* you can switch the
   execution uplift (the client's V3 note: display +8%, planogram +5%, +3% per 10 points of shelf share; or
-  the measured ≈ 0%). Rules version `m3-rules.v0-proposed`.
+  the measured ≈ 0%).
 - **Price change.** A list-price increase (0–15%) on a category or one product, with the share passed on
   to the shelf price. The baseline is reported sell-out on in-stock days in the last 13 weeks for your
   retail accounts (distributors are wholesale accounts without meaningful sell-out data). The elasticity is estimated on the same scoped history (log units on log shelf price within

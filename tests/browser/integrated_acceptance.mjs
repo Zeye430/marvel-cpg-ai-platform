@@ -239,20 +239,20 @@ async function moduleThreeChecks(p, tag, stores, full) {
   await waitFor(p, `!!${verdict("a")} && !!${verdict("b")} && !!${verdict("c")}`, 30000, "verdicts");
   await idle(p);
   const verdicts = await evaluate(p, `[${verdict("a")}, ${verdict("b")}, ${verdict("c")}]`);
-  check(`${tag}: three proposals side by side, each with a guardrail verdict`, verdicts.every((v) => ["APPROVED", "APPROVED WITH CONDITIONS", "REJECTED", "CANNOT ASSESS"].includes(v)) && (await evaluate(p, "document.querySelectorAll('#m3-scenarios .m3-scn').length")) === 3, JSON.stringify(verdicts));
-  check(`${tag}: the context shows the guardrail as Requires review`, /Requires review/.test(await txt(p, "#m3-context")) && /Maximum discount without extra approval/.test(await txt(p, "#m3-context")));
+  check(`${tag}: three proposals side by side, each with a guardrail verdict`, verdicts.every((v) => ["APPROVED", "APPROVED WITH CONDITIONS", "MANAGER REVIEW", "REJECTED", "CANNOT ASSESS"].includes(v)) && (await evaluate(p, "document.querySelectorAll('#m3-scenarios .m3-scn').length")) === 3, JSON.stringify(verdicts));
+  check(`${tag}: the context shows the standard discount and the guardrail as Requires review`, /Requires review/.test(await txt(p, "#m3-context")) && /Standard discount \(starting allowance\)/.test(await txt(p, "#m3-context")) && /not the standard/.test(await txt(p, "#m3-context")));
   check(`${tag}: no Module 3 error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m3-root .shiny-output-error, #m3-root .ws-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
   if (!full) return;
-  check("deal: the starting proposals show the trade-off (with the commitment it is conditional)", verdicts[2] === "APPROVED WITH CONDITIONS" || verdicts[2] === "CANNOT ASSESS", JSON.stringify(verdicts));
+  check("deal: the starting proposals show the rules (standard only, within the maximum with the commitment, above it)", verdicts[0] === "APPROVED" && ["APPROVED WITH CONDITIONS", "MANAGER REVIEW"].includes(verdicts[1]) && verdicts[2] === "MANAGER REVIEW", JSON.stringify(verdicts));
   check("deal: margin chart with the minimum-margin line", await evaluate(p, "(() => { const g = document.querySelector('#m3-margin-chart'); return !!g && (g.layout.shapes || []).some(s => s.type === 'line'); })()"));
-  if (verdicts[2] === "APPROVED WITH CONDITIONS") {
-    await evaluate(p, "(() => { const s = document.querySelector('#m3_commit_c'); s.value = 'none'; window.jQuery(s).trigger('change'); return true; })()");
-    await waitFor(p, `${verdict("c")} === 'REJECTED'`, 20000, "commitment withdrawn");
+  if (verdicts[1] === "APPROVED WITH CONDITIONS") {
+    await evaluate(p, "(() => { const s = document.querySelector('#m3_commit_b'); s.value = 'none'; window.jQuery(s).trigger('change'); return true; })()");
+    await waitFor(p, `${verdict("b")} === 'REJECTED'`, 20000, "commitment withdrawn");
     check("deal: withdrawing the commitment turns the conditional proposal into REJECTED", true);
   }
   await click(p, "#m3-assumptions > summary");
   await soft(p, "/m3-rules/.test(document.querySelector('#m3-rules')?.innerText || '')", 10000, "rules text");
-  check("deal: rules and assumptions are stated and switchable", /m3-rules\.v0-proposed/.test(await txt(p, "#m3-rules")) && (await evaluate(p, "document.querySelectorAll('#m3_basis input, #m3_uplift input').length")) === 4);
+  check("deal: rules and assumptions are stated and the uplift is switchable", /m3-rules\.v1-provisional/.test(await txt(p, "#m3-rules")) && /standard discount \+ proposed additional discount/.test(await txt(p, "#m3-rules")) && (await evaluate(p, "document.querySelectorAll('#m3_basis input').length")) === 0 && (await evaluate(p, "document.querySelectorAll('#m3_uplift input').length")) === 2);
   await shot(p, "9-module3-deal");
   await click(p, "#shell-nav .ws-subnav[data-module='module_3'] button[data-page='price']");
   await waitFor(p, "!!document.querySelector('#m3-b-cards') || /No observed sales|No elasticity/.test(document.querySelector('#m3_b_results')?.innerText || '')", 60000, "price page");

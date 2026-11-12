@@ -6,15 +6,16 @@ Layout for Module 3: Negotiation Simulator, in the shared workspace design (shar
 Hosted in the workspace shell, the app sidebar lists its two pages (``pages_nav_ui``):
 
 - Deal simulator (brief Scenario A): one store × SKU's negotiation context and three proposals side
-  by side (additional discount and execution commitment), each checked against the guardrail and
-  given a verdict: APPROVED, APPROVED WITH CONDITIONS (manager review) or REJECTED.
+  by side (additional discount on top of the standard and execution commitment), each checked against
+  the guardrail and given a verdict: APPROVED, APPROVED WITH CONDITIONS, MANAGER REVIEW, REJECTED or
+  CANNOT ASSESS.
 - Price change (brief Scenario B): a list-price increase on a SKU or category, with the volume,
   revenue and gross-profit response from a price elasticity estimated on the user's stores.
 
 The store, product and quantity (and the price change's target) are filter pills like Module 1's;
 each chart's "?" explains how to read it. Every number is rendered by the server from the signed-in
-user's scoped shared publication. Rules the client has not confirmed are switchable assumptions in
-the page.
+user's scoped shared publication. The rules are an Owner proposal the client has not confirmed; the
+execution uplift is a switchable assumption in the page.
 
 Without the shared runtime (the legacy root ``app.py``) the module shows where it runs instead.
 """
@@ -26,7 +27,7 @@ from shiny import ui
 
 from shared import ui_kit as kit
 
-from .calc import CAP_BASIS, RULES_VERSION, UPLIFT_SOURCES
+from .calc import RULES_VERSION, UPLIFT_SOURCES
 
 _CSS = (Path(__file__).with_name("module3.css")).read_text()
 
@@ -55,7 +56,7 @@ def _scenario(key):
     return ui.div(
         ui.div(ui.tags.h3(f"Scenario {letter}", class_="m3-scn-title"), ui.output_ui(f"m3_verdict_{key}"),
                class_="m3-scn-head"),
-        ui.div(ui.input_numeric(f"m3_add_{key}", "Additional discount (pts)", 0, min=0, max=40, step=0.5),
+        ui.div(ui.input_numeric(f"m3_add_{key}", "Additional discount above the standard (pts)", 0, min=0, max=40, step=0.5),
                ui.input_select(f"m3_commit_{key}", "Execution commitment offered", {"none": "None offered"}),
                class_="m3-scn-inputs"),
         ui.output_ui(f"m3_result_{key}"),
@@ -65,27 +66,32 @@ def _scenario(key):
 def rules_panel():
     """The rules and assumptions in words (static; no data)."""
     return ui.tags.div(
-        ui.tags.p(f"Rule version {RULES_VERSION}. These are the pricing policy's (MCPG-05) rules under the brief's "
-               "verdict names; the client has not yet confirmed them. While the source guardrail is \"Requires "
-               "review\", every verdict is a provisional simulation: it does not authorise offering or agreeing a "
-               "deal, and this app has no approval workflow.", class_="ws-muted"),
-        ui.tags.ul(ui.tags.li(ui.tags.b("APPROVED: "), "the compared discount is at or below the cap and the gross margin is at "
-                        "or above the minimum."),
-                ui.tags.li(ui.tags.b("APPROVED WITH CONDITIONS: "), "above the cap, margin still at or above the minimum, and "
-                        "the account offers the required commitment (any one of the listed options). It goes to "
-                        "manager review and must not be confirmed to the account yet. Distributors above the cap go "
-                        "to manager review without a shelf commitment."),
-                ui.tags.li(ui.tags.b("REJECTED: "), "below the minimum margin (needs senior approval), or above the cap "
-                        "without the commitment."),
-                ui.tags.li(ui.tags.b("CANNOT ASSESS: "), "a price, cost or guardrail value is missing, or the account "
-                        "has no invoice in the last 28 days, so its current discount (and with it the total discount "
-                        "and the margin) is unknown. Nothing is assumed in its place."),
-                class_="m3-rule-list"),
+        ui.tags.p(f"Rule version {RULES_VERSION}: the Owner's proposed policy, pending client confirmation and "
+                  "confirmation of Sales authority. While the source guardrail is \"Requires review\", every verdict "
+                  "is a provisional simulation: it does not authorise offering or agreeing a deal. Manager review is a "
+                  "status shown here; nothing is sent or saved.", class_="ws-muted"),
+        ui.tags.p("Total discount = standard discount + proposed additional discount (percentage points). The "
+                  "account's recent invoiced discount is history only: it is not the standard and is not added to "
+                  "it.", class_="ws-muted"),
+        ui.tags.ul(ui.tags.li(ui.tags.b("APPROVED: "), "no additional discount (the standard only), with the gross "
+                              "margin at or above the minimum."),
+                   ui.tags.li(ui.tags.b("APPROVED WITH CONDITIONS: "), "an additional discount up to and including the "
+                              "maximum, with the guardrail's execution commitment offered (any one of the listed "
+                              "options) and the margin at or above the minimum."),
+                   ui.tags.li(ui.tags.b("MANAGER REVIEW: "), "an additional discount above the maximum with the margin "
+                              "still at or above the minimum. Distributors: any additional discount, because "
+                              "distributor commitments are not confirmed."),
+                   ui.tags.li(ui.tags.b("REJECTED: "), "a margin below the minimum, a total discount of 100% or more, "
+                              "or an additional discount within the maximum without the commitment."),
+                   ui.tags.li(ui.tags.b("CANNOT ASSESS: "), "a price, cost, standard, maximum, minimum or commitment "
+                              "is missing, or the additional discount is empty or negative. Nothing is assumed in "
+                              "its place."),
+                   class_="m3-rule-list"),
         ui.tags.p("Margin = (net price − unit cost) / net price, with net price = list price × (1 − total discount). "
-               "Reference list price and cost are static; currency is not supplied. Execution uplift is an "
-               "assumption: the client's V3 note states +8% for a display, +5% for planogram compliance and +3% per "
-               "10 points of shelf share, which the data does not show within a store; shelf share in the audits is "
-               "an allocation among Marvel products.", class_="ws-muted"),
+                  "Reference list price and cost are static; currency is not supplied. Execution uplift is an "
+                  "assumption: the client's V3 note states +8% for a display, +5% for planogram compliance and +3% "
+                  "per 10 points of shelf share, which the data does not show within a store; shelf share in the "
+                  "audits is an allocation among Marvel products.", class_="ws-muted"),
         id="m3-rules")
 
 
@@ -119,8 +125,7 @@ def _deal_page():
                ui.output_ui("m3_chart"), class_="ws-card m3-chart-card"),
         ui.tags.details(
             ui.tags.summary("Assumptions and rules (pending client confirmation)"),
-            ui.div(ui.input_radio_buttons("m3_basis", "The cap applies to", CAP_BASIS, selected="total"),
-                   ui.input_radio_buttons("m3_uplift", "Execution uplift on volume", UPLIFT_SOURCES,
+            ui.div(ui.input_radio_buttons("m3_uplift", "Execution uplift on volume", UPLIFT_SOURCES,
                                           selected="client"),
                    class_="m3-assume"),
             rules_panel(),

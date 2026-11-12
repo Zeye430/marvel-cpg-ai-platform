@@ -1,5 +1,5 @@
 {
-  "contract_version": "v3.sources.1",
+  "contract_version": "v3.sources.2",
   "data_version": "v3",
   "status": "shared_data_foundation_implemented_separate_model_release",
   "source_directory": "data/raw",
@@ -72,17 +72,25 @@
       "primary_key": ["channel", "category"],
       "nullable_columns": [],
       "reference_row_count": 9,
-      "reference_sha256": "130a8c91641de8d4fc9cb75d9d42c6868b76e492dbcf1889e40dfac9c4a7faf8",
+      "reference_sha256": "8f6d82ea0e454193ea00b18925756cb5eaaae082e95b31460e582dc6b1a1dca9",
+      "previous_reference_sha256": "130a8c91641de8d4fc9cb75d9d42c6868b76e492dbcf1889e40dfac9c4a7faf8",
       "columns": [
         {"name": "channel", "type": "VARCHAR"},
         {"name": "category", "type": "VARCHAR"},
+        {"name": "standard_discount_pct", "type": "DECIMAL(9,4)"},
         {"name": "max_discount_pct", "type": "DECIMAL(9,4)"},
         {"name": "min_target_margin", "type": "DECIMAL(9,4)"},
         {"name": "required_exec_tradeoff", "type": "VARCHAR"}
       ],
       "policy_status": "Requires review",
-      "version_policy": "Retain prior working dimension; replacement with standard_discount_pct requires explicit approval",
-      "percent_columns": ["max_discount_pct", "min_target_margin"]
+      "column_semantics": {
+        "standard_discount_pct": "Standard discount percentage points: the starting allowance (Sales authority unconfirmed)",
+        "max_discount_pct": "Maximum additional discount percentage points above the standard",
+        "min_target_margin": "Minimum gross margin % on net price",
+        "required_exec_tradeoff": "Execution commitment required for a positive additional discount up to the maximum"
+      },
+      "version_policy": "v3.sources.2 adopts the delivered standard_discount_pct revision as an Owner-proposed provisional policy; client confirmation pending. Earlier five-column files belong to v3.sources.1 and are rejected here; artifacts built from them remain valid under their own recorded contract hash",
+      "percent_columns": ["standard_discount_pct", "max_discount_pct", "min_target_margin"]
     },
     {
       "name": "dim_promotions",

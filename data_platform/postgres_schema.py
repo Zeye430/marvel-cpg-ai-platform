@@ -20,6 +20,10 @@ from pathlib import Path
 from .serving import VIEWS
 
 CONTRACT_PATH = Path(__file__).resolve().parent / "contracts" / "v3" / "postgres-serving.json"
+# Earlier column contracts, kept byte for byte: a release stored under one of them is verified,
+# activated, rolled back and read with its own columns, never reinterpreted by the current contract.
+PREVIOUS_CONTRACT_PATHS = (CONTRACT_PATH.with_name("postgres-serving.r1.json"),)
+R1_CONTRACT_SHA256 = "c57a435c68868058187a5202d186f3a528ea9820c42dd685b99356a915762bb8"
 INTERFACE_VERSION = "shared_postgres_serving.v1"
 _DECIMAL = re.compile(r"DECIMAL\((\d{1,2}),(\d{1,2})\)")
 _SIMPLE = {"VARCHAR": 'TEXT COLLATE "C"', "BOOLEAN": "BOOLEAN", "DATE": "DATE", "INTEGER": "INTEGER",
@@ -36,8 +40,20 @@ def _contract_bytes():
     return CONTRACT_PATH.read_bytes()
 
 
-def load_contract():
-    contract = json.loads(_contract_bytes())
+@lru_cache(maxsize=1)
+def _known_contracts():
+    """SHA-256 -> bytes of the current and every earlier column contract."""
+    known = {hashlib.sha256(path.read_bytes()).hexdigest(): path.read_bytes() for path in PREVIOUS_CONTRACT_PATHS}
+    known[contract_sha256()] = _contract_bytes()
+    return known
+
+
+def load_contract(sha256=None):
+    """The current column contract, or (``sha256``) the one a stored release was loaded under."""
+    data = _contract_bytes() if sha256 is None else _known_contracts().get(sha256)
+    if data is None:
+        raise ValueError("Unknown PostgreSQL serving contract revision")
+    contract = json.loads(data)
     if contract.get("interface_version") != INTERFACE_VERSION:
         raise ValueError("Unsupported PostgreSQL serving contract")
     if set(contract["views"]) != set(VIEWS):

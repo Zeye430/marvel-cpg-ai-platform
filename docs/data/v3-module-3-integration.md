@@ -29,7 +29,7 @@ An arbitrary historical date request will not reconstruct an older scenario.
 | Recent trade business | sell_in_units_reported_28d, gross_sales_reported_28d, net_sales_reported_28d, reported_net_trade_price_28d | Reported invoice events; retain invoice_coverage_status |
 | Historical discount/margin context | weighted_trade_discount_pct_28d, historical_static_cost_margin_pct | Weighted arithmetic from reported amounts, using static cost reference |
 | Execution evidence | last_audit_id/date, days_since_last_audit, planogram_compliance_latest, secondary_display_latest, shelf_share_pct_latest | Latest known evidence, not an approved current-state expiry policy |
-| Policy source | max_discount_pct_source, min_target_margin_source, required_exec_tradeoff, rule_version, policy_status, policy_limitation | Source context only; Requires review, not platform approval |
+| Policy source | standard_discount_pct_source, max_discount_pct_source, min_target_margin_source, required_exec_tradeoff, rule_version, policy_status, policy_limitation | Standard discount, maximum additional discount, minimum margin and commitment; Requires review, not platform approval |
 | More commercial history | `commercial_period` | Choose a single period_type and alignment; do not mix overlapping week/month/biweek rows |
 | More audit detail | `execution_visits` | Choose one scope_label; category/all/SKU scopes overlap |
 | Product reference lookup | `products` | Shared reference dimensions; do not confuse consumer with trade price |
@@ -88,11 +88,23 @@ scenario net unit price = reference list price × (1 − total discount pct / 10
 scenario margin pct = 100 × (net unit price − reference cost) / net unit price
 ```
 
-This is illustrative arithmetic, not an approved interpretation of the supplied
-guardrails or extra discount. A zero denominator gives N/A. Decimal/money rounding,
+Provisional rules (pending client confirmation and confirmation of Sales authority):
+total discount = `standard_discount_pct_source` + proposed additional discount
+(percentage points). No additional discount needs no commitment; a positive
+additional discount up to and including `max_discount_pct_source` needs
+`required_exec_tradeoff`; above it, with the margin at or above
+`min_target_margin_source`, it needs manager review (a status, not a saved
+workflow); a margin below the minimum is rejected. Distributor commitments are
+not confirmed, so any distributor additional discount goes to manager review.
+Missing inputs give cannot-assess. In the source invoices, `discount_pct` equals
+the standard plus `extra_discount_pct` on every row, consistent with this reading;
+the source `guardrail_violation` flag does not follow from these rules.
+
+`weighted_trade_discount_pct_28d` is invoice history. It is not the standard and
+must not be added to it. A zero denominator gives N/A. Decimal/money rounding,
 returns, tax, currency and cost-date conventions require explicit product rules.
-Do not silently add trade discount and extra discount or infer consumer promotion
-from invoice discounts. Do not assume secondary display guarantees a sales uplift.
+Do not infer consumer promotion from invoice discounts. Do not assume secondary
+display guarantees a sales uplift.
 
 Shared metrics already supplied by Gold should be read, not recalculated with a
 different denominator. Module-specific scenario outputs can have their own
@@ -106,7 +118,7 @@ versioned formulas without overwriting historical reported facts.
   the negotiation context itself remains reported-only.
 - Static reference cost/list price basis and unspecified currency.
 - Audit date/age rather than an unsupported "execution currently compliant" claim.
-- `policy_status=Requires review` until rule units/composition/version are approved.
+- `policy_status=Requires review` until the client confirms the rules and Sales authority.
 - OOS predictions and visit ranking are unavailable until a Module 2 release;
   do not replace them with zeros or retrain a model inside Module 3.
 

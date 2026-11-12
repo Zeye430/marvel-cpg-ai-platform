@@ -120,8 +120,10 @@ dim_promotions.csv         fact_deliveries.csv
 dim_guardrails.csv         fact_execution_audits.csv
 ```
 
-Use four corrected facts and four retained approved dimensions. Do not substitute
-legacy `new_marvel_data/` facts or unapproved ZIP dimensions/guardrails.
+Use four corrected facts, three retained dimensions and the delivered `dim_guardrails.csv`
+revision with `standard_discount_pct` (source contract `v3.sources.2`). Do not substitute
+legacy `new_marvel_data/` facts. The earlier five-column guardrail file is rejected by this
+contract; builds made from it keep their own recorded identity.
 
 ```bash
 uv run python -m data_platform audit-data \
@@ -132,8 +134,11 @@ Read the JSON: require `active_matches_authorized_v3: true`, all eight matching
 ordered headers and this `active_dataset_hash`:
 
 ```text
-f5403651d8aa3e9492071a14706dd7a7f31aec88247f7af2f083ab9dca782675
+6550fe85d8906ba1b8ca7e9edce894eb8a0e635f095b55626392be9b21eb3566
 ```
+
+(The previous identity, `f5403651…2675`, used the earlier guardrail table; only
+`dim_guardrails.csv` differs.)
 
 The diagnostic can exit 0 on mismatch: **exit status alone is insufficient**.
 Stop and obtain the approved inputs if mismatched; a later dataset needs contract

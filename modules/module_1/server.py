@@ -33,7 +33,7 @@ from shiny import reactive, render, req, ui
 from shared import ui_kit as kit
 from shared.chart_palette import CHART_COLORS, CHART_NEUTRAL
 
-from .data import PERIOD_TYPE, Filters
+from .data import ABOVE_CEILING, PERIOD_TYPE, WITHIN_CEILING, Filters
 from .ui import PAGE_ICONS, PAGES, TOPOJSON_URL
 
 HEATMAP_TOP_STORES = 25
@@ -453,8 +453,7 @@ def chart_radar(item, f, option, colors):
     return Chart(fig, "", 480)
 
 
-REFERENCE_COLORS = {"Above source discount reference (requires review)": CHART_COLORS[7],
-                    "Within source discount reference (requires review)": CHART_COLORS[0],
+REFERENCE_COLORS = {ABOVE_CEILING: CHART_COLORS[7], WITHIN_CEILING: CHART_COLORS[0],
                     "No single source reference": CHART_NEUTRAL}
 
 
@@ -466,16 +465,20 @@ def chart_discount(item, f, option, colors):
                      color_discrete_map=REFERENCE_COLORS, hover_name="store_name",
                      category_orders={"reference_status": list(REFERENCE_COLORS)},
                      hover_data={"channel": True, "category": True, "lines": True, "source_flagged_lines": True,
-                                 "trade_discount_pct": ":.1f", "max_discount_pct_source": ":.1f",
+                                 "trade_discount_pct": ":.1f", "standard_discount_pct_source": ":.2f",
+                                 "max_discount_pct_source": ":.2f", "discount_ceiling_pct": ":.2f",
                                  "margin_pct_static_cost": ":.1f", "reference_status": True},
                      labels={"trade_discount_pct": "Trade discount % (gross-value weighted)",
                              "margin_pct_static_cost": "Margin % at static product cost",
+                             "standard_discount_pct_source": "Standard discount %",
+                             "max_discount_pct_source": "Maximum additional (pts)",
+                             "discount_ceiling_pct": "Standard + maximum additional %",
                              "reference_status": "Source reference"})
     fig.update_traces(marker=dict(size=9, line=dict(width=1, color="#ffffff"), opacity=0.85))
-    refs = frame["max_discount_pct_source"].dropna().unique()
+    refs = frame["discount_ceiling_pct"].dropna().unique()
     if len(refs) == 1:
         fig.add_vline(x=float(refs[0]), line_dash="dash", line_color="#65595a", line_width=1.5,
-                      annotation_text=f"Source max discount {refs[0]:.1f}% (requires review)",
+                      annotation_text=f"Standard + maximum additional {refs[0]:.1f}% (provisional)",
                       annotation_position="top right", annotation_font=dict(size=11, color="#4a3f40"))
     fig.update_xaxes(ticksuffix="%")
     fig.update_yaxes(ticksuffix="%")

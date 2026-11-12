@@ -50,6 +50,8 @@ class Module3DataTests(unittest.TestCase):
         self.assertEqual(row["policy_status"], "Requires review")
         deal = deal_from(row)
         self.assertIsNotNone(deal.cap)
+        self.assertIsNotNone(deal.standard)
+        self.assertEqual(row["context_version"], "negotiation_context.v2")
         self.assertIsNotNone(deal.list_price)
         verdicts = {calc.scenario(deal, a)["verdict"] for a in (0, 50)}
         self.assertNotIn(calc.NOT_ASSESSED, verdicts)

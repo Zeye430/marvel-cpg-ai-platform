@@ -46,7 +46,7 @@ def generate(source_dir, *, start=date(2025, 1, 1), end=date(2026, 6, 30), store
                          "category": CATEGORIES[i % 3], "brand": "Synthetic Brand", "is_msl": i % 3 == 0,
                          "unit_cost": round(price * 0.55, 2), "list_price": price,
                          "consumer_price": round(price * 1.35, 2)})
-    guardrails = [{"channel": ch, "category": cat, "max_discount_pct": 20, "min_target_margin": 18,
+    guardrails = [{"channel": ch, "category": cat, "standard_discount_pct": 5, "max_discount_pct": 20, "min_target_margin": 18,
                    "required_exec_tradeoff": "Secondary display"} for ch in CHANNELS for cat in CATEGORIES]
     promotions = [{"promo_id": "SYN-PROMO-1", "promo_name": "SYNTHETIC Campaign", "promo_type": "TPR",
                    "category": "Laundry", "channel": "Modern Trade", "start_date": "2025-11-01",

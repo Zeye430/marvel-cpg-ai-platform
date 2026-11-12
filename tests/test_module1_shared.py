@@ -118,13 +118,14 @@ def build_fixture(path):
             ("T1", D0 + timedelta(1), "S1", "P1", 10, 100, 80, False),
             ("T2", D0 + timedelta(1), "S2", "P1", 10, 100, 95, False)])
         con.execute("""CREATE TABLE gold.context (as_of_date DATE, store_id VARCHAR, sku_id VARCHAR, channel VARCHAR,
-            category VARCHAR, max_discount_pct_source DECIMAL(9,4), min_target_margin_source DECIMAL(9,4),
-            required_exec_tradeoff VARCHAR, rule_version VARCHAR, policy_status VARCHAR)""")
-        con.executemany("INSERT INTO gold.context VALUES (DATE '2026-06-28',?,?,?,?,?,?,?,?, 'Requires review')", [
-            ("S1", "P1", "Modern Trade", "Laundry", 15, 18, "Secondary display", "r1"),
-            ("S1", "P2", "Modern Trade", "Laundry", 15, 18, "Secondary display", "r1"),
-            ("S2", "P1", "Traditional Trade", "Laundry", 10, 18, "Endcap", "r1"),
-            ("S2", "P2", "Traditional Trade", "Laundry", 12, 18, "Endcap", "r2")])
+            category VARCHAR, standard_discount_pct_source DECIMAL(9,4), max_discount_pct_source DECIMAL(9,4),
+            min_target_margin_source DECIMAL(9,4), required_exec_tradeoff VARCHAR, rule_version VARCHAR,
+            policy_status VARCHAR)""")
+        con.executemany("INSERT INTO gold.context VALUES (DATE '2026-06-28',?,?,?,?,?,?,?,?,?, 'Requires review')", [
+            ("S1", "P1", "Modern Trade", "Laundry", 4, 15, 18, "Secondary display", "r1"),
+            ("S1", "P2", "Modern Trade", "Laundry", 4, 15, 18, "Secondary display", "r1"),
+            ("S2", "P1", "Traditional Trade", "Laundry", 3, 10, 18, "Endcap", "r1"),
+            ("S2", "P2", "Traditional Trade", "Laundry", 3, 12, 18, "Endcap", "r2")])
         for view, table in (("stores", "dim_stores"), ("products", "dim_products"), ("store_sku_daily", "daily"),
                             ("store_day", "store_day"), ("commercial_period", "periods"),
                             ("execution_visits", "visits"), ("sell_in_events", "sell_in"),
@@ -261,10 +262,24 @@ class Module1SharedTests(unittest.TestCase):
         self.assertTrue(s2["inventory_observed"] != s2["inventory_observed"] or s2["inventory_observed"] is None)
         self.assertEqual(s2["inventory_data_status"], "Unknown")
 
+    def test_discount_reference_is_standard_plus_maximum_additional(self):
+        refs = self.data.references().set_index(["channel", "category"])
+        self.assertAlmostEqual(refs.loc[("Modern Trade", "Laundry"), "discount_ceiling_pct"], 19.0)
+        self.data.cache.con.execute("UPDATE negotiation_context SET standard_discount_pct_source = 5 "
+                                    "WHERE store_id = 'S1'")            # 20% = 5 + 15 exactly: within
+        status = dict(zip(*[self.data.trade_terms(self.filters())[c] for c in ("store_id", "reference_status")]))
+        self.assertEqual(status["S1"], "Within standard + maximum additional")
+
+    def test_release_without_a_standard_places_no_store_against_a_reference(self):
+        self.data.cache.con.execute("ALTER TABLE negotiation_context DROP COLUMN standard_discount_pct_source")
+        frame = self.data.trade_terms(self.filters())
+        self.assertEqual(set(frame["reference_status"]), {"No single source reference"})
+        self.assertTrue(self.data.references()["discount_ceiling_pct"].isna().all())
+
     def test_trade_terms_require_review_and_never_resolve_conflicting_references(self):
         frame = self.data.trade_terms(self.filters())
         status = dict(zip(frame["store_id"], frame["reference_status"]))
-        self.assertEqual(status["S1"], "Above source discount reference (requires review)")
+        self.assertEqual(status["S1"], "Above standard + maximum additional (manager review range)")  # 20% > 4 + 15
         self.assertEqual(status["S2"], "No single source reference")
         text = " ".join(frame["reference_status"])
         for forbidden in ("Compliant", "Approved", "Safe Zone"):

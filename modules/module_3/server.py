@@ -35,12 +35,13 @@ PAGE_HEADS = {
               "What a list-price increase on a product or category could do to volume, revenue and gross profit "
               "in your stores."),
 }
-VERDICT_KIND = {calc.APPROVED: "ok", calc.CONDITIONS: "warn", calc.REJECTED: "bad", calc.NOT_ASSESSED: "outline"}
-VERDICT_COLOR = {calc.APPROVED: "#1d6b45", calc.CONDITIONS: "#b26a00", calc.REJECTED: "#b41824",
+VERDICT_KIND = {calc.APPROVED: "ok", calc.CONDITIONS: "ok", calc.REVIEW: "warn", calc.REJECTED: "bad",
+                calc.NOT_ASSESSED: "outline"}
+VERDICT_COLOR = {calc.APPROVED: "#1d6b45", calc.CONDITIONS: "#2b6fd6", calc.REVIEW: "#b26a00", calc.REJECTED: "#b41824",
                  calc.NOT_ASSESSED: "#a39797"}
 SCENARIO_COLORS = ("#2b6fd6", "#86121c", "#1d6b45")
 # Every input of the two pages: any change re-checks the principal's access before results are shown.
-INTERACTION_INPUTS = ("m3_store", "m3_sku", "m3_qty", "m3_basis", "m3_uplift", "m3_b_kind", "m3_b_target",
+INTERACTION_INPUTS = ("m3_store", "m3_sku", "m3_qty", "m3_uplift", "m3_b_kind", "m3_b_target",
                       "m3_b_increase", "m3_b_pass", "m3_b_source", "m3_b_custom",
                       *[f"m3_{part}_{key}" for key in SCENARIOS for part in ("add", "commit")])
 
@@ -65,7 +66,7 @@ def deal_from(context):
     """The calc input for one negotiation-context row."""
     return calc.Deal(channel=context.get("channel") or "", list_price=_num(context.get("reference_list_price")),
                      unit_cost=_num(context.get("reference_unit_cost")),
-                     current_discount=_num(context.get("weighted_trade_discount_pct_28d")),
+                     standard=_num(context.get("standard_discount_pct_source")),
                      cap=_num(context.get("max_discount_pct_source")),
                      floor=_num(context.get("min_target_margin_source")),
                      tradeoff=context.get("required_exec_tradeoff") or "",
@@ -73,14 +74,14 @@ def deal_from(context):
 
 
 def default_proposals(deal):
-    """Three starting proposals that show the trade-off: within the headroom; above the cap without the
-    commitment; the same discount with it. (Values on a 0.5-point grid.)"""
+    """Three starting proposals that show the rules: the standard discount only; an additional discount
+    within the maximum with the commitment; one above the maximum. (Additional points, 0.5-point grid.)"""
     first = calc.commitments(deal.tradeoff)
-    above = first[0].key if first and not deal.distributor else "none"
-    headroom = None if deal.cap is None else deal.cap - (deal.current_discount or 0.0)
-    within = 0.0 if headroom is None or headroom <= 0.5 else math.floor(headroom) / 2 or 0.5
-    beyond = 2.0 if headroom is None or headroom <= 0 else math.ceil(headroom) + 1.0
-    return [(within, "none"), (beyond, "none"), (beyond, above)]
+    offered = first[0].key if first and not deal.distributor else "none"
+    cap = deal.cap if deal.cap is not None and deal.cap > 0 else 1.0
+    within = min(cap, max(0.5, math.floor(cap) / 2))
+    beyond = math.floor(cap) + 1.0
+    return [(0.0, "none"), (within, offered), (beyond, "none")]
 
 
 def context_panel(context, deal):
@@ -89,8 +90,7 @@ def context_panel(context, deal):
         return tags.div(tags.span(label, class_="m3-fact-label"), tags.span(value, class_="m3-fact-value"),
                         tags.span(note, class_="m3-fact-note") if note else None, class_="m3-fact")
     ref_margin = calc.unit_economics(deal.list_price, deal.unit_cost, 0.0)[1]
-    current = deal.current_discount
-    headroom = None if deal.cap is None or current is None else deal.cap - current
+    recent = _num(context.get("weighted_trade_discount_pct_28d"))
     stock = context.get("inventory_data_status") or "Unknown"
     stock_value = f"{_num(context.get('inventory_observed')):,.0f} units" if stock == "Observed" and \
         _num(context.get("inventory_observed")) is not None else "Unknown"
@@ -104,17 +104,23 @@ def context_panel(context, deal):
         execution.append("display " + ("present" if context["secondary_display_latest"] else "absent"))
     if _num(context.get("shelf_share_pct_latest")) is not None:
         execution.append(f"allocation {_num(context['shelf_share_pct_latest']):.1f}%")
+    pts = "{:.2f} pts"
     rule = tags.div(
         tags.div(tags.span("Guardrail", class_="m3-fact-label"),
                  tags.span(f"{context.get('channel')} · {context.get('category')}", class_="m3-fact-value"),
                  class_="m3-rule-head"),
-        tags.ul(tags.li("Maximum discount without extra approval: ", tags.b(_pct(deal.cap, "{:.2f}%"))),
+        tags.ul(tags.li("Standard discount (starting allowance): ", tags.b(_pct(deal.standard, "{:.2f}%"))),
+                tags.li("Additional discount: ", tags.b("manager review (distributor commitments not confirmed)"))
+                if deal.distributor else
+                tags.li("Additional discount up to ", tags.b(_pct(deal.cap, pts)), " with the commitment: ",
+                        tags.b(deal.tradeoff or "not supplied")),
+                tags.li("Above ", tags.b(_pct(deal.ceiling, "{:.2f}%")), " in total: manager review")
+                if not deal.distributor else None,
                 tags.li("Minimum gross margin on net price: ", tags.b(_pct(deal.floor, "{:.2f}%"))),
-                tags.li("Above the cap: ", tags.b("manager review (wholesale account: volume, not shelf execution)"))
-                if deal.distributor else tags.li("Commitment that can unlock more: ", tags.b(deal.tradeoff or "not supplied")),
                 class_="m3-rule-list"),
         tags.p(kit.pill(context.get("policy_status") or "Requires review", "outline"),
-               " ", context.get("policy_limitation") or "", class_="m3-rule-note"),
+               " Owner-proposed provisional policy; client confirmation and Sales authority pending.",
+               class_="m3-rule-note"),
         class_="m3-rule")
     return tags.section(
         tags.div(tags.div(tags.h2(f"{context.get('product_name')} at {context.get('store_name')}", class_="ws-h"),
@@ -127,10 +133,10 @@ def context_panel(context, deal):
                 fact("List price", _money(deal.list_price), "static reference; currency not supplied"),
                 fact("Unit cost", _money(deal.unit_cost), context.get("cost_basis") or "static reference"),
                 fact("Margin at list", _pct(ref_margin), "before any discount"),
-                fact("Current trade discount", _pct(current) if current is not None else "Unknown",
-                     "weighted, last 28 days of invoices" if current is not None else "no invoice in 28 days"),
-                fact("Headroom to the cap", "N/A" if headroom is None else f"{headroom:+.2f} pts",
-                     "already above the cap" if headroom is not None and headroom < 0 else None),
+                fact("Standard discount", _pct(deal.standard, "{:.2f}%"), "starting allowance, no commitment needed"),
+                fact("Recent invoiced discount", _pct(recent) if recent is not None else "Unknown",
+                     "28-day weighted history; not the standard, not used in the check" if recent is not None
+                     else "no invoice in 28 days"),
                 fact("Stock", stock_value, f"{stock} · reported"),
                 fact("Sell-out, last 28 days", f"{_num(context.get('sell_out_units_observed_28d')) or 0:,.0f} units",
                      f"{int(_num(context.get('observed_sales_days_28d')) or 0)} of "
@@ -154,17 +160,25 @@ def result_panel(deal, result, quantity):
         return tags.li(tags.span(mark, class_="m3-mark " + ("na" if ok is None else ("ok" if ok else "bad")),
                                  **{"aria-hidden": "true"}),
                        ("Not assessed: " if ok is None else ("Pass: " if ok else "Fails: ")) + text)
-    compared_label = "total" if result["basis"] == "total" else "additional"
-    compared = "unknown" if result["compared"] is None else f"{result['compared']:.2f}%"
+    extra = result["additional"]
+    if extra is None:
+        commitment = None, "commitment: enter an additional discount first"
+    elif extra <= calc.TOLERANCE:
+        commitment = None, "commitment not needed at the standard discount"
+    elif deal.distributor:
+        commitment = None, "commitment: distributors go to manager review instead"
+    elif result["cap_ok"] is False:
+        commitment = None, "commitment: above the maximum, manager review instead"
+    else:
+        commitment = (result["commitment"] is not None,
+                      "commitment " + (result["commitment"].label if result["commitment"] else "not offered"))
     checks = tags.ul(
-        check(result["cap_ok"], f"{compared_label} discount {compared} vs cap {_pct(deal.cap, '{:.2f}%')}"),
+        check(result["cap_ok"], f"additional {_pct(extra, '{:.2f} pts')} vs maximum {_pct(deal.cap, '{:.2f} pts')}"),
         check(result["floor_ok"], f"margin {_pct(result['margin'])} vs minimum {_pct(deal.floor, '{:.2f}%')}"),
-        check(None if result["cap_ok"] or deal.distributor else result["commitment"] is not None,
-              "commitment " + (result["commitment"].label if result["commitment"] else "not offered")
-              + (" (only needed above the cap)" if result["cap_ok"] else "")
-              + (" (distributors: manager review instead)" if deal.distributor and not result["cap_ok"] else "")),
+        check(*commitment),
         class_="m3-checks")
-    rows = [row("Total discount", _pct(result["total"], "{:.2f}%")),
+    rows = [row("Standard + additional", f"{_pct(deal.standard, '{:.2f}%')} + {_pct(extra, '{:.2f}')}"),
+            row("Total discount", _pct(result["total"], "{:.2f}%")),
             row("Net price", _money(result["net"])),
             row("Gross margin", _pct(result["margin"]), "strong")]
     if quantity:
@@ -172,12 +186,12 @@ def result_panel(deal, result, quantity):
                  row("Discount given", _money(result.get("discount_cost"))),
                  row("Gross profit", _money(result.get("gross_profit")))]
     payback = None
-    if result["breakeven"] is not None and result["additional"] > 0:
+    if result["breakeven"] is not None and extra:
         need = result["breakeven"] * 100
         has = result["uplift"] * 100
         weeks = result["commitment"].weeks if result["commitment"] else None
         payback = tags.p(
-            f"Needs +{need:.1f}% volume to keep today's gross profit. ",
+            f"Needs +{need:.1f}% volume to keep the gross profit at the standard discount. ",
             (f"The commitment is assumed to add +{has:.1f}%" + (f" for {weeks} weeks" if weeks else "") + ": "
              + ("it covers the extra discount." if result["covers"] else "not enough on its own."))
             if result["commitment"] else "No commitment offered, so no volume uplift is assumed.",
@@ -197,7 +211,7 @@ def margin_chart(deal, results):
         marker=dict(color=[VERDICT_COLOR[r["verdict"]] for r in results], cornerradius=4),
         text=[("N/A" if r["margin"] is None else f"{r['margin']:.1f}%") + f"<br>{r['verdict'].title()}"
               for r in results], textposition="outside", cliponaxis=False,
-        customdata=[f"{r['total']:.2f}%" for r in results],
+        customdata=[_pct(r["total"], "{:.2f}%") for r in results],
         hovertemplate="%{x}<br>Margin %{y:.1f}%<br>Total discount %{customdata}<extra></extra>"))
     top = max([m for m in margins if m is not None] + [deal.floor or 0])
     if deal.floor is not None:
@@ -470,10 +484,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         additional = input[f"m3_add_{key}"]()
         commitment = input[f"m3_commit_{key}"]()
         quantity = input.m3_qty()
-        return calc.scenario(deal, additional if additional is not None else 0,
-                             None if commitment in (None, "", "none") else commitment,
+        return calc.scenario(deal, additional, None if commitment in (None, "", "none") else commitment,
                              quantity if quantity and quantity > 0 else None,
-                             basis=input.m3_basis() or "total", uplift_source=input.m3_uplift() or "client")
+                             uplift_source=input.m3_uplift() or "client")
 
     @reactive.calc
     def results():
@@ -508,13 +521,19 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
     @render.ui
     @safe
     def m3_banner():
-        _, deal = deal_context()
+        row, deal = deal_context()
+        if "standard_discount_pct_source" not in row:
+            return kit.notice(tags.strong("Deals cannot be assessed with this data release. "),
+                              "It was published before the guardrail table gained a standard discount; the "
+                              "proposals show CANNOT ASSESS until the updated release is in use.",
+                              kind="warn", id="m3-old-release", role="note")
         if not deal.provisional:
             return None
         return kit.notice(tags.strong("Provisional simulation. "),
-                          f"The guardrail is \"{deal.policy_status or 'not confirmed'}\" and the rules "
-                          f"({calc.RULES_VERSION}) await client confirmation. A verdict here does not authorise offering "
-                          "or agreeing a deal, and this app has no approval workflow.",
+                          f"The rules ({calc.RULES_VERSION}: standard discount plus an additional discount) are an "
+                          f"Owner proposal; the guardrail is \"{deal.policy_status or 'not confirmed'}\" and the client "
+                          "has not confirmed the rules or Sales authority. A verdict does not authorise offering or "
+                          "agreeing a deal; manager review is a status here, nothing is sent or saved.",
                           kind="warn", id="m3-provisional", role="note")
 
     @render.ui

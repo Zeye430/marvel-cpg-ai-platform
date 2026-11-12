@@ -218,11 +218,13 @@ def _pages():
         _chart_card("m1_chart7_discount", "Discount vs margin",
                     ["Each dot is a store and category: further right is a deeper trade discount, higher is a "
                      "better margin.",
-                     "Red dots are above the discount reference; the dashed line marks that reference.",
+                     "Red dots are above the standard discount plus the maximum additional discount, the range "
+                     "that needs manager review; the dashed line marks that total when one applies.",
                      "Dots far right and low give away the most margin."],
-                    "Reported invoices, discount weighted by gross value, margin at static product cost. The "
-                    "discount reference comes from the client's guardrail table, which still awaits review: it is "
-                    "not an approved rule."),
+                    "Reported invoices, discount weighted by gross value (it already includes the standard "
+                    "discount), margin at static product cost. The reference is standard + maximum additional from "
+                    "the client's guardrail table under the Owner's proposed rules, which the client has not "
+                    "confirmed: it is not an approved rule."),
         _chart_card("m1_chart8_tradeoff", "Trade-off commitment evidence",
                     ["Bars group stores by the execution commitment their terms require.",
                      "Each pair shows how often audits found the planogram met and a secondary display in place.",

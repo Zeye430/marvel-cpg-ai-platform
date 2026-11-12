@@ -30,7 +30,7 @@
   "module_3": {
     "artifact": "serving",
     "views": ["negotiation_context", "products", "commercial_period", "execution_visits"],
-    "policy": "Requires review until guardrail units/composition/version approved; source flag is historical evidence, not platform approval",
+    "policy": "Requires review until the client confirms the rules and Sales authority. Provisional reading (negotiation_context.v2): total discount = standard_discount_pct_source + proposed additional; max_discount_pct_source caps the additional discount; min_target_margin_source is gross margin % on net price. weighted_trade_discount_pct_28d is history, never the standard. Source flag is historical evidence, not platform approval",
     "price_cost_basis": "Static reference product dimensions and reported invoices; currency not supplied"
   },
   "module_4": {

@@ -156,8 +156,13 @@ def source_business_checks(connection, contract, quality):
         FROM silver.fact_execution_audits a JOIN silver.dim_products p USING (sku_id)
         GROUP BY 1,2,3 HAVING abs(sum(a.shelf_share_pct) - 100) > {tolerance['shelf_sum_absolute_percentage_points']}
     """, tolerance=tolerance["shelf_sum_absolute_percentage_points"])
+    # A standard plus maximum additional discount of 100 points or more would leave no net price.
+    quality.query("guardrail_ceiling", "dim_guardrails", """
+        SELECT channel, category FROM silver.dim_guardrails WHERE standard_discount_pct + max_discount_pct >= 100
+    """)
     quality.record("policy_approval", "dim_guardrails", 1, checked_count=1, severity="warning",
-                   note="Retained source rules require review; inventory analytics may proceed.")
+                   note="Provisional standard/additional discount rules require client confirmation; "
+                        "inventory analytics may proceed.")
     quality.require_pass()
 
 

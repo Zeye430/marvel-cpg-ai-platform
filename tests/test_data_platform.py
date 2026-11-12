@@ -31,7 +31,7 @@ class PlatformTests(unittest.TestCase):
                                 region="East", state="NY", segment_tier="Tier 1", city="Test")],
             "dim_products": [dict(sku_id="P1", product_name="Product", category="Dishwashing",
                                   brand="Marvel", is_msl=True, unit_cost=5, list_price=10, consumer_price=15)],
-            "dim_guardrails": [dict(channel="Modern Trade", category="Dishwashing", max_discount_pct=25,
+            "dim_guardrails": [dict(channel="Modern Trade", category="Dishwashing", standard_discount_pct=8, max_discount_pct=25,
                                     min_target_margin=20, required_exec_tradeoff="Secondary display")],
             "dim_promotions": [dict(promo_id=f"PRO-{i}", promo_name="Campaign", promo_type="TPR",
                                     category="Dishwashing", channel="Modern Trade", start_date="2025-01-01",
@@ -152,6 +152,49 @@ class PlatformTests(unittest.TestCase):
             build(self.config)
         self.assertEqual(len(list(self.config.snapshot_root.glob("*/fact_sell_out.csv"))), 1)
         self.assertFalse((self.config.output_root / "published/silver.json").exists())
+
+    def guardrail_failures(self):
+        with self.assertRaises(QualityError):
+            build(self.config)
+        report = json.loads(max((self.config.output_root / "builds").glob("*/quality.json"),
+                                key=lambda p: p.stat().st_mtime).read_text())
+        return {(r["check_id"], r["scope_id"]) for r in report if not r["passed"] and r["severity"] == "error"}
+
+    def test_standard_discount_is_typed_and_kept_with_its_source_version(self):
+        result = build(self.config)
+        connection = self.open_build(result)
+        row = connection.execute("""SELECT standard_discount_pct, max_discount_pct, min_target_margin, rule_status,
+            rule_version, source_file_hash FROM silver.dim_guardrails""").fetchone()
+        self.assertEqual([float(v) for v in row[:3]], [8.0, 25.0, 20.0])
+        self.assertEqual(row[3], "Requires review")
+        self.assertEqual(row[4], row[5])                               # the rule version is the source file hash
+        self.assertEqual(connection.execute("DESCRIBE silver.dim_guardrails").fetchall()[2][:2],
+                         ("standard_discount_pct", "DECIMAL(9,4)"))
+        self.assertEqual(connection.execute("SELECT contract_version FROM meta.source_files WHERE filename = "
+                                            "'dim_guardrails.csv'").fetchone()[0], "v3.sources.2")
+        self.rows["dim_guardrails"][0]["standard_discount_pct"] = 0             # zero is a value, not missing
+        self.write_sources()
+        zero = self.open_build(build(self.config))
+        self.assertEqual(float(zero.execute("SELECT standard_discount_pct FROM silver.dim_guardrails").fetchone()[0]), 0)
+
+    def test_earlier_five_column_guardrail_file_is_rejected(self):
+        path = self.config.source_dir / "dim_guardrails.csv"
+        with path.open("w", newline="") as handle:                  # the v3.sources.1 layout, no standard
+            writer = csv.writer(handle)
+            writer.writerow(["channel", "category", "max_discount_pct", "min_target_margin", "required_exec_tradeoff"])
+            writer.writerow(["Modern Trade", "Dishwashing", 25, 20, "Secondary display"])
+        failures = self.guardrail_failures()
+        self.assertIn(("ordered_header", "dim_guardrails"), failures)
+        self.assertFalse((self.config.output_root / "published/silver.json").exists())
+
+    def test_missing_negative_or_impossible_standard_is_rejected(self):
+        for value, check in (("", "required_values"), (-1, "percentage_standard_discount_pct"),
+                             (101, "percentage_standard_discount_pct"), ("x", "type_standard_discount_pct"),
+                             (75, "guardrail_ceiling")):                # 75 + 25 maximum = 100: no net price
+            with self.subTest(value=value):
+                self.rows["dim_guardrails"][0]["standard_discount_pct"] = value
+                self.write_sources()
+                self.assertIn((check, "dim_guardrails"), self.guardrail_failures())
 
     def test_june_locked_and_second_writer_rejected(self):
         with self.assertRaisesRegex(ValueError, "available data end"):

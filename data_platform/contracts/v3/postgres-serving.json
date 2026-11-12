@@ -1,5 +1,7 @@
 {
   "interface_version": "shared_postgres_serving.v1",
+  "columns_revision": 2,
+  "revision_note": "Revision 2 adds negotiation_context.standard_discount_pct_source. Releases loaded under revision 1 (postgres-serving.r1.json) keep their own columns for verification, activation, rollback and reads.",
   "description": "Technical column/type contract for publishing verified serving views to PostgreSQL. Business meanings are defined by v3-gold-data-dictionary.md; this file adds no metrics.",
   "source": {
     "artifact_kind": "serving",
@@ -299,6 +301,7 @@
         ["historical_static_cost_margin_pct", "DOUBLE"],
         ["source_violation_lines_28d", "BIGINT"],
         ["invoice_coverage_status", "VARCHAR"],
+        ["standard_discount_pct_source", "DECIMAL(9,4)"],
         ["max_discount_pct_source", "DECIMAL(9,4)"],
         ["min_target_margin_source", "DECIMAL(9,4)"],
         ["required_exec_tradeoff", "VARCHAR"],

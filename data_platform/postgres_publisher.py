@@ -349,7 +349,7 @@ def _enforce_capacity(cur, release_id):
 def _drop_own_payload(cur, release):
     """Remove only the objects this release's import created; never CASCADE into other objects."""
     import psycopg2
-    contract = load_contract()
+    contract = _release_contract(release)
     schema = _schema(release["release_id"])
     try:
         for name in release["views"]:
@@ -420,8 +420,8 @@ def _finish_release(cur, schema, source, digests):
 
 
 def _check_release(cur, release):
-    """Full verification of one stored payload against its recorded source evidence."""
-    contract = load_contract()
+    """Full verification of one stored payload against its recorded source evidence and its own contract."""
+    contract = _release_contract(release)
     release_id, views = release["release_id"], release["views"]
     row_counts, digests, manifest = release["row_counts"] or {}, release["content_digests"] or {}, release["manifest"]
     schema = _schema(release_id)
@@ -505,7 +505,16 @@ def _check_release(cur, release):
 
 _RELEASE_COLUMNS = ("release_id", "content_key", "state", "manifest", "views", "row_counts", "content_digests",
                     "source_artifact_id", "source_database_sha256", "source_run_sha256", "source_quality_sha256",
-                    "payload_schema_oid")
+                    "payload_schema_oid", "contract_sha256")
+
+
+def _release_contract(release):
+    """The column contract a stored release was loaded under (an earlier one stays verifiable)."""
+    try:
+        return load_contract(release["contract_sha256"])
+    except ValueError:
+        raise PublishError(f"Release {release['release_id']} was loaded under a serving contract this code does "
+                           "not know") from None
 
 
 def _release_row(cur, release_id):
@@ -542,7 +551,7 @@ def _check_identity(cur, source):
 
 def _lock_payload(cur, release):
     """Block writes to the payload until this transaction ends (verification + switch see one state)."""
-    contract = load_contract()
+    contract = _release_contract(release)
     schema = _schema(release["release_id"])
     if _schema_oid(cur, schema) is None:
         return
@@ -734,7 +743,7 @@ def _current(cur):
 
 
 def _switch(cur, release, action, current):
-    contract = load_contract()
+    contract = _release_contract(release)
     schema = _schema(release["release_id"])
     publication_id = uuid.uuid4().hex
     cur.execute("""INSERT INTO platform_meta.publications (publication_id, release_id, action, previous_publication_id)
@@ -762,7 +771,7 @@ def _activatable(cur, release_id):
         raise PublishError("Unknown release")
     if release["state"] != "Validated":
         raise PublishError(f"Only Validated releases can be activated (state: {release['state']})")
-    contract = load_contract()
+    contract = _release_contract(release)
     missing = [n for n, s in contract["views"].items() if not s["optional"] and n not in release["views"]]
     if missing:
         raise PublishError(f"Release lacks required views: {missing}")

@@ -19,7 +19,7 @@ Open http://127.0.0.1:8000, choose a demo identity, and switch modules in the si
 **Copilot** button in the top bar of Business Performance and Stockout Risk). Business Performance opens first,
 with a welcome greeting while its data loads. The active module's own pages
 (for Stockout Risk: Overview, Store ranking, Analytics; for Business Performance: Overview, Geography &
-flow, Out-of-stock, Shelf execution, Trade terms) are listed under it. On a phone the sidebar opens from the
+flow, Store cards, Out-of-stock, Shelf execution, Trade terms) are listed under it. On a phone the sidebar opens from the
 button at the top left. Without any setting, the app looks for the default
 local delivery pointer `outputs/v3/platform/delivery/serving/published/serving.json`.
 
@@ -146,33 +146,56 @@ identity's scoped copy that Business Performance builds, so they open at once af
 
 ## Business Performance (Module 1)
 
-- **Content.** The dashboard's five KPI tiles (MSL compliance, reported out-of-stock rate, sell-in vs
-  sell-out gap, audited SKU shelf allocation, planogram compliance), its filters and its ten charts. The
-  filters are one row of pills (date range with presets in whole Monday-to-Sunday weeks: last week and
-  last 4 weeks are the latest complete weeks, then month, quarter and year to date and all data; channel;
-  region; MSL products, which narrows the SKU list to those products; product SKU with search): each pill
-  shows its current value, a changed filter is highlighted and "Reset filters" restores the defaults (last
-  4 weeks, everything selected). A KPI change is green when it is better for that KPI and red when worse
-  (a falling OOS rate is green). Each chart's "?" explains how to read it and what the data is; the
-  Stockout Risk and Negotiation Simulator filters use the same pills. The charts: state execution map and sell-in/sell-out
-  flow (Geography & flow); stock heatmap, lost-sales heuristic trend and out-of-stock duration
-  (Out-of-stock); planogram/MSL by brand, shelf allocation vs invoiced sales and the execution scorecard
-  (Shelf execution); discount vs margin and trade-off evidence (Trade terms). The regional manager sees
-  all ten; a field rep sees the heatmap, brand compliance and discount charts for their stores, and the
-  others say they belong to the manager view.
-- **Data.** Read only from the shared publication's Reported views (`stores`, `products`, `store_day`,
-  `store_sku_daily`, `commercial_period`, `execution_visits`, `sell_in_events`, `negotiation_context`),
-  limited to the signed-in identity's stores. Business Performance opens after sign-in and builds a
-  complete copy of those stores' rows in the background, showing a welcome greeting (by the browser's
-  local time of day) until the KPIs are ready; Stockout Risk and the copilot stay usable meanwhile. A copy too large for the row budget shows "unavailable" instead of partial figures.
-  KPIs aggregate the shared numerator and denominator components; unknown values stay N/A, never zero.
-  The gap KPI compares complete biweekly periods inside the selected range (shown on the tile) and says
-  that invoice completeness is unconfirmed. Tile targets are team display targets, not client-approved
-  thresholds; the shelf tile is allocation among the supplied SKUs, not competitor shelf share.
+- **Content.** Five KPI cards (MSL compliance, OOS rate, sell-in vs sell-out gap, shelf allocation, planogram
+  compliance), each with its change against the previous period of equal length (green when better for that
+  KPI, red when worse). Shelf allocation is the selected products' share among the client's own products in
+  audited category visits (about 100% with every product selected); competitor shelf space is not in the data.
+  The selected card opens its trend and, collapsed, what it measures, how to use it, the formula, an
+  illustrative example, its limits and where to look next. The team's display references (≥ 90%, ≤ 5%, ±5%,
+  ≥ 80%) are not client-approved: nothing is coloured by them, and the trend draws them only on request
+  ("Show team reference").
+- **Store ranking** (Overview): every store gets a composite score from the five KPIs: for each KPI its
+  percentile among the stores in view (100 = best; lower OOS and a gap closer to zero are better), averaged
+  with equal 20% weights set by the team. "Best performing" and "Needs attention" list the ten highest and
+  lowest scores with the five values and the change in rank since the previous period; a click on a row (or
+  Enter) opens that store's card. A store needs three of the five measures for a score; values are compared at
+  0.1 precision.
+- **Pages.** Geography & flow: a state map shaded by OOS rate, MSL compliance or invoiced net sales, with a
+  bubble per store city (city-level points from the U.S. Census place file in
+  `modules/module_1/reference`, not store addresses); click a bubble or choose a city to list its stores.
+  Sell-in vs sell-out per complete biweekly period, with the signed gap (negative gaps are drawn, never
+  cut off) and a table of how many periods in a row a gap has kept its sign, by channel, region, store or
+  product. Store cards: pick a store (the menu lists only the stores in the current filters) for its
+  composite score, rank and rank move; a scorecard of the five measures, each with what it rests on, a 13-week
+  line, the change vs the previous period, whether it is improving or worsening (later half of the 13 weeks vs
+  earlier half; under 1 point is stable) and a comparison with stores of the same channel and tier in the
+  viewer's scope; a radar of the five measures as percentiles, with up to four other stores to compare; and the
+  products to check. Managers see the store's field rep: the name opens the rep's photo and a message button
+  (coming soon). Out-of-stock: stock status heatmap
+  (zero, in stock, Unknown), lost-sales heuristic, stockout duration. Shelf execution: planogram and
+  must-stock availability by brand. Trade terms: discount vs margin and trade-off evidence. A field rep
+  sees their own stores everywhere except the lost-sales, duration and trade-off views.
+- **Filters.** One row of pills (date range with presets in whole Monday-to-Sunday weeks; channel; region;
+  MSL products; product SKU with search); "Reset filters" restores the defaults (last 4 weeks, everything
+  selected). The default range holds one complete biweekly period; choose quarter or year to date to see how
+  long a sell-in/sell-out gap has lasted.
+- **Data view.** The page starts on **Reported data only**. **Estimated data view** switches to the
+  publication's estimate views (`estimated_store_sku_daily`, `estimated_store_day`,
+  `estimated_commercial_period`, read with the platform's explicit estimate opt-in): observed values first,
+  short reporting gaps carry an estimate, the rest stays Unknown. It switches the availability, MSL and
+  sell-in/sell-out figures at once (the OOS card is then named "OOS Rate"); audits and invoices are observed in
+  both views. A publication without estimate views keeps the Reported view and says why; signing out resets
+  the switch.
+- **Data.** Read only from the shared publication's views (`stores`, `products`, `store_day`,
+  `store_sku_daily`, `commercial_period`, `execution_visits`, `sell_in_events`, `negotiation_context`, and
+  the three estimate views on request), limited to the signed-in identity's stores. Business Performance
+  opens after sign-in and builds a complete copy of those stores' rows in the background, showing a welcome
+  greeting until the KPIs are ready; the Estimated view builds a second copy when first chosen. A copy too
+  large for the row budget shows "unavailable" instead of partial figures. KPIs aggregate the shared
+  numerator and denominator components; unknown values stay N/A, never zero.
 - **Charts** use the workspace palette and the local plotly.js. The US state map's outline data is bundled
   (`modules/module_1/assets/geo`), so no page requests anything outside the app. A chart that cannot be
   drawn shows a message; no value that cannot be encoded reaches the browser.
-- The legacy root `app.py` no longer renders Module 1: its tab points to this app.
 
 ## Current limits
 

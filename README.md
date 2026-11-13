@@ -57,15 +57,15 @@ marvel-cpg-ai-platform/
 ## 🧩 The 4 Core Integrated Modules
 
 ### 📊 Module 1 — Commercial Execution Analytics Dashboard
-* **Work Type**: Exploratory Data Analysis (EDA) + Real-time Interactive Visualization
+* **Work Type**: Exploratory Data Analysis (EDA) + Interactive Visualization (data through the publication's as-of date)
 * **Target Users**: Regional Commercial Director (*Elena Rostova*) and Field Sales Representatives (*Alex Mercer, Beatrice Vance, etc.*)
-* **Required KPIs**:
-  - **MSL Compliance %**: Percentage of store-days with all mandatory MSL SKUs in stock (Target: $\ge 90\%$).
-  - **OOS Rate %**: Store-SKU-day out-of-stock rate across channels and regions (Target: $\le 5\%$).
-  - **Sell-In vs Sell-Out Gap**: Upstream replenishment invoice units vs consumer offtake units (Target: within $\pm 5\%$).
-  - **Shelf Share %**: Marvel category frontage percentage across Surface Cleaners, Dishwashing, and Laundry (Target: $\ge 30\%$).
-  - **Planogram Compliance %**: Store-SKU compliance rate against merchandising display standards (Target: $\ge 80\%$).
-* **Features**: Dynamic filtering by calendar week, channel, region, and SKU; dual-flow trend charts, stockout heatmaps, choropleth execution maps, and multi-stage inventory velocity Sankey flows.
+* **Required KPIs** (no client-approved targets yet; the team's display references are optional and labelled as such):
+  - **MSL Compliance %**: Share of assessable store-days with every must-stock (MSL) SKU in stock.
+  - **OOS Rate %**: Share of store-SKU-days with known stock that were at zero, across channels and regions.
+  - **Sell-In vs Sell-Out Gap**: Invoiced units vs consumer sell-out units over complete biweekly periods.
+  - **Shelf Share %**: shown as the audited own-SKU shelf allocation (the selected products' share among the client's own products); competitor shelf space is not in the current data.
+  - **Planogram Compliance %**: Share of audited SKU rows placed as the planogram specifies.
+* **Features**: Filters by date, channel, region, MSL products and SKU; a Reported / Estimated data view switch; a store ranking by a composite score of the five KPIs; store cards with trend, peer comparison, a radar comparison and the assigned reps; a state map with city-level store bubbles; sell-in vs sell-out per biweekly period with how long a gap has lasted; stock status heatmap, stockout duration, brand compliance and trade-term views.
 
 ### 🎯 Module 2 — Predictive Out-of-Stock Risk Engine
 * **Work Type**: Machine Learning — Supervised Classification & Forecasting

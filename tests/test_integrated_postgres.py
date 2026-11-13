@@ -117,9 +117,10 @@ class IntegratedPgTests(PgCase):
                     for name, call in (("latest", lambda d: d.latest_inventory(f)),
                                        ("episodes", lambda d: d.oos_episodes(f, "channel")),
                                        ("trade", lambda d: d.trade_terms(f)),
-                                       ("flow", lambda d: d.flow_by_channel(f)),
-                                       ("score", lambda d: d.scorecard(f, "region")),
-                                       ("states", lambda d: d.state_execution(f))):
+                                       ("flow", lambda d: d.flow_trend(f)),
+                                       ("stores", lambda d: d.store_metrics(f)),
+                                       ("breakdown", lambda d: d.flow_breakdown(f, "channel").drop(
+                                           columns=["current", "longest_positive", "longest_negative"]))):
                         a, b = call(local), call(cloud)
                         keys = list(a.columns)  # total order: several rows can share leading keys
                         self.assertEqual(a.sort_values(keys).reset_index(drop=True).to_dict("records"),

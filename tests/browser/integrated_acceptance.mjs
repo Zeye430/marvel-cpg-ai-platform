@@ -141,8 +141,8 @@ async function moduleTwoReady(p) {
   await idle(p);
 }
 // Module 1 (Business Performance): KPI tiles, the four chart pages, rep locks; no widget errors.
-const M1_PAGES = { geo: [2, 0], oos: [3, 0], shelf: [3, 0], trade: [2, 0] };
-const M1_REP = { geo: [0, 2], oos: [1, 2], shelf: [1, 2], trade: [1, 1] };
+const M1_PAGES = { geo: [2, 0], stores: [1, 0], oos: [3, 0], shelf: [1, 0], trade: [2, 0] };
+const M1_REP = { geo: [2, 0], stores: [1, 0], oos: [1, 2], shelf: [1, 0], trade: [1, 1] };
 // Records every welcome greeting shown from now on (the load can be quick on the synthetic data).
 async function watchWelcome(p) {
   await evaluate(p, `(() => { window.__m1Welcome = []; if (window.__m1WelcomeObs) window.__m1WelcomeObs.disconnect();
@@ -191,21 +191,21 @@ async function kpiDetailChecks(p) {
   const detailReady = (title) => `/${title}/.test(document.querySelector('#m1-kpi-detail h2')?.innerText || '') && (!!document.querySelector('#m1-kpi-detail .js-plotly-plot') || /No trend/.test(document.querySelector('#m1-kpi-detail')?.innerText || ''))`;
   await waitFor(p, detailReady("MSL Compliance"), 30000, "KPI detail");
   await idle(p);
-  check("KPI cards: the first card is selected and its trend shows below with the team target line", (await evaluate(p, "document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'true'")) && (await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || (g.layout.shapes || []).some(s => s.type === 'line'); })()")) && /Team target ≥ 90%|No trend/.test(await txt(p, "#m1-kpi-detail")));
+  check("KPI cards: the first card is selected and its trend shows below without a team target line", (await evaluate(p, "document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'true'")) && (await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || !(g.layout.shapes || []).some(s => s.line && s.line.dash === 'dot'); })()")) && /Show team reference|No trend/.test(await txt(p, "#m1-kpi-detail")) && !/Team target|Meets|Misses/.test(await txt(p, "#m1-kpis")));
   check("KPI cards: no small print or calculation inside the cards", !/How it's calculated|coverage|not market share|known SKU-days/i.test(await txt(p, "#m1-kpis")), await txt(p, "#m1-kpis"));
-  check("KPI detail: no small print under the chart; what the number rests on is in the collapsed calculation", /team display target/.test(await txt(p, "#m1-kpi-how .m1-notes")) && !(await evaluate(p, "document.querySelector('#m1-kpi-how').open")) && !(await evaluate(p, "[...document.querySelectorAll('#m1-kpi-detail > ul, #m1-kpi-detail > p')].some(e => e.checkVisibility())")));
+  check("KPI detail: no small print under the chart; what the number rests on is in the collapsed calculation", /assessable store-days/.test(await txt(p, "#m1-kpi-how .m1-notes")) && !(await evaluate(p, "document.querySelector('#m1-kpi-how').open")) && !(await evaluate(p, "[...document.querySelectorAll('#m1-kpi-detail > ul, #m1-kpi-detail > p')].some(e => e.checkVisibility())")));
   check("KPI detail: the trend has no grid lines", await evaluate(p, "(() => { const g = document.querySelector('#m1-kpi-detail .js-plotly-plot'); return !g || (g.layout.xaxis.showgrid === false && g.layout.yaxis.showgrid === false); })()"));
   check("KPI cards: the change colour says better or worse for that KPI (tooltip)", await evaluate(p, "[...document.querySelectorAll('#m1-kpis [data-trend]')].every(e => /(Better|Worse|No better or worse) than the previous period .*(higher|lower|closer to 0) is better/.test(e.title))"));
   await click(p, "#m1-kpi-help > summary");
-  check("KPI detail: the ? explains how to read the trend", await evaluate(p, "document.querySelector('#m1-kpi-help').open && document.querySelector('#m1-kpi-help .ws-help-pop').checkVisibility()") && /dotted line is the team's target/.test(await txt(p, "#m1-kpi-help")));
+  check("KPI detail: the ? explains how to read the trend", await evaluate(p, "document.querySelector('#m1-kpi-help').open && document.querySelector('#m1-kpi-help .ws-help-pop').checkVisibility()") && /Show team reference/.test(await txt(p, "#m1-kpi-help")));
   await click(p, "#m1-kpi-detail h2");
   check("KPI detail: a click outside closes the ?", !(await evaluate(p, "document.querySelector('#m1-kpi-help').open")));
   await click(p, "#m1-kpi-how > summary");
-  check("KPI detail: the calculation opens on request", await evaluate(p, "document.querySelector('#m1-kpi-how').open") && /Formula/.test(await txt(p, "#m1-kpi-how")));
+  check("KPI detail: the calculation opens on request", await evaluate(p, "document.querySelector('#m1-kpi-how').open") && /Formula/.test(await txt(p, "#m1-kpi-how")) && /What it measures/.test(await txt(p, "#m1-kpi-how")));
   await click(p, "#m1-kpi-oos");
   await waitFor(p, detailReady("Reported OOS Rate"), 30000, "OOS detail");
   await idle(p);
-  check("KPI cards: selecting another card shows its trend instead", (await evaluate(p, "document.querySelector('#m1-kpi-oos').getAttribute('aria-pressed') === 'true' && document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'false'")) && /Team target ≤ 5%|No trend/.test(await txt(p, "#m1-kpi-detail")));
+  check("KPI cards: selecting another card shows its trend instead", (await evaluate(p, "document.querySelector('#m1-kpi-oos').getAttribute('aria-pressed') === 'true' && document.querySelector('#m1-kpi-msl').getAttribute('aria-pressed') === 'false'")) && /Reported OOS Rate|No trend/.test(await txt(p, "#m1-kpi-detail")));
   await click(p, "#m1-kpi-msl");
   await waitFor(p, detailReady("MSL Compliance"), 30000, "MSL detail again");
   await idle(p);
@@ -280,7 +280,7 @@ async function moduleOneChecks(p, tag, stores, manager) {
   const head = await txt(p, "#shell-panel-module_1 .ws-pagehead");
   check(`${tag}: Business Performance reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Reported data only/.test(head) && head.includes(manager ? "Regional manager view" : "Field sales rep view"), head);
   check(`${tag}: five KPI tiles`, (await evaluate(p, "document.querySelectorAll('#m1-kpis .m1-kpi').length")) === 5);
-  check(`${tag}: Module 1 pages listed under Business Performance`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_1'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "overview,geo,oos,shelf,trade");
+  check(`${tag}: Module 1 pages listed under Business Performance`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_1'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "overview,geo,stores,oos,shelf,trade");
   const counts = {};
   for (const [page, [plots, locked]] of Object.entries(manager ? M1_PAGES : M1_REP)) {
     await evaluate(p, `m1Go('${page}') || true`);
@@ -289,8 +289,8 @@ async function moduleOneChecks(p, tag, stores, manager) {
     await idle(p);
     counts[page] = await evaluate(p, `[${pane}.querySelectorAll('.js-plotly-plot').length, ${pane}.querySelectorAll('.m1-locked').length]`);
   }
-  check(`${tag}: every Module 1 chart renders (manager: 10) or is locked for the rep (3 shown, 7 locked)`, JSON.stringify(counts) === JSON.stringify(manager ? M1_PAGES : M1_REP), JSON.stringify(counts));
-  check(`${tag}: every Module 1 chart has a ? (how to read it) and no small print under it`, (await evaluate(p, "document.querySelectorAll('#m1-root .m1-chart-card').length")) === 10 && (await evaluate(p, "[...document.querySelectorAll('#m1-root .m1-chart-card')].every(c => !!c.querySelector('.ws-card-head details.ws-help .ws-help-pop li') && !c.querySelector('.m1-caveat, .m1-logic'))")));
+  check(`${tag}: every Module 1 chart renders (manager: 9 incl. the store card radar) or is locked for the rep (6 shown, 3 locked)`, JSON.stringify(counts) === JSON.stringify(manager ? M1_PAGES : M1_REP), JSON.stringify(counts));
+  check(`${tag}: every Module 1 chart has a ? (how to read it) and no small print under it`, (await evaluate(p, "document.querySelectorAll('#m1-root .m1-chart-card').length")) === 9 && (await evaluate(p, "[...document.querySelectorAll('#m1-root .m1-chart-card')].every(c => !!c.querySelector('.ws-card-head details.ws-help .ws-help-pop li') && !c.querySelector('.m1-caveat, .m1-logic'))")));
   check(`${tag}: no Module 1 widget error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m1-root .shiny-output-error, #m1-root .m1-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
   await evaluate(p, "m1Go('overview') || true");
   await idle(p);

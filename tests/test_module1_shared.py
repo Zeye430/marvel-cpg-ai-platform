@@ -53,7 +53,7 @@ def build_fixture(path):
         con.execute("""CREATE TABLE gold.daily (date DATE, store_id VARCHAR, sku_id VARCHAR, channel VARCHAR,
             region VARCHAR, segment_tier VARCHAR, category VARCHAR, is_msl BOOLEAN, units_sold_observed DOUBLE,
             inventory_observed DOUBLE, oos_observed BOOLEAN, inventory_data_status VARCHAR, sales_data_status VARCHAR,
-            last_report_date DATE)""")
+            last_report_date DATE, receipt_delivery_count INTEGER)""")
         stores = {s[0]: s for s in STORES}
         rows = []
         for n in range(28):
@@ -67,8 +67,8 @@ def build_fixture(path):
                     rows.append((day, store, sku, channel, region, tier, category, msl,
                                  None if inv is None else float(n % 4), None if inv is None else float(inv),
                                  None if inv is None else inv == 0, "Unknown" if inv is None else "Observed",
-                                 "Unknown" if inv is None else "Observed", day))
-        con.executemany("INSERT INTO gold.daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                                 "Unknown" if inv is None else "Observed", day, 1 if n % 7 == 3 else 0))
+        con.executemany("INSERT INTO gold.daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         # store_day built exactly like the shared mart's reported components.
         con.execute("""CREATE TABLE gold.store_day AS
             WITH c AS (SELECT date, store_id, 'reported_only' AS metric_view, any_value(channel) AS channel,
@@ -134,14 +134,74 @@ def build_fixture(path):
         # The serving view carries the store channel and product category (as the shared mart does).
         con.execute("""CREATE OR REPLACE VIEW serving.vw_commercial_period AS SELECT p.*, s.channel, d.category
             FROM gold.periods p JOIN gold.dim_stores s USING (store_id) JOIN gold.dim_products d USING (sku_id)""")
+        build_estimates(con)
 
 
-def reader_for(path):
-    # Focused fixture reader (production callers use the verified constructor).
+def estimate(store, sku, day):
+    """The candidate estimate for an Unknown report (None: stays Unknown). S1/P1 day 2 is estimated at zero;
+    S2/P3 gets 5 units every sixth day and zero otherwise, except day 0, which stays Unknown."""
+    n = (day - D0).days
+    if (store, sku) == ("S1", "P1"):
+        return 0.0
+    if (store, sku) == ("S2", "P3") and n > 0:
+        return 5.0 if n % 6 == 0 else 0.0
+    return None
+
+
+def build_estimates(con):
+    """The three opt-in candidate views, built from the reported rows like the shared marts: observed values
+    first, an estimate for some Unknown reports, the rest Unknown."""
+    rows = []
+    for r in con.execute("SELECT * FROM gold.daily ORDER BY ALL").fetchall():
+        day, store, sku, channel, region, tier, category, msl, units, inv, oos, status, _, last, receipts = r
+        est = None if inv is not None else estimate(store, sku, day)
+        resolved = inv if inv is not None else est
+        rows.append((day, store, sku, channel, region, tier, category, msl, units, inv, oos,
+                     None if inv is not None or est is None else 1.0, est, None if est is None else est == 0,
+                     units if units is not None else (None if est is None else 1.0), resolved,
+                     None if resolved is None else resolved == 0,
+                     "Observed" if inv is not None else ("Estimated" if est is not None else "Unknown"),
+                     "Observed" if inv is not None else ("Estimated" if est is not None else "Unknown"),
+                     last, receipts, "synthetic-estimator.v0", "Candidate (synthetic)", "operational_estimate_candidate"))
+    con.execute("""CREATE TABLE gold.daily_est (date DATE, store_id VARCHAR, sku_id VARCHAR, channel VARCHAR,
+        region VARCHAR, segment_tier VARCHAR, category VARCHAR, is_msl BOOLEAN, units_sold_observed DOUBLE,
+        inventory_observed DOUBLE, oos_observed BOOLEAN, units_sold_estimated DOUBLE, inventory_estimated DOUBLE,
+        oos_estimated BOOLEAN, sales_resolved DOUBLE, inventory_resolved DOUBLE, oos_resolved BOOLEAN,
+        inventory_data_status VARCHAR, sales_data_status VARCHAR, last_report_date DATE, receipt_delivery_count INTEGER,
+        estimator_version VARCHAR, estimation_release_status VARCHAR, metric_view VARCHAR)""")
+    con.executemany("INSERT INTO gold.daily_est VALUES (" + ",".join("?" * 24) + ")", rows)
+    con.execute("""CREATE TABLE gold.store_day_est AS
+        WITH c AS (SELECT date, store_id, 'operational_estimate' AS metric_view, any_value(channel) AS channel,
+                any_value(region) AS region, count(*) AS expected_sku_count,
+                count(inventory_resolved) AS known_inventory_sku_count,
+                count(*) FILTER (WHERE inventory_data_status='Observed') AS observed_inventory_sku_count,
+                count(*) FILTER (WHERE inventory_data_status='Estimated') AS estimated_inventory_sku_count,
+                count(*) FILTER (WHERE inventory_resolved=0) AS oos_sku_count,
+                count(*) FILTER (WHERE is_msl) AS r, count(*) FILTER (WHERE is_msl AND inventory_resolved IS NOT NULL) AS k,
+                count(*) FILTER (WHERE is_msl AND inventory_resolved=0) AS u
+            FROM gold.daily_est GROUP BY ALL),
+        s AS (SELECT *, CASE WHEN r=0 THEN 'N/A' WHEN u>0 THEN 'Noncompliant' WHEN k=r THEN 'Compliant'
+                             ELSE 'Unknown' END AS msl_state FROM c)
+        SELECT * EXCLUDE (r, k, u), (msl_state<>'N/A')::INTEGER AS msl_eligible_store_count,
+               (msl_state IN ('Compliant','Noncompliant'))::INTEGER AS msl_assessable_store_count,
+               (msl_state='Compliant')::INTEGER AS msl_compliant_store_count,
+               (msl_state='Unknown')::INTEGER AS msl_unknown_store_count FROM s""")
+    con.execute("CREATE TABLE gold.periods_est AS SELECT * REPLACE ('operational_estimate' AS metric_view) FROM gold.periods")
+    con.execute("CREATE VIEW serving.vw_estimated_store_sku_daily AS SELECT * FROM gold.daily_est")
+    con.execute("CREATE VIEW serving.vw_estimated_store_day AS SELECT * FROM gold.store_day_est")
+    con.execute("""CREATE VIEW serving.vw_estimated_commercial_period AS SELECT p.*, s.channel, d.category
+        FROM gold.periods_est p JOIN gold.dim_stores s USING (store_id) JOIN gold.dim_products d USING (sku_id)""")
+
+
+def reader_for(path, estimates=True):
+    # Focused fixture reader (production callers use the verified constructor). ``estimates``: the
+    # publication declares its candidate estimate views (as the shared serving artifact does).
     reader = ServingReader.__new__(ServingReader)
     reader.database = path
     reader.record = {"artifact_id": "synthetic-m1", "as_of": "2026-06-28", "dataset_hash": "synthetic",
                      "model_outputs_status": "Unavailable_model_not_released"}
+    if estimates:
+        reader.record["estimate_views_status"] = "Candidate_not_approved"
     return reader
 
 
@@ -259,7 +319,7 @@ class Module1SharedTests(unittest.TestCase):
     def test_latest_inventory_keeps_unknown_unknown(self):
         frame = self.data.latest_inventory(self.filters(("P3",), end=D0 + timedelta(12)))
         s2 = frame[frame["store_name"] == "SYNTHETIC Store 2"].iloc[0]
-        self.assertTrue(s2["inventory_observed"] != s2["inventory_observed"] or s2["inventory_observed"] is None)
+        self.assertTrue(s2["inventory"] != s2["inventory"] or s2["inventory"] is None)
         self.assertEqual(s2["inventory_data_status"], "Unknown")
 
     def test_discount_reference_is_standard_plus_maximum_additional(self):

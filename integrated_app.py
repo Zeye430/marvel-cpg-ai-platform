@@ -35,4 +35,4 @@ MODULES = (
 
 RUNTIME = SharedRuntime()
 app = build_app(MODULES, RUNTIME, title="Marvel CPG · Commercial workspace (demo)",
-                host_options={"copilot_nav": True})
+                host_options={"copilot_nav": True, "stockout_nav": True})

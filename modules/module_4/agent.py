@@ -32,6 +32,7 @@ OUT_OF_SCOPE = ("I can answer questions about Marvel CPG's sales, stock, shelf e
                 "Marvel's product and policy documents. This question is outside that scope.")
 MODEL_DOWN = ("The language model is not running, so I can't answer this right now. Start it with `ollama serve` "
               "(see modules/module_4/README.md) and ask again.")
+SERVICE_DOWN = "The language model service is not responding, so I can't answer this right now. Please try again shortly."
 SCOPE_CHANGED = ("Your data access changed while this question was being answered, so the answer was discarded. "
                  "Please ask again.")
 # What a data question asks for, from its words (deterministic). It only decides when the copilot must
@@ -209,6 +210,8 @@ class Copilot:
         self.pool = SandboxPool(reader, business_ranking=business_ranking) if reader is not None else None
         self.data_reason = data_reason
         self.nlq = NLQEngine(self.llm)
+        self.hosted = bool(getattr(getattr(self.llm, "config", None), "hosted", False))
+        self.model_down = SERVICE_DOWN if self.hosted else MODEL_DOWN
         self._knowledge = knowledge
         self.knowledge_reason = None
 
@@ -241,7 +244,7 @@ class Copilot:
     def status(self) -> dict:
         record = self.reader.record if self.reader is not None else {}
         outputs = record.get("model_outputs") or {}
-        return {"model": self.llm.name, "model_ready": self.llm.available(),
+        return {"model": self.llm.name, "model_ready": self.llm.available(), "model_hosted": self.hosted,
                 "data_ready": self.reader is not None, "data_reason": self.data_reason,
                 "as_of": record.get("as_of"), "artifact_id": record.get("artifact_id"),
                 "predictions": record.get("model_outputs_status") if self.reader is not None else None,
@@ -353,7 +356,7 @@ class Copilot:
         except LLMUnavailable:
             # Still useful: show the permitted passages without a generated summary.
             search = assistant.search(question, doc_role)
-            out.status, out.answer = "unavailable", MODEL_DOWN
+            out.status, out.answer = "unavailable", self.model_down
             out.sources = [{"marker": f"S{i}", "citation": r["citation"], "document_id": r["document_id"],
                             "version": r["version"], "section": r["section"], "title": r["title"],
                             "cited": False, "dense_score": r["dense_score"], "text": r["text"]}
@@ -395,6 +398,6 @@ class Copilot:
                 out.route = DATA
                 self._data_path(question, principal_id, out)
         except LLMUnavailable:
-            out.status, out.answer = "unavailable", MODEL_DOWN
+            out.status, out.answer = "unavailable", self.model_down
         out.elapsed_s = time.perf_counter() - started
         return out

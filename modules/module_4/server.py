@@ -307,12 +307,16 @@ def module_4_server(input, output, session, dataset: dict, auth_state: dict):
                             f"run {st['predictions_run']}" if released else "Predictions: not released"))
         else:
             rows.append(row(False, "Business data", st["data_reason"] or "No business data configured"))
+        down = " (not reachable)" if st.get("model_hosted") else " (not running)"
         rows.append(row(st["model_ready"], "Language model",
-                        f"Model: {st['model']}" + ("" if st["model_ready"] else " (not running)")))
+                        f"Model: {st['model']}" + ("" if st["model_ready"] else down)))
         role = doc_role() if pid else None
         rows.append(row(True, "Documents", "Knowledge base: 12 documents" + (f" · access: {role}" if role else "")))
-        return tags.div(*rows, tags.p("Answers use only this data and these documents. Predictions are model "
-                                      "estimates, not observed stockouts.", class_="ws-muted m4-rail-note"),
+        note = ("Answers use only this data and these documents. Predictions are model estimates, not observed "
+                "stockouts.")
+        if st.get("model_hosted"):
+            note += " Questions, and the rows behind each answer, are sent to the hosted model."
+        return tags.div(*rows, tags.p(note, class_="ws-muted m4-rail-note"),
                         class_="m4-status", role="status")
 
     @output(suspend_when_hidden=False)

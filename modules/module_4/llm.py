@@ -3,18 +3,33 @@ modules/module_4/llm.py
 =======================
 Small chat client for the copilot's language model.
 
-Default: a local Ollama server (no API fees, nothing leaves the machine). Any
-OpenAI-compatible server can be used instead by setting MODULE4_LLM_PROVIDER=openai
-and MODULE4_LLM_BASE_URL. Standard library only, so the app needs no SDK.
+Default: a local Ollama server (no API fees, nothing leaves the machine). A deployed app, where no
+local model runs, uses a hosted model instead: MODULE4_LLM_PROVIDER=openai with MODULE4_LLM_API_KEY
+calls OpenAI (gpt-4.1-mini by default); MODULE4_LLM_BASE_URL points it at any other OpenAI-compatible
+server. Standard library only, so the app needs no SDK.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
+
+# provider -> (default base URL, default model)
+DEFAULTS = {"ollama": ("http://127.0.0.1:11434", "qwen2.5:7b"),
+            "openai": ("https://api.openai.com", "gpt-4.1-mini")}
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1", "host.docker.internal")
+RETRY_STATUS = (429, 500, 502, 503, 504)          # busy or rate limited: worth one more try
+RETRY_WAIT_S = 2.0
+HTTP_REASONS = {400: "request rejected", 401: "API key rejected", 403: "API key has no access to this model",
+                404: "model or address not found", 429: "rate limit or usage limit reached"}
 
 
 class LLMUnavailable(RuntimeError):
@@ -33,15 +48,21 @@ class LLMConfig:
     def from_env(cls, environ=None) -> "LLMConfig":
         env = os.environ if environ is None else environ
         provider = env.get("MODULE4_LLM_PROVIDER", "ollama").strip().lower()
-        if provider not in ("ollama", "openai"):
+        if provider not in DEFAULTS:
             raise ValueError("MODULE4_LLM_PROVIDER must be 'ollama' or 'openai'")
+        base_url, model = DEFAULTS[provider]
         return cls(
             provider=provider,
-            base_url=env.get("MODULE4_LLM_BASE_URL", cls.base_url).rstrip("/"),
-            model=env.get("MODULE4_LLM_MODEL", cls.model),
+            base_url=env.get("MODULE4_LLM_BASE_URL", base_url).rstrip("/"),
+            model=env.get("MODULE4_LLM_MODEL", model),
             timeout_s=float(env.get("MODULE4_LLM_TIMEOUT_S", cls.timeout_s)),
             api_key=env.get("MODULE4_LLM_API_KEY") or None,
         )
+
+    @property
+    def hosted(self) -> bool:
+        """True when questions and the rows behind answers go to an outside service, not this machine."""
+        return (urllib.parse.urlparse(self.base_url).hostname or "") not in LOCAL_HOSTS
 
 
 class ChatModel:
@@ -54,18 +75,34 @@ class ChatModel:
     def name(self) -> str:
         return f"{self.config.model} ({self.config.provider})"
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-        request = urllib.request.Request(self.config.base_url + path, data=json.dumps(payload).encode(),
-                                         headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout_s) as response:
-                return json.loads(response.read().decode())
-        except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as error:
-            # Class name only: never echo URLs, keys or payloads into the UI.
-            raise LLMUnavailable(f"Language model unavailable ({type(error).__name__})") from error
+        return headers
+
+    def _post(self, path: str, payload: dict) -> dict:
+        if self.config.hosted and not self.config.api_key:
+            raise LLMUnavailable("Language model unavailable (MODULE4_LLM_API_KEY is not set)")
+        data = json.dumps(payload).encode()
+        for attempt in (1, 2):
+            request = urllib.request.Request(self.config.base_url + path, data=data, headers=self._headers(),
+                                             method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self.config.timeout_s) as response:
+                    return json.loads(response.read().decode())
+            except urllib.error.HTTPError as error:
+                if error.code in RETRY_STATUS and attempt == 1:
+                    time.sleep(RETRY_WAIT_S)
+                    continue
+                reason = HTTP_REASONS.get(error.code, "service error")
+                # The provider's own message helps whoever runs the app; it never contains the key.
+                log.warning("Language model call failed: HTTP %s, %s: %s", error.code, reason, _error_detail(error))
+                raise LLMUnavailable(f"Language model unavailable ({reason}, HTTP {error.code})") from error
+            except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError) as error:
+                # Class name only: never echo URLs, keys or payloads into the UI.
+                raise LLMUnavailable(f"Language model unavailable ({type(error).__name__})") from error
+        raise AssertionError("unreachable")
 
     def chat(self, messages: list[dict], *, json_mode: bool = False, max_tokens: int = 700) -> str:
         if self.config.provider == "ollama":
@@ -89,12 +126,23 @@ class ChatModel:
 
     def available(self) -> bool:
         """Cheap reachability check for the status line (does not load the model)."""
+        if self.config.hosted and not self.config.api_key:
+            return False
         path = "/api/tags" if self.config.provider == "ollama" else "/v1/models"
         try:
-            request = urllib.request.Request(self.config.base_url + path, method="GET")
-            if self.config.api_key:
-                request.add_header("Authorization", f"Bearer {self.config.api_key}")
+            request = urllib.request.Request(self.config.base_url + path, headers=self._headers(), method="GET")
             with urllib.request.urlopen(request, timeout=3) as response:
                 return response.status == 200
         except Exception:  # noqa: BLE001 - reachability probe only
             return False
+
+
+def _error_detail(error: urllib.error.HTTPError) -> str:
+    try:
+        body = json.loads(error.read().decode() or "{}")
+    except Exception:  # noqa: BLE001 - best effort, for the log only
+        return ""
+    detail = body.get("error") if isinstance(body, dict) else None
+    if isinstance(detail, dict):
+        detail = detail.get("message")
+    return str(detail or "")[:200]

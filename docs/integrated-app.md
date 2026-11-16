@@ -45,7 +45,9 @@ docker run --rm -p 127.0.0.1:8000:8000 -v <serving build>:/data:ro \
 ```
 
 The container runs as user 1000, which must be able to read that folder (its `run.json` and `quality.json`
-are private to their owner). Without a source the app still starts and shows "unavailable". Without a reachable model the copilot says
+are private to their owner). Without a source the app still starts and shows "unavailable". For a hosted model
+instead of Ollama, pass `--env-file <private file>` with `MODULE4_LLM_PROVIDER=openai` and `MODULE4_LLM_API_KEY`
+(never put the key on the command line or in Git). Without a reachable model the copilot says
 so and Module 2 keeps working. The image has no model server and uses keyword-only document retrieval
 (`MODULE4_RAG_DENSE=0`). Sign-in is demo-only, so do not expose a container holding client data publicly.
 
@@ -56,7 +58,7 @@ so and Module 2 keeps working. The image has no model server and uses keyword-on
 | `SHARED_DATA_PUBLICATION` | Local published `serving.json` pointer (DuckDB). |
 | `SHARED_DATA_ARTIFACT_DIR` | A verified (copied) serving artifact directory instead. Use one of the two. |
 | `SHARED_DATA_BACKEND=postgres` | Read the shared PostgreSQL release instead, with `SHARED_DATA_DATABASE_URL` (read-only application account), `SHARED_DATA_SSLROOTCERT` (CA file for verified TLS) and optionally `SHARED_DATA_RELEASE_ID`. Keep these values in a private environment file outside the checkout. |
-| `MODULE4_LLM_PROVIDER`, `MODULE4_LLM_BASE_URL`, `MODULE4_LLM_MODEL` | The copilot's language model (local Ollama by default); see the Module 4 README. |
+| `MODULE4_LLM_PROVIDER`, `MODULE4_LLM_BASE_URL`, `MODULE4_LLM_MODEL`, `MODULE4_LLM_API_KEY` | The copilot's language model: local Ollama by default, `openai` (hosted, needs the API key) for a deployed site; see the Module 4 README. Keep the key in a private environment file or the host's secret settings. |
 | `MODULE4_RAG_DENSE=0` | Keyword-only knowledge retrieval when the embedding package is not installed. |
 | `MODULE2_LATEST_SOURCE_DATE` | Newest accepted source date, for the "out of date" notice. |
 | `MODULE2_SERVING_ROOT`, `MODULE4_SERVING_PUBLICATION`, `MODULE4_SERVING_ARTIFACT_DIR` | Optional module-specific sources. They must name the same publication as the shared source; otherwise that module shows "unavailable" rather than mixing two releases. |

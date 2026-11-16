@@ -11,8 +11,10 @@ in plain English, with no SQL or table knowledge needed:
   [`knowledge_base/`](../../knowledge_base/README.md) and answers only from them, citing each passage with
   document, version, section and PDF page.
 
-The language model runs **locally** (Ollama, `qwen2.5:7b` by default): no API fees, and no question,
-schema, result or document leaves the machine.
+By default the language model runs **locally** (Ollama, `qwen2.5:7b`): no API fees, and no question,
+schema, result or document leaves the machine. The deployed site has no model server, so it uses a hosted
+model through OpenAI's API instead (see "Hosted model" below); then each question, the schema, the rows behind
+each answer and the retrieved document passages are sent to OpenAI.
 
 ## 1. Run it
 
@@ -44,12 +46,29 @@ uv run --extra app --extra module4 shiny run modules.module_4.demo_app:app --por
 | --- | --- | --- |
 | `MODULE4_SERVING_PUBLICATION` | `outputs/v3/platform/delivery/serving/published/serving.json` | Published business snapshot to pin |
 | `MODULE4_SERVING_ARTIFACT_DIR` | unset | Use an accepted (copied) serving directory instead |
-| `MODULE4_LLM_PROVIDER` | `ollama` | `ollama`, or `openai` for any OpenAI-compatible server |
-| `MODULE4_LLM_BASE_URL` | `http://127.0.0.1:11434` | Model server address |
-| `MODULE4_LLM_MODEL` | `qwen2.5:7b` | Model name |
-| `MODULE4_LLM_API_KEY` | unset | Only for a hosted OpenAI-compatible server (keep it in `.env`, never in Git) |
+| `MODULE4_LLM_PROVIDER` | `ollama` | `ollama` (local), or `openai` (OpenAI or any OpenAI-compatible server) |
+| `MODULE4_LLM_BASE_URL` | `http://127.0.0.1:11434`; `https://api.openai.com` for `openai` | Model server address |
+| `MODULE4_LLM_MODEL` | `qwen2.5:7b`; `gpt-4.1-mini` for `openai` | Model name |
+| `MODULE4_LLM_API_KEY` | unset | Required for a hosted server. A secret: keep it in the host's secret settings or a private env file outside the checkout, never in Git |
 | `MODULE4_LLM_TIMEOUT_S` | `120` | Per-call timeout |
 | `MODULE4_RAG_DENSE` | `1` | `0` = BM25-only retrieval (no embedding model) |
+
+### Hosted model
+
+```bash
+# In the Render dashboard (or a private env file outside the checkout), never in Git:
+MODULE4_LLM_PROVIDER=openai
+MODULE4_LLM_API_KEY=<key from platform.openai.com>
+# optional: MODULE4_LLM_MODEL=gpt-4.1 for harder questions (slower and dearer per question)
+```
+
+`gpt-4.1-mini` is the default because it accepts temperature 0 and JSON mode, which the copilot relies on;
+the GPT-5 reasoning models take different request settings and are not supported by this client.
+
+`python -m modules.module_4 status` shows whether the model answers (`model_ready`). The client retries a
+busy or rate-limited service once, then the copilot says the service is not responding; the reason
+(for example "API key rejected, HTTP 401", or OpenAI's "quota exceeded" message) goes to the app log, never to the page. The "Data scope" panel
+names the model and says that questions and result rows go to the hosted service.
 
 The page uses the shared workspace design (Module 2's design, `shared/ui_kit.py`) as a conversation:
 suggested questions on the home screen while the conversation is empty (your data, stockout predictions,
@@ -182,6 +201,10 @@ The two misses: **D07** (lowest fill rate "last quarter"): the model filters the
 on the Must-Stock List): retrieval ranked the product sheets above the MSL list, so the answer named three of the
 four SKUs.
 
+Hosted model (`gpt-4.1-mini` through OpenAI, same publication and questions, 13 Nov 2026): **19/20** (NLQ 10/10,
+RAG 9/10), safety 5/5, median answer time 2 s. It gets D07 right; K04 is the same retrieval miss. The run made
+40 model calls and used about 58,000 tokens for the 25 questions, a few US cents.
+
 **What the score does not catch.** A pass checks the table and key facts, not every sentence. K07 (promotion dates)
 passes with a correct table, but its summary gives 12% for Dishwashing in Traditional Trade where the table says
 10%. D03 passed on a product-name filter that missed half the Laundry audits, because the average rounded to the
@@ -194,11 +217,11 @@ score. Before the presentation, teammates should each add questions they did not
 
 ## 6. Limitations and next steps
 
-- **Deployment.** The model runs on the presenter's laptop. The Render site has no model server; Module 4
-  shows "model not running" there unless `MODULE4_LLM_*` points at a reachable server (a hosted model would
-  send questions and results outside the machine, which needs the team's and client's agreement). The
-  Docker image uses keyword-only document retrieval (`MODULE4_RAG_DENSE=0`), which is lighter than the hybrid
-  retrieval the practice set scores.
+- **Deployment.** The Render site has no model server, so it uses the hosted model (`MODULE4_LLM_PROVIDER=openai`
+  and an API key in Render's settings). That sends questions and result rows to OpenAI, which the client
+  should agree to; laptops can keep the local model. Without a key the copilot says the service is not
+  responding and the other modules keep working. The Docker image uses keyword-only document retrieval
+  (`MODULE4_RAG_DENSE=0`), which is lighter than the hybrid retrieval the practice set scores.
 - **Scope.** Reported data only (unknown days are excluded, never treated as zero). Candidate estimates,
   price/audit context, metric definitions and model evaluation reports are not exposed to the copilot.
   Module 2's sales-at-risk scenario reaches it only with the business ranking, in the integrated app; without

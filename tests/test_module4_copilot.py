@@ -5,10 +5,14 @@ synthetic business publication with the shared pipeline, and a scripted fake mod
 stands in for Ollama.
 """
 
+import io
+import json
 import tempfile
 import unittest
+import urllib.error
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import duckdb
 import pandas as pd
@@ -371,6 +375,108 @@ class SandboxTests(unittest.TestCase):
         answer = Copilot(llm=FakeLLM(), reader=self.reader).ask("How many stores?", None, "sales")
         self.assertEqual(answer.status, "denied")
 
+
+class _Reply:
+    """Stands in for an HTTP response."""
+
+    def __init__(self, body, status=200):
+        self.body, self.status = json.dumps(body).encode(), status
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class ModelClientTests(unittest.TestCase):
+    """The hosted-model path, with the network replaced by a recorder (no key or server needed)."""
+
+    KEY = "sk-test-not-a-real-key"
+
+    def client(self, **env):
+        from modules.module_4.llm import ChatModel, LLMConfig
+        return ChatModel(LLMConfig.from_env({"MODULE4_LLM_PROVIDER": "openai", "MODULE4_LLM_API_KEY": self.KEY, **env}))
+
+    def http_error(self, code, message="nope"):
+        body = io.BytesIO(json.dumps({"error": {"message": message}}).encode())
+        return urllib.error.HTTPError("https://example.invalid", code, "error", {}, body)
+
+    def test_openai_defaults_and_where_answers_are_computed(self):
+        from modules.module_4.llm import LLMConfig
+        config = LLMConfig.from_env({"MODULE4_LLM_PROVIDER": "openai"})
+        self.assertEqual((config.base_url, config.model), ("https://api.openai.com", "gpt-4.1-mini"))
+        self.assertTrue(config.hosted)
+        self.assertFalse(LLMConfig.from_env({}).hosted)
+        self.assertFalse(LLMConfig.from_env({"MODULE4_LLM_PROVIDER": "openai",
+                                             "MODULE4_LLM_BASE_URL": "http://127.0.0.1:9999"}).hosted)
+        with self.assertRaises(ValueError):
+            LLMConfig.from_env({"MODULE4_LLM_PROVIDER": "other"})
+
+    def test_request_uses_chat_completions_with_bearer_auth(self):
+        sent = []
+
+        def fake(request, timeout):
+            sent.append(request)
+            return _Reply({"choices": [{"message": {"content": "SELECT 1"}}]})
+        messages = [{"role": "system", "content": "You write SQL."}, {"role": "user", "content": "Question: x"}]
+        with patch("urllib.request.urlopen", fake):
+            self.assertEqual(self.client().chat(messages, max_tokens=500), "SELECT 1")
+        request, body = sent[0], json.loads(sent[0].data)
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), f"Bearer {self.KEY}")
+        self.assertEqual((body["model"], body["temperature"], body["max_tokens"]), ("gpt-4.1-mini", 0, 500))
+        self.assertEqual(body["messages"], messages)
+        self.assertNotIn("response_format", body)
+
+    def test_json_mode_asks_for_a_json_object(self):
+        from modules.module_4.router import ROUTER_PROMPT
+        sent = []
+
+        def fake(request, timeout):
+            sent.append(json.loads(request.data))
+            return _Reply({"choices": [{"message": {"content": '{"route": "data"}'}}]})
+        with patch("urllib.request.urlopen", fake):
+            self.assertEqual(route("Tell me about the West", self.client())["route"], DATA)
+        self.assertEqual(sent[0]["response_format"], {"type": "json_object"})
+        self.assertIn("JSON", ROUTER_PROMPT)        # OpenAI's JSON mode requires the word in the prompt
+
+    def test_missing_key_fails_without_calling_the_service(self):
+        from modules.module_4.llm import ChatModel, LLMConfig
+        model = ChatModel(LLMConfig.from_env({"MODULE4_LLM_PROVIDER": "openai"}))
+        with patch("urllib.request.urlopen", side_effect=AssertionError("network used")):
+            with self.assertRaises(LLMUnavailable):
+                model.chat([{"role": "user", "content": "q"}])
+            self.assertFalse(model.available())
+
+    def test_a_rejected_key_is_reported_without_the_key(self):
+        with patch("urllib.request.urlopen", side_effect=self.http_error(401)), \
+                self.assertLogs("modules.module_4.llm", "WARNING"):
+            with self.assertRaises(LLMUnavailable) as caught:
+                self.client().chat([{"role": "user", "content": "q"}])
+        self.assertIn("API key rejected", str(caught.exception))
+        self.assertNotIn(self.KEY, str(caught.exception))
+
+    def test_a_busy_service_is_retried_once(self):
+        calls = []
+
+        def fake(request, timeout):
+            calls.append(1)
+            if len(calls) == 1:
+                raise self.http_error(503, "Busy")
+            return _Reply({"choices": [{"message": {"content": "ok"}}]})
+        with patch("urllib.request.urlopen", fake), patch("modules.module_4.llm.time.sleep"):
+            self.assertEqual(self.client().chat([{"role": "user", "content": "q"}]), "ok")
+        self.assertEqual(len(calls), 2)
+
+    def test_hosted_model_down_message_does_not_mention_ollama(self):
+        from modules.module_4.agent import Copilot
+        hosted = Copilot(llm=self.client())
+        self.assertNotIn("ollama", hosted.model_down.lower())
+        self.assertIn("ollama", Copilot(llm=FakeLLM()).model_down)
 
 if __name__ == "__main__":
     unittest.main()

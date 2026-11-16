@@ -180,9 +180,11 @@ This repository is optimized for one-click deployment as a **Render Web Service*
    | `SHARED_DATA_SSLROOTCERT` | Path to the CA file for verified TLS |
    | `PYTHONUNBUFFERED` | `1` (automatically set in Dockerfile) |
    | `PORT` | Set automatically by Render (`10000`) |
+   | `MODULE4_LLM_PROVIDER` | `openai` (hosted model for the Copilot, `gpt-4.1-mini` by default) |
+   | `MODULE4_LLM_API_KEY` | OpenAI API key, added as a secret value in Render, never in Git |
 
-   Sign-in is demo-only, so do not expose a site holding client data publicly. The Copilot needs a reachable
-   model (`MODULE4_LLM_*`); see the [Module 4 README](modules/module_4/README.md).
+   Sign-in is demo-only, so do not expose a site holding client data publicly. With the hosted model, Copilot
+   questions and result rows are sent to OpenAI; see the [Module 4 README](modules/module_4/README.md).
 
 3. **How Port Scanning & Startup Optimization Works** (the four-module `app.py`; `integrated_app.py` opens nothing at import):
    - `shared/data.py` uses an asynchronous preloading thread (`start_background_preload()`).

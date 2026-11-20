@@ -19,7 +19,6 @@ __pycache__/
 .ipynb_checkpoints/
 notebooks/
 old_marvel_data/
-eda_figures_sanika/
 ETL/
 docs/
 work/

@@ -2,9 +2,10 @@
 
     python knowledge_base/tools/compute_data_facts.py --data-dir data/raw
 
-Reads the eight authorized V3 CSV files (the shared data platform's `data/raw/` layout, including the
-retained `dim_guardrails`), uses reported rows from 1 Jan 2025 to 31 May 2026 only (June 2026 is the
-OOS-model test month) and writes knowledge_base/data_facts.json. Needs pandas and numpy.
+Reads the eight authorized V3 CSV files (the shared data platform's `data/raw/` layout, contract
+v3.sources.2: the delivered `dim_guardrails` with a standard discount), uses reported rows from 1 Jan 2025
+to 31 May 2026 only (June 2026 is the OOS-model test month) and writes knowledge_base/data_facts.json.
+Needs pandas and numpy.
 """
 
 import argparse
@@ -127,13 +128,22 @@ pr['margin_at_list'] = (pr.list_price - pr.unit_cost) / pr.list_price * 100
 pr['retailer_margin_ref'] = (pr.consumer_price - pr.list_price) / pr.consumer_price * 100
 pr['consumer_to_list'] = pr.consumer_price / pr.list_price
 
-# 2. discount headroom: margin at cap and discount that hits the floor, per SKU x channel
+# 2. discount headroom per SKU x channel (provisional v3 rules, as in the Module 3 simulator): total discount =
+# standard + additional; the ceiling without manager review is standard + maximum additional. Margin at the
+# standard and at the ceiling, and the total discount at which the margin reaches the minimum.
+def margin_at(p, total):
+    net = p.list_price * (1 - total / 100)
+    return (net - p.unit_cost) / net * 100
 rows = []
 for _, p in pr.iterrows():
     for _, g in gr[gr.category == p.category].iterrows():
-        net_cap = p.list_price * (1 - g.max_discount_pct / 100); m_cap = (net_cap - p.unit_cost) / net_cap * 100
+        ceiling = round(g.standard_discount_pct + g.max_discount_pct, 2)
         d_floor = (1 - p.unit_cost / (p.list_price * (1 - g.min_target_margin / 100))) * 100
-        rows.append({'sku_id': p.sku_id, 'channel': g.channel, 'cap': g.max_discount_pct, 'floor': g.min_target_margin, 'margin_at_cap': round(m_cap, 1), 'discount_at_floor': round(d_floor, 1)})
+        rows.append({'sku_id': p.sku_id, 'channel': g.channel, 'category': g.category,
+                     'standard': g.standard_discount_pct, 'max_additional': g.max_discount_pct, 'ceiling': ceiling,
+                     'floor': g.min_target_margin, 'margin_at_standard': round(margin_at(p, g.standard_discount_pct), 1),
+                     'margin_at_ceiling': round(margin_at(p, ceiling), 1), 'discount_at_floor': round(d_floor, 1)})
+R['guardrails'] = json.loads(gr.assign(ceiling=(gr.standard_discount_pct + gr.max_discount_pct).round(2)).to_json(orient='records'))
 
 # 4. promo lift with the EDA method (ratio of sums), by type, channel, category
 ins = so[~so.oos].copy(); ins['ym'] = ins.date.dt.to_period('M'); ins['on_promo'] = ins.promo_id.notna()

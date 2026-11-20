@@ -34,8 +34,8 @@ The mix follows the client guidance: team-written fictional Marvel documents plu
 
 **How the content is grounded**
 
-- **Facts come from the project data.** Product names, prices, MSL flags, guardrails and the promotion calendar come from the dimension tables. Performance figures (marked *data* in the text) come from the authorized V3 dataset: reported rows from 1 January 2025 to 31 May 2026, with June 2026 kept out because it is the OOS model's test month. The guardrails are the retained `dim_guardrails` used by the shared data platform. `tools/compute_data_facts.py` recomputes every figure, and the method for promotion lift and lost sales matches the Team 1 V3 EDA.
-- **Definitions follow the official sources.** KPI, margin and trade-off definitions follow the capstone brief, the official client clarifications and the platform's `metric_definitions`. Deal statuses use the same rules as the Module 3 simulator (APPROVED / MANAGER OVERRIDE REQUIRED / POLICY BREACH / REJECTED).
+- **Facts come from the project data.** Product names, prices, MSL flags, guardrails and the promotion calendar come from the dimension tables. Performance figures (marked *data* in the text) come from the authorized V3 dataset: reported rows from 1 January 2025 to 31 May 2026, with June 2026 kept out because it is the OOS model's test month. The guardrails are the delivered `dim_guardrails` with a standard discount, which the shared data platform adopts provisionally (contract v3.sources.2). The documents updated for it (MCPG-04, MCPG-05, MCPG-06 and MCPG-09) cite that dataset (hash 6550fe85d890...); the others still cite the earlier hash (f5403651d8aa...), because their figures come only from fact and product files that are the same in both. `tools/compute_data_facts.py` recomputes every figure, and the method for promotion lift and lost sales matches the Team 1 V3 EDA.
+- **Definitions follow the official sources.** KPI, margin and trade-off definitions follow the capstone brief, the official client clarifications and the platform's `metric_definitions`. Deal results use the same rules as the Module 3 simulator (APPROVED / APPROVED WITH CONDITIONS / MANAGER REVIEW / REJECTED / CANNOT ASSESS, rules version m3-rules.v1-provisional).
 - **Fictional content is labelled.** Product descriptions, usage notes and sales wording are fictional, written for the capstone. Every document says so at the top, and the PDF footer repeats it.
 - **The documents claim only what the data supports.** They never quote a sales uplift for displays, planogram or shelf share, because the data shows at most about 1% (EDA section 8.7). They also make no competitor claims and no label claims such as germ-kill rates.
 - **Public documents are original summaries.** They are written in our own words, with full citations and licence notes. The original PDFs are not redistributed.
@@ -68,7 +68,7 @@ From the repository root, with the repository environment plus [`requirements.tx
 pip install -r knowledge_base/requirements.txt          # fastembed, fpdf2 (numpy is already a repo dependency)
 
 python knowledge_base/tools/retrieve.py "Which SKU can I substitute for Power Clean Lemon 1L?" --role sales
-python knowledge_base/tools/retrieve.py "How do I review an override?" --role manager --prompt
+python knowledge_base/tools/retrieve.py "How do I review a proposal sent for manager review?" --role manager --prompt
 python knowledge_base/tools/evaluate.py --report knowledge_base/eval/retrieval_results_hybrid.md
 python -m unittest discover -s knowledge_base/tests -v
 ```
@@ -117,8 +117,8 @@ Full per-question results: [`eval/retrieval_results_hybrid.md`](eval/retrieval_r
 
 - All documents are **drafts for team review**. MCPG-05 (pricing policy) and MCPG-09 (manager guide) should be checked by the Module 3 owner so the simulator and the copilot stay consistent.
 - Several items still need client confirmation, and the documents flag them in their *Document control* sections:
-  - the guardrail version and approval logic;
-  - whether the discount cap applies to the total or an additional discount;
+  - the provisional guardrail rules (total discount = standard + additional, the maximum applies to the additional discount) and what representatives may agree on their own;
+  - how distributor commitments work;
   - how shelf share should be verified (it is an allocation among Marvel SKUs);
   - the grain of the promotion minimum volume;
   - whether MSL lists differ by tier.

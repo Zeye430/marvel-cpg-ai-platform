@@ -1,7 +1,7 @@
 """Query the knowledge base and build a grounded prompt for the generation step.
 
     python knowledge_base/tools/retrieve.py "Which SKU can replace Power Clean Lemon 1L?" --role sales
-    python knowledge_base/tools/retrieve.py "How do I review an override?" --role manager --prompt
+    python knowledge_base/tools/retrieve.py "How do I review a proposal sent for manager review?" --role manager --prompt
 
 The role must come from the application's verified session, never from the user's text or the LLM.
 """

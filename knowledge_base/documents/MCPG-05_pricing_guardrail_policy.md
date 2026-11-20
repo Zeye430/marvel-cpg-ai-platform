@@ -59,7 +59,7 @@ The minimum margin in the guardrails is a **gross margin on net price**, not a m
 
 For each channel and category the guardrails set four things: the **standard discount**; the **maximum additional discount** (also called the cap) that a representative can propose on top of it when the account makes the required execution commitment; the **minimum gross margin**; and that **commitment**. The standard discount plus the maximum additional discount is the highest total discount that does not need manager review.
 
-| Channel | Category | Standard discount | Maximum additional discount (with the commitment) | Highest total discount without manager review | Minimum gross margin on net price | Execution commitment required for an additional discount |
+| Channel | Category | Standard discount | Maximum additional | Highest total without manager review | Minimum margin | Commitment for an additional discount |
 |---|---|---|---|---|---|---|
 | Modern Trade | Dishwashing | 8.71% | 5.85 points | 14.56% | 22.15% | Achieve 100% MSL compliance + planogram adherence |
 | Modern Trade | Laundry | 8.28% | 4.05 points | 12.33% | 25.70% | Secure +10% shelf share or place 1 secondary display |

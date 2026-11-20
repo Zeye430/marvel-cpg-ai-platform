@@ -1,7 +1,7 @@
 {
  "knowledge_base": "Marvel CPG RAG knowledge base (Module 4)",
  "contract": "data_platform/contracts/v3/module-data-contract.json -> module_4.knowledge_contract",
- "corpus_hash": "195c17962366b26bf29b7d7bb2fbb3a88221e4e18269ba57690fa6b5a3fa0551",
+ "corpus_hash": "c2e9985b5450b73bb5857e4704d63fd0d83e311da378e45d8925736e032c5228",
  "document_count": 12,
  "documents": [
   {
@@ -89,21 +89,21 @@
   },
   {
    "document_id": "MCPG-04",
-   "version": "1.0.0",
-   "content_hash": "59d7436d4f3365c494175a2a21c255a508ef4b45eb00e7e94328b239b826adda",
+   "version": "1.1.0",
+   "content_hash": "53ceb96ff211871e07a796b58100a5b46718f41505a9944c706d1605a0507507",
    "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); evidence from the project dataset, the Team 1 V3 EDA and the public references PUB-01 to PUB-03",
-   "effective_date": "2026-10-20",
+   "effective_date": "2026-11-20",
    "permission_scope": [
     "sales",
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-04_objection_handling.pdf; cite as 'MCPG-04 v1.0.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-04_objection_handling.pdf; cite as 'MCPG-04 v1.1.0, \u00a7<section>, PDF p. <page>'",
    "title": "Objection-Handling Guide",
    "document_type": "sales_guide",
    "origin": "fictional_marvel",
    "status": "draft_for_team_review",
    "owner": "Team 1 knowledge base (Sanika Najan)",
-   "data_basis": "Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
+   "data_basis": "Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
    "related_documents": [
     "MCPG-02",
     "MCPG-03",
@@ -115,54 +115,55 @@
    ],
    "source_path": "knowledge_base/documents/MCPG-04_objection_handling.md",
    "pdf_path": "knowledge_base/pdf/MCPG-04_objection_handling.pdf",
-   "pdf_pages": 4,
+   "pdf_pages": 5,
    "chunk_count": 16
   },
   {
    "document_id": "MCPG-05",
-   "version": "1.0.0",
-   "content_hash": "2b8ae443e4b7b6798ec96440df64c1c860771f4c8101c395312f59ed629ebf22",
-   "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the retained V3 `dim_guardrails` table; formulas from the official client clarifications",
-   "effective_date": "2026-10-20",
+   "version": "2.0.0",
+   "content_hash": "6a2be0c33cbd9d209ccace8e7d75f2169e23e1270eb5eaa18969bea1bbc5284d",
+   "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the V3 `dim_guardrails` table with a standard discount, adopted provisionally by the shared data platform (contract v3.sources.2); formulas from the official client clarifications",
+   "effective_date": "2026-11-20",
    "permission_scope": [
     "sales",
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-05_pricing_guardrail_policy.pdf; cite as 'MCPG-05 v1.0.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-05_pricing_guardrail_policy.pdf; cite as 'MCPG-05 v2.0.0, \u00a7<section>, PDF p. <page>'",
    "title": "Pricing, Discount and Commercial Guardrail Policy",
    "document_type": "policy",
    "origin": "fictional_marvel",
    "status": "draft_for_team_review",
    "owner": "Team 1 knowledge base (Sanika Najan)",
-   "data_basis": "Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
+   "data_basis": "Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
    "related_documents": [
     "MCPG-01",
     "MCPG-04",
+    "MCPG-06",
     "MCPG-07",
     "MCPG-09"
    ],
    "source_path": "knowledge_base/documents/MCPG-05_pricing_guardrail_policy.md",
    "pdf_path": "knowledge_base/pdf/MCPG-05_pricing_guardrail_policy.pdf",
-   "pdf_pages": 5,
-   "chunk_count": 18
+   "pdf_pages": 6,
+   "chunk_count": 20
   },
   {
    "document_id": "MCPG-06",
-   "version": "1.0.0",
-   "content_hash": "063902560be7c821c04ddadf80c18a93d7ce21cee0cb4a73a09a5875647f32b6",
+   "version": "1.1.0",
+   "content_hash": "5831d1b920cf6d8f076df4a58eb4ccc74edb18795061bb0bf3f242a699625b46",
    "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); definitions from the capstone brief and official client clarifications; performance from the project dataset",
-   "effective_date": "2026-10-20",
+   "effective_date": "2026-11-20",
    "permission_scope": [
     "sales",
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-06_msl_execution_standards.pdf; cite as 'MCPG-06 v1.0.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-06_msl_execution_standards.pdf; cite as 'MCPG-06 v1.1.0, \u00a7<section>, PDF p. <page>'",
    "title": "MSL, Planogram and In-Store Execution Standards",
    "document_type": "policy",
    "origin": "fictional_marvel",
    "status": "draft_for_team_review",
    "owner": "Team 1 knowledge base (Sanika Najan)",
-   "data_basis": "Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
+   "data_basis": "Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
    "related_documents": [
     "MCPG-02",
     "MCPG-05",
@@ -229,28 +230,28 @@
   },
   {
    "document_id": "MCPG-09",
-   "version": "1.0.0",
-   "content_hash": "417880573239bdda31818fbb216b104ff2cb2c214034cb09e945ddbdb3ede59f",
+   "version": "1.1.0",
+   "content_hash": "01847900f1090fc2795ff369840fa238adac7e0344cce0bee376f51c5b7c8730",
    "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); review rules aligned with the negotiation simulator and the shared data platform; findings from the Team 1 V3 EDA",
-   "effective_date": "2026-10-20",
+   "effective_date": "2026-11-20",
    "permission_scope": [
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-09_manager_deal_review.pdf; cite as 'MCPG-09 v1.0.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-09_manager_deal_review.pdf; cite as 'MCPG-09 v1.1.0, \u00a7<section>, PDF p. <page>'",
    "title": "Regional Manager Guide: Deal Review, Escalation and Exception Management",
    "document_type": "manager_guide",
    "origin": "fictional_marvel",
    "status": "draft_for_team_review",
    "owner": "Team 1 knowledge base (Sanika Najan)",
-   "data_basis": "Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
+   "data_basis": "Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out",
    "related_documents": [
     "MCPG-05",
     "MCPG-08"
    ],
    "source_path": "knowledge_base/documents/MCPG-09_manager_deal_review.md",
    "pdf_path": "knowledge_base/pdf/MCPG-09_manager_deal_review.pdf",
-   "pdf_pages": 2,
-   "chunk_count": 7
+   "pdf_pages": 3,
+   "chunk_count": 8
   },
   {
    "document_id": "PUB-01",

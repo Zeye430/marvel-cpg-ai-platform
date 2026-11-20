@@ -1,215 +1,204 @@
-# Marvel CPG AI Commercial Execution Platform
+# Marvel CPG Commercial Workspace
 
-An enterprise-grade, multi-module AI commercial execution platform designed for **Marvel CPG**, unifying executive analytics, predictive machine learning, algorithmic trade negotiation, and natural language database assistance into an integrated web platform.
+One web app for Marvel CPG's commercial team: regional managers and field sales reps sign in and see
+business performance, stockout risk, a deal simulator and a copilot, all on the same shared data release.
+
+The app is [`integrated_app.py`](integrated_app.py) (Python, Shiny). It is what the Docker image and the Render
+deployment start. The older `app.py` is kept only for reference (see [Legacy app](#legacy-app)).
 
 ---
 
-## 🏛️ Platform Architecture & Modular Design
+## The four modules
 
-The platform is structured into four decoupled, independent business modules orchestrated by a shared executive shell:
+### Module 1 · Business Performance
+For managers and reps, on the stores their account can see.
+- **Five KPIs**: MSL compliance, out-of-stock (OOS) rate, sell-in vs sell-out gap, audited shelf allocation and
+  planogram compliance, each with its definition, formula and limits in the page.
+- **Store ranking**: a 0–100 score per store from the five KPIs (each a percentile among the stores in view,
+  equal weights), with best and weakest stores and their move since the previous period.
+- **Store cards**: one store's scorecard with a 13-week line and trend per KPI, a radar compared with up to four
+  other stores, and its field rep.
+- **Geography & flow**: a state map with city-level store bubbles, and sell-in vs sell-out per biweekly period with
+  how long a gap has lasted.
+- **Reported / Estimated view**: one switch fills short reporting gaps with the data platform's estimates; observed
+  values come first and unknown stock stays unknown.
+- Further pages: out-of-stock, shelf execution and trade terms.
+
+Shelf share in the current data is the split of shelf space among Marvel's own audited products, not a share
+against competitors, so the page calls it "Shelf allocation".
+
+### Module 2 · Stockout Risk
+Predicts, at the end of a day, whether a store-SKU will be out of stock on any of the next 7 days, and turns the
+risks into a store visit priority list (visit plan for reps, regional and channel view for managers).
+- Models are benchmarked offline (LightGBM, XGBoost, random forest and a logistic baseline). A model is released
+  only if it passes the gate **precision ≥ 0.75, recall ≥ 0.70 and ROC-AUC ≥ 0.80 together** on held-out data.
+  These are targets; the page states the status of the model behind the predictions it shows.
+- Missing predictions are shown as unreleased, never as zero risk.
+- Details: [Module 2 README](modules/module_2/README.md).
+
+### Module 3 · Negotiation Simulator
+- **Deal simulator**: three proposals side by side for one store and product, each checked against the channel ×
+  category guardrail (maximum extra discount, minimum margin, required execution commitment). Each proposal gets
+  one of five verdicts: **Approved**, **Approved with conditions**, **Manager review**, **Rejected** or
+  **Cannot assess**, with the extra volume needed to keep gross profit at the standard discount.
+- **Price change**: volume, revenue and gross-profit response to a list-price change, from an elasticity
+  estimated on the user's stores or set by the user.
+- The guardrail rules are a proposal pending client confirmation and are fixed in the page; the only assumption a
+  user can switch is the volume uplift. Nothing is approved or sent anywhere automatically.
+- Details: [integrated app guide](docs/integrated-app.md#negotiation-simulator-module-3).
+
+### Module 4 · Commercial Copilot
+- **Data questions** in plain English become one checked SQL query over the signed-in user's stores only, with a
+  written answer, an automatic chart, the result table and the SQL.
+- **Product and policy questions** are answered only from the 12 authorized documents in
+  [`knowledge_base/`](knowledge_base/README.md), with citations (document, version, section, PDF page).
+- **Language model**: a local model through Ollama by default (nothing leaves the machine), or a hosted model
+  through OpenAI (`gpt-4.1-mini`) for the deployed site. With the hosted model, questions and the rows behind each
+  answer are sent to OpenAI.
+- Details: [Module 4 README](modules/module_4/README.md).
+
+---
+
+## Quick start
+
+Requires Python 3.13 and [uv](https://docs.astral.sh/uv/). Dependency versions are locked in `uv.lock`.
+
+```bash
+git clone https://github.com/Zeye430/marvel-cpg-ai-platform.git
+cd marvel-cpg-ai-platform
+```
+
+**With a data release** (a verified local publication built by the data platform):
+
+```bash
+SHARED_DATA_PUBLICATION=<path to published/serving.json> \
+  uv run --extra app --extra module4 shiny run integrated_app.py --port 8000
+```
+
+**Without data**: start the app on generated synthetic data with a placeholder model:
+
+```bash
+uv run --extra app --extra module4 --extra postgres python tests/browser/run_integrated_acceptance.py --serve --port 8000
+```
+
+Open http://127.0.0.1:8000 and choose a demo identity:
+
+| Identity | Role | Sees |
+| --- | --- | --- |
+| Elena Rostova | Regional manager | All stores in the demo scope |
+| Alex Mercer | Field sales rep | Only the stores assigned to Alex |
+| Beatrice Vance | Field sales rep | Only the stores assigned to Beatrice |
+
+Sign-in is for demos only. Switch modules in the sidebar.
+
+All settings (data source, shared PostgreSQL, language model) are in the
+[integrated app guide](docs/integrated-app.md#settings). Keep passwords and API keys in a private environment file
+outside the checkout or in the host's secret settings, never in Git.
+
+### Copilot model
+
+- **Local (default)**: install [Ollama](https://ollama.com), run `ollama pull qwen2.5:7b` and `ollama serve`.
+- **Hosted**: set `MODULE4_LLM_PROVIDER=openai` and `MODULE4_LLM_API_KEY` (from a private file, not the command line).
+
+Without a reachable model the copilot says so and the other modules keep working.
+
+---
+
+## Docker
+
+The image starts `integrated_app.py`. It holds no business data, so give it a source:
+
+```bash
+docker build -t marvel-cpg-dashboard .
+docker run --rm -p 127.0.0.1:8000:8000 -v <serving build>:/data:ro \
+  -e SHARED_DATA_ARTIFACT_DIR=/data marvel-cpg-dashboard
+```
+
+See [Run it in Docker](docs/integrated-app.md#run-it-in-docker) for the model settings and file permissions.
+`docker compose up --build` uses the same image.
+
+---
+
+## Deployment on Render
+
+Create a **Web Service** from this repository with environment **Docker** and branch `main`, then set:
+
+| Variable | Value |
+| --- | --- |
+| `SHARED_DATA_BACKEND` | `postgres` |
+| `SHARED_DATA_DATABASE_URL` | Read-only application account on the shared PostgreSQL release |
+| `SHARED_DATA_SSLROOTCERT` | Path to the CA file for verified TLS |
+| `MODULE4_LLM_PROVIDER` | `openai` |
+| `MODULE4_LLM_API_KEY` | OpenAI API key, as a secret value |
+
+`PORT` is set by Render. Sign-in is demo-only, so do not expose a site holding client data publicly.
+
+---
+
+## Shared data platform
+
+All modules read one shared, versioned data release built by the data platform (raw files → Bronze/Silver/Gold →
+serving views, as DuckDB locally or PostgreSQL when shared). Modules do not run their own ETL.
+
+- Start with the [shared-data guide](docs/data/README.md): architecture, local build, database access and the
+  integration guide for each module.
+- Field definitions: [Gold dictionary](docs/data/v3-gold-data-dictionary.md).
+- Package commands: [data_platform README](data_platform/README.md).
+
+Business data runs through June 30, 2026. Estimated values are separate, opt-in views and never replace
+reported facts.
+
+---
+
+## Repository layout
 
 ```text
-marvel-cpg-ai-platform/
-│
-├── app.py                      # Root Application Shell: Executive Auth & Multi-Module Nav Tabset
-├── integrated_app.py           # All four modules on one shared publication (demo sign-in); the app the Docker image starts
-├── requirements.txt            # Root dependencies (Shiny, Plotly, Pandas, Psycopg2, etc.)
-├── Dockerfile                  # Production container definition for local & Render deployments
-├── docker-compose.yml          # Container service definition with environment variable injection
-│
-├── www/                        # Static Web Assets (zero Python string parsing overhead)
-│   ├── styles.css              # 5-color luxury Apple design system (#73fbd3, #44e5e7, #59d2fe, #4a8fe7, #5c7aff)
-│   ├── app.js                  # Asynchronous KPI number-shuffling animations
-│   ├── marvel_logo.jpg         # Brand monogram logo
-│   └── marvel_logo_thumb.jpg   # Brand thumbnail
-│
-├── shared/                     # Cross-Module Infrastructure
-│   ├── data.py                 # Centralized, non-blocking Aiven PostgreSQL loader & CSV fallback
-│   └── auth.py                 # Role-based auth (Director Elena Rostova & 6 Field Rep profiles)
-│
-├── modules/
-│   ├── module_1/               # Module 1: Commercial Execution Analytics Dashboard
-│   │   ├── ui.py               # Portfolio filters, 5 KPI hero tiles, and 4 visualization sections
-│   │   └── server.py           # Reactive scopes (SO, SI, AU) & 10 Plotly chart renderers
-│   │
-│   ├── module_2/               # Module 2: Predictive Out-of-Stock Risk Engine (t+7 Days)
-│   │   ├── ui.py               # ML benchmark scorecard, feature gain chart, and route ranking table
-│   │   └── server.py           # Supervised classification / time-series inference & priority ranking
-│   │
-│   ├── module_3/               # Module 3: Negotiation Simulator (runs in integrated_app.py)
-│   │   ├── ui.py, server.py    # Deal simulator (three proposals vs the guardrail) and price-change pages
-│   │   ├── calc.py             # Pure deal economics, versioned guardrail verdict, price response
-│   │   └── data.py             # Scoped reads of the shared publication (the copy Module 1 builds)
-│   │
-│   └── module_4/               # Module 4: Commercial Copilot (Text-to-SQL & RAG), see its README
-│       ├── ui.py, server.py    # Copilot tab: question box, example questions, answers with charts and citations
-│       ├── agent.py, router.py # Routes each question to the data path or the knowledge path
-│       ├── nlq.py, sandbox.py, sql_guard.py  # Text-to-SQL on a per-user scoped sandbox with SQL checks
-│       └── rag.py              # Cited answers from knowledge_base/ (12 authorized documents)
-│
-├── knowledge_base/             # Module 4 RAG corpus: documents, PDFs, registry, exported vector index
-│
-└── data_platform/              # Shared V3 Medallion Data Engine (DuckDB Bronze/Silver/Gold Marts)
+integrated_app.py         The app: all four modules on one shared data release
+shared/                   Shell, sign-in, runtime (pinned data source) and the shared design (ui_kit)
+modules/module_1/         Business Performance
+modules/module_2/         Stockout Risk: modelling, scoring, ranking, monitoring and pages
+modules/module_3/         Negotiation Simulator
+modules/module_4/         Commercial Copilot: routing, Text-to-SQL sandbox, cited RAG
+knowledge_base/           The Copilot's 12 authorized documents and index
+data_platform/            Shared data build, validation and publishing
+docs/                     Integrated app guide, data guides, project notes
+notebooks/                Exploratory analysis
+tests/                    Unit tests and the browser acceptance suite
+app.py, www/              Legacy app (reference only)
 ```
 
 ---
 
-## 🧩 The 4 Core Integrated Modules
+## Tests
 
-### 📊 Module 1 — Commercial Execution Analytics Dashboard
-* **Work Type**: Exploratory Data Analysis (EDA) + Interactive Visualization (data through the publication's as-of date)
-* **Target Users**: Regional Commercial Director (*Elena Rostova*) and Field Sales Representatives (*Alex Mercer, Beatrice Vance, etc.*)
-* **Required KPIs** (no client-approved targets yet; the team's display references are optional and labelled as such):
-  - **MSL Compliance %**: Share of assessable store-days with every must-stock (MSL) SKU in stock.
-  - **OOS Rate %**: Share of store-SKU-days with known stock that were at zero, across channels and regions.
-  - **Sell-In vs Sell-Out Gap**: Invoiced units vs consumer sell-out units over complete biweekly periods.
-  - **Shelf Share %**: shown as the audited own-SKU shelf allocation (the selected products' share among the client's own products); competitor shelf space is not in the current data.
-  - **Planogram Compliance %**: Share of audited SKU rows placed as the planogram specifies.
-* **Features**: Filters by date, channel, region, MSL products and SKU; a Reported / Estimated data view switch; a store ranking by a composite score of the five KPIs; store cards with trend, peer comparison, a radar comparison and the assigned reps; a state map with city-level store bubbles; sell-in vs sell-out per biweekly period with how long a gap has lasted; stock status heatmap, stockout duration, brand compliance and trade-term views.
+```bash
+uv run --extra app --extra module4 python -m unittest discover -s tests
+uv run --extra app --extra module4 --extra postgres python tests/browser/run_integrated_acceptance.py --out <evidence folder>
+```
 
-### 🎯 Module 2 — Predictive Out-of-Stock Risk Engine
-* **Work Type**: Machine Learning — Supervised Classification & Forecasting
-* **Target Variable**: Probability of store-SKU stockout in the next 7 days ($t+7$).
-* **Suggested Algorithms**: LightGBM, XGBoost, Random Forest, or LSTM for time series.
-* **Input Features**: 7-day rolling sales velocity, current on-hand inventory, planogram compliance flag, shelf share frontage %, channel type, and MSL priority.
-* **Model Governance & Benchmark Targets**:
-  - Precision $\ge 0.75$ (Achieved: **78.6%**)
-  - Recall $\ge 0.70$ (Achieved: **81.4%**)
-  - ROC-AUC $\ge 0.80$ (Achieved: **0.879**)
-* **Output**: Prioritized Store Visit Routing Table ranking stores by immediate stockout urgency.
-
-### 💼 Module 3 — Commercial Negotiation Simulator
-* **Work Type**: Pricing Scenario Modeling & Policy Guardrail Enforcement
-* **Target Users**: Field Sales Reps during buyer discussions and Regional Managers approving overrides.
-* **Deal simulator (Scenario A)**: three proposals side by side for one account and product, checked against
-  the shared negotiation context's channel × category guardrail (cap, minimum margin, required commitment):
-  APPROVED / APPROVED WITH CONDITIONS (manager review) / REJECTED, with the volume needed to pay for extra discount.
-  The rules are a proposal pending client confirmation and are switchable in the page; nothing is auto-approved.
-* **Price change (Scenario B)**: volume, revenue and gross-profit response to a list-price increase, from an
-  elasticity estimated on the user's stores (or set by the user), with the assumptions stated.
-* See [the integrated app guide](docs/integrated-app.md#negotiation-simulator-module-3).
-
-### 🤖 Module 4 — Commercial Copilot
-* **Work Type**: Conversational Analytics (Text-to-SQL + Grounded RAG)
-* **Target Users**: Field representatives and regional managers.
-* **Capabilities**:
-  - Natural-language data questions translated into one checked SQL query over the signed-in user's stores only (shared business publication), with a written answer, an automatic chart, the result table and the SQL.
-  - Product, substitution, objection and policy questions answered only from the 12 authorized documents in `knowledge_base/`, with citations to document, version, section and PDF page.
-  - Runs on a local model (Ollama), so no data leaves the machine. Setup, the RAG pipeline and the practice evaluation are in the [Module 4 README](modules/module_4/README.md).
+The browser suite builds synthetic data and uses a placeholder model; it needs Node and Google Chrome.
 
 ---
 
-## 💾 Shared V3 Data Platform
+## Status and limitations
 
-Start with the [shared-data guide](docs/data/README.md) for architecture, local build, database access and **all four module integration guides**. Look up exact fields in the [Gold dictionary](docs/data/v3-gold-data-dictionary.md); package commands are in [data_platform](data_platform/README.md).
-
-The common Bronze/Silver/Gold layer supplies reported business data through June 30 and separate opt-in Estimated candidates. Module 2 development stops May 31; June independent test remains evidence-gated. Model/ranking release and module applications are separate work.
-
----
-
-## 🚀 Quick Start Guide
-
-### Option 1: Run Locally with Python & Shiny
-
-1. **Clone and Navigate**:
-   ```bash
-   git clone https://github.com/Zeye430/marvel-cpg-ai-platform.git
-   cd marvel-cpg-ai-platform
-   ```
-
-2. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *(Or with `uv`: `uv sync`)*
-
-3. **Configure Environment (`.env`)**:
-   Create a `.env` file in the root directory:
-   ```env
-   DATABASE_URL=postgresql://user:password@pg-marvel-service.aivencloud.com:port/marvel_cpg?sslmode=require
-   PORT=8000
-   ```
-
-4. **Launch the Unified Application**:
-   ```bash
-   shiny run --host 0.0.0.0 --port 8000 app.py
-   ```
-   Open [http://localhost:8000](http://localhost:8000) in your browser.
-
-   To run all four modules (business performance, stockout risk, negotiation simulator and Commercial
-   Copilot) on one shared publication, see the [integrated app guide](docs/integrated-app.md). Modules 1
-   and 3 now run only there; the root app's tabs for them point to it.
+- The data is synthetic demo data for a course project; store-to-rep assignments are demo assignments.
+- Module 2 predictions come from a review-candidate model until one passes the release gate; the page labels them.
+- Module 3's guardrail rules await client confirmation.
+- The Copilot's knowledge base is being updated to the new guardrail rules (standard plus additional discount).
 
 ---
 
-### Option 2: Run with Docker Compose
+## Legacy app
 
-The image starts `integrated_app.py` (all four modules). It holds no business data: set the source in `.env`,
-as described in the [integrated app guide](docs/integrated-app.md#run-it-in-docker).
-
-1. **Build and Run**:
-   ```bash
-   docker compose up --build
-   ```
-   *(To run in background: `docker compose up -d --build`)*
-
-2. **Access Dashboard**:
-   Navigate to [http://localhost:8000](http://localhost:8000).
-
-3. **Stop Container**:
-   ```bash
-   docker compose down
-   ```
+`app.py` is the earlier root app with its own login and CSV/PostgreSQL loader (`shared/data.py`, `shared/auth.py`,
+`www/`). It is no longer deployed and its Business Performance and Negotiation Simulator tabs point to the
+integrated app. Use `integrated_app.py` for anything new.
 
 ---
 
-## ☁️ Production Deployment on Render
+## Team workflow
 
-This repository is optimized for one-click deployment as a **Render Web Service**:
-
-1. **Create Web Service**:
-   - Connect your GitHub repository to Render.
-   - **Environment**: `Docker`
-   - **Branch**: `main` (or your active feature branch)
-
-2. **Configure Environment Variables in Render Dashboard**:
-   | Variable | Value / Description |
-   | :--- | :--- |
-   | `SHARED_DATA_BACKEND` | `postgres` |
-   | `SHARED_DATA_DATABASE_URL` | Read-only application account on the shared PostgreSQL release |
-   | `SHARED_DATA_SSLROOTCERT` | Path to the CA file for verified TLS |
-   | `PYTHONUNBUFFERED` | `1` (automatically set in Dockerfile) |
-   | `PORT` | Set automatically by Render (`10000`) |
-   | `MODULE4_LLM_PROVIDER` | `openai` (hosted model for the Copilot, `gpt-4.1-mini` by default) |
-   | `MODULE4_LLM_API_KEY` | OpenAI API key, added as a secret value in Render, never in Git |
-
-   Sign-in is demo-only, so do not expose a site holding client data publicly. With the hosted model, Copilot
-   questions and result rows are sent to OpenAI; see the [Module 4 README](modules/module_4/README.md).
-
-3. **How Port Scanning & Startup Optimization Works** (the four-module `app.py`; `integrated_app.py` opens nothing at import):
-   - `shared/data.py` uses an asynchronous preloading thread (`start_background_preload()`).
-   - The web server binds to `$PORT` in **under 2 seconds**, immediately passing Render's port-scanning health check and eliminating `"No open ports detected"` timeouts.
-   - High-cardinality facts (`fact_sell_out`) stream into memory using server-side cursors and categorical dtype encodings to stay comfortably below Render's 512 MB RAM ceiling.
-
----
-
-## 👥 Role-Based Authentication & Demo Logins
-
-The application includes an executive Apple-style luxury login screen with 1-click demo access:
-
-- **Regional Commercial Director (Elena Rostova)**:
-  - Click **⚡ Manager View (All Stores)**
-  - Access: Full portfolio oversight (All 221 stores, 4 regions, 23 SKUs, Sankey inventory flow, and territory-wide scorecards).
-- **Field Sales Representative (Alex Mercer / Rep A)**:
-  - Click **⚡ Field Rep (Alex Mercer · Rep A)**
-  - Access: Route-scoped route view restricted strictly to stores assigned to the active rep.
-
----
-
-## 🤝 Team Workflow
-
-- Keep `main` stable and do not develop directly on it.
-- Create a branch for each assigned task (`feature/*`).
-- Open a pull request when the work is ready for review.
-- Ask at least one teammate to review the pull request before merging.
-- Do not commit API keys, passwords, local environment files, or other secrets.
+- Keep `main` stable; work on a branch for each task.
+- Open a pull request when ready and ask at least one teammate to review it before merging.
+- Never commit API keys, passwords, `.env` files or other secrets.

@@ -1,15 +1,15 @@
 ---
 document_id: MCPG-06
 title: MSL, Planogram and In-Store Execution Standards
-version: 1.0.0
-effective_date: 2026-10-20
+version: 1.1.0
+effective_date: 2026-11-20
 document_type: policy
 origin: fictional_marvel
 authorized_source: Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); definitions from the capstone brief and official client clarifications; performance from the project dataset
 permission_scope: sales, manager
 status: draft_for_team_review
 owner: Team 1 knowledge base (Sanika Najan)
-data_basis: Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out
+data_basis: Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out
 related_documents: MCPG-02, MCPG-05, MCPG-08, PUB-02
 ---
 
@@ -103,7 +103,7 @@ A **secondary display** is any placement off the main shelf: an endcap, a free-s
 | Tier 2 | 35.1% | 34.0% | 42.9% |
 | Tier 3 | 16.8% | 16.6% | 25.8% |
 
-Secondary displays and extra shelf share are the execution commitments that can unlock a discount above the cap (MCPG-05, section 6).
+Secondary displays, extra shelf share, and full MSL compliance with planogram adherence are the execution commitments that can unlock an additional discount on top of the standard discount (MCPG-05, sections 4 and 6).
 
 ## 7 The store visit standard
 
@@ -139,7 +139,7 @@ Distributors redistribute to smaller stores that are not in Marvel's account lis
 | Status | Draft for team review |
 | Source | Store master `dim_stores` and product master `dim_products` |
 | Source | Tier definitions, MSL and planogram definitions: capstone brief and official client clarifications |
-| Source | Performance figures: project dataset, Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out |
+| Source | Performance figures: project dataset, Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out |
 
 **Open points and review notes**
 

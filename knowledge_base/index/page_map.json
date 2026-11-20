@@ -105,7 +105,7 @@
    "2.4 \"Your competitor gives me a bigger discount.\"": 2,
    "2.5 \"I'm overstocked / your products don't sell here.\"": 2,
    "2.6 \"Your deliveries are always late.\"": 2,
-   "2.7 \"Out-of-stocks don't matter, shoppers just buy something else.\"": 2,
+   "2.7 \"Out-of-stocks don't matter, shoppers just buy something else.\"": 3,
    "2.8 \"Why should I order more often? I'm a small store.\"": 3,
    "2.9 \"Following the planogram is too much work.\"": 3,
    "2.10 \"What do I get for giving you a secondary display?\"": 3,
@@ -115,30 +115,30 @@
    "3 When to escalate": 4,
    "Document control": 4
   },
-  "n_pages": 4
+  "n_pages": 5
  },
  "MCPG-05": {
   "pages": {
    "1 Purpose and scope": 1,
    "2 Price definitions": 1,
    "3 How to calculate net price and margin": 1,
-   "4 Guardrails by channel and category": 1,
+   "4 Guardrails by channel and category": 2,
    "4.1 Modern Trade: Dishwashing": 2,
    "4.2 Modern Trade: Laundry": 2,
-   "4.3 Modern Trade: Surface Cleaners": 2,
-   "4.4 Traditional Trade: Dishwashing": 2,
+   "4.3 Modern Trade: Surface Cleaners": 3,
+   "4.4 Traditional Trade: Dishwashing": 3,
    "4.5 Traditional Trade: Laundry": 3,
    "4.6 Traditional Trade: Surface Cleaners": 3,
    "4.7 Distributor: Dishwashing": 3,
-   "4.8 Distributor: Laundry": 3,
-   "4.9 Distributor: Surface Cleaners": 3,
+   "4.8 Distributor: Laundry": 4,
+   "4.9 Distributor: Surface Cleaners": 4,
    "5 How a proposal is assessed": 4,
-   "6 Execution commitments (trade-offs)": 4,
-   "7 Distributors": 4,
-   "8 What a representative may and may not do": 4,
-   "Document control": 5
+   "6 Execution commitments (trade-offs)": 5,
+   "7 Distributors": 5,
+   "8 What a representative may and may not do": 5,
+   "Document control": 6
   },
-  "n_pages": 5
+  "n_pages": 6
  },
  "MCPG-06": {
   "pages": {
@@ -193,14 +193,14 @@
  "MCPG-09": {
   "pages": {
    "1 Purpose": 1,
-   "2 Reviewing a MANAGER OVERRIDE REQUIRED proposal": 1,
+   "2 Reviewing a proposal sent for MANAGER REVIEW": 1,
    "3 What to escalate above regional level": 1,
-   "4 Finding exceptions": 1,
+   "4 Finding exceptions": 2,
    "5 Coaching points for representatives": 2,
    "6 Known data limitations to keep in mind": 2,
    "Document control": 2
   },
-  "n_pages": 2
+  "n_pages": 3
  },
  "PUB-01": {
   "pages": {

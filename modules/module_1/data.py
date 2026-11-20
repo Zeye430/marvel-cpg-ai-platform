@@ -240,6 +240,7 @@ class Module1Data:
         self.lock = threading.Lock()
         self.scope = cache.reader.principal_scope(self.principal_id)
         self.manager = self.scope["roles"] == ["manager"]
+        self.evicted = False  # set by the pool when the copy is closed only to make room
         with self.lock:
             for statement in _MODE_VIEWS[mode]:
                 cache.con.execute(statement)
@@ -254,14 +255,19 @@ class Module1Data:
             self.cache.close()
 
     def check(self):
-        """Fresh scope/publication check; raises (and closes) on any change."""
+        """Fresh scope/publication check; raises (and closes) on any change. A copy the pool closed only to
+        make room raises DataEvicted instead, so the session reloads it rather than asking to sign in again."""
         with self.lock:
+            if self.evicted and self.cache.closed:
+                raise DataEvicted("Module 1 data was closed to make room; reloading")
             self.scope = self.cache.check_access()
             return self.scope
 
     def _df(self, sql, params=None):
         with self.lock:
             if self.cache.closed:
+                if self.evicted:
+                    raise DataEvicted("Module 1 data was closed to make room; reloading")
                 raise PermissionError("Module 1 data was closed after an account or source change")
             # DuckDB requires exactly the referenced named parameters.
             used = {k: v for k, v in (params or {}).items() if f"${k}" in sql}
@@ -690,6 +696,11 @@ class Module1Data:
         return out
 
 
+class DataEvicted(RuntimeError):
+    """The copy was closed only to make room in the pool (not an access or source change); the session can
+    load it again quietly."""
+
+
 class Module1Pool:
     """Recent per-principal caches for one pinned publication, one per data view; never shared across
     principals."""
@@ -746,7 +757,9 @@ class Module1Pool:
                     evicted += [self._items.pop(k) for k in list(self._items)
                                 if k[1] == principal_id and k[:3] != key[:3]]
                     while len(self._items) > self.size:
-                        evicted.append(self._items.popitem(last=False)[1])
+                        oldest = self._items.popitem(last=False)[1]
+                        oldest.evicted = True  # only to make room: its session may reload it quietly
+                        evicted.append(oldest)
             finally:
                 with self._lock:
                     self._building.pop(key, None)

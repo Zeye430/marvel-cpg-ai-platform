@@ -484,7 +484,8 @@ def card_metric_rows(row, stores, prior_row=None, trend=None):
         pattern = "{:+.1f}%" if better == "zero" else "{:.1f}%"
         change = _delta(value, prior_row.get(column) if prior_row is not None else None, better)
         direction = trend_direction(trend, metric, better) if trend is not None else None
-        verdict = kit.pill(direction["verdict"], VERDICT_KIND[direction["verdict"]],
+        # "13 wk:" says which comparison this is; the ▲/▼ pill next to it compares with the previous period
+        verdict = kit.pill(f"13 wk: {direction['verdict']}", VERDICT_KIND[direction["verdict"]],
                            title=f"Last 13 weeks: later half {fmt(direction['late'], pattern)} vs earlier half "
                                  f"{fmt(direction['early'], pattern)}", **{"data-verdict": direction["verdict"]}) \
             if direction else kit.pill("Too little history", "outline", title="Fewer than four periods with a value")

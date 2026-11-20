@@ -402,6 +402,36 @@ class Module1SharedTests(unittest.TestCase):
         self.assertIsNot(pool.get("rep"), first)
         self.assertEqual(second.principal_id, "rep")
 
+    def test_a_copy_closed_to_make_room_asks_for_a_reload_not_a_new_sign_in(self):
+        """The review scenario: more sessions than the pool holds. The oldest copy is closed, but its session
+        is told to reload (DataEvicted), not to sign in again, and the reload gives working data."""
+        from modules.module_1.data import DataEvicted
+        pool = Module1Pool(reader_for(self.path), size=1)
+        first = pool.get("mgr")
+        other = pool.get("rep")  # a second account pushes the first copy out
+        self.addCleanup(other.close)
+        self.assertTrue(first.closed)
+        self.assertTrue(first.evicted)
+        with self.assertRaises(DataEvicted):
+            first.check()
+        with self.assertRaises(DataEvicted):
+            first.query("SELECT 1 AS x")
+        again = pool.get("mgr")
+        self.addCleanup(again.close)
+        self.assertFalse(again.closed)
+        self.assertEqual(again.principal_id, "mgr")
+        again.check()
+
+    def test_a_copy_closed_for_an_access_change_still_asks_to_sign_in(self):
+        from modules.module_1.data import DataEvicted
+        pool = Module1Pool(reader_for(self.path))
+        item = pool.get("mgr")
+        item.close()  # closed by the session or an access/publication change, not by the pool making room
+        self.assertFalse(item.evicted)
+        with self.assertRaises(Exception) as caught:
+            item.query("SELECT 1 AS x")
+        self.assertNotIsInstance(caught.exception, DataEvicted)
+
 
 class Module1ServerTextTests(unittest.TestCase):
     def test_no_unsupported_claims_or_legacy_sources_in_module1(self):

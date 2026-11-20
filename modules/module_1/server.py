@@ -28,7 +28,7 @@ from shared import ui_kit as kit
 from .charts import (CHARTS, STATUS_CODES, Chart, NonFiniteChart, _reject, chart_layout, city_frame, city_key,  # noqa: F401
                      figure_json,
                      fmt as _fmt, locked, palette, plot, render_chart, state)
-from .data import Filters, composite_scores
+from .data import DataEvicted, Filters, composite_scores
 from .panels import (KPI_SPECS, KPI_TARGETS, KPI_TILES, _delta, city_stores, flow_summary,  # noqa: F401
                      flow_table, kpi_detail, kpi_tiles, mode_toggle, ranking_panel, store_card)
 from .ui import PAGE_ICONS, PAGES
@@ -215,6 +215,9 @@ def rep_directory(reader):
     return directory
 
 
+RELOADING = "Reloading your data…"
+
+
 def _load_reason(error):
     """A sanitized reason for a failed load (class name only, except the platform's own messages)."""
     if isinstance(error, PermissionError):
@@ -295,10 +298,69 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
         except Exception as error:  # sanitized
             return gen, pid, None, None, _load_reason(error)
 
+    @reactive.extended_task
+    async def refresh_task(pid, gen, which):
+        """Quietly rebuilds a copy the pool closed only to make room (same principal, fresh scope check)."""
+        try:
+            item = await asyncio.to_thread(lambda: runtime.module1_pool().get(pid, which))
+            return gen, pid, which, item, None
+        except Exception as error:  # sanitized
+            return gen, pid, which, None, _load_reason(error)
+
+    def _held():
+        with reactive.isolate():
+            return data(), (estimated_data()[0] if estimated_data() is not None else None)
+
+    @reactive.poll(lambda: tuple(bool(x is not None and x.closed) for x in _held()), 1)
+    def closed_tick():
+        """Changes when one of this session's copies is closed (checked once a second, attribute read only)."""
+        return tuple(bool(x is not None and x.closed) for x in _held())
+
+    refreshing = {"pending": None}
+
+    @reactive.effect
+    def _reload_evicted():
+        """A copy closed only to make room is reloaded while the module is open; the other view's copy is dropped
+        and loads again when it is chosen. Never for an access or publication change (those still ask to sign in)."""
+        closed_tick()
+        mode()  # switching views can make the closed copy the active one
+        pid = principal()
+        if pid is None or active_module() != MODULE_KEY:
+            return
+        with reactive.isolate():
+            reported, estimated = data(), (estimated_data()[0] if estimated_data() is not None else None)
+            active = "estimated" if mode() == "estimated" and estimated is not None else "reported"
+            if active == "reported" and estimated is not None and estimated.evicted and estimated.closed:
+                estimated_data.set(None)
+                estimate_state.set(("idle", ""))
+            item = estimated if active == "estimated" else reported
+            if item is not None and item.evicted and item.closed and refreshing["pending"] is None:
+                refreshing["pending"] = active
+                refresh_task.invoke(pid, generation(), active)
+
+    @reactive.effect
+    def _refreshed():
+        if refresh_task.status() != "success":
+            return
+        gen, pid, which, item, reason = refresh_task.result()
+        with reactive.isolate():
+            if refreshing["pending"] != which:
+                return
+            refreshing["pending"] = None
+            if gen != generation() or pid != principal():
+                return  # signed out or switched account meanwhile
+            if item is None:
+                load_state.set(("unavailable", reason))
+            elif which == "reported":
+                data.set(item)
+            elif estimated_data() is not None:
+                estimated_data.set((item, estimated_data()[1]))
+
     @reactive.effect
     async def _on_principal():
         pid = principal()
         with reactive.isolate():
+            refreshing["pending"] = None
             generation.set(generation() + 1)
             data.set(None)
             estimated_data.set(None)
@@ -567,9 +629,12 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
             return None, reason
         if synced():  # re-check whenever the filters change
             input.m1_dates(), input.m1_channel(), input.m1_region(), input.m1_sku(), input.m1_msl()
+        closed_tick()
         try:
             item.check()
             return item, None
+        except DataEvicted:
+            return None, RELOADING
         except Exception as error:
             return None, ("Your account scope or the shared publication changed; sign out and sign in again "
                           f"({type(error).__name__}).")
@@ -684,6 +749,8 @@ def module_1_server(input, output, session, context: dict, auth_state: dict):
         item, check_reason = checked()
         if kind in ("signed_out",) or item is not None:
             return None
+        if check_reason == RELOADING:
+            return kit.notice(RELOADING, kind="info", role="status", id="m1-reloading")
         if kind in ("idle", "loading"):
             with reactive.isolate():
                 clock = input.m1_client_clock() if "m1_client_clock" in input else None

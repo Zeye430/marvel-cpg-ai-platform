@@ -19,7 +19,8 @@ import plotly.graph_objects as go
 from htmltools import TagList, tags
 from shiny import reactive, render, req, ui
 
-from modules.module_1.server import plot, safe, state
+from modules.module_1.data import DataEvicted
+from modules.module_1.server import RELOADING, plot, safe, state
 from shared import ui_kit as kit
 
 from . import calc
@@ -312,10 +313,64 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
                 f"Shared data could not be loaded ({type(error).__name__})."
             return gen, pid, None, None, reason
 
+    @reactive.extended_task
+    async def refresh_task(pid, gen):
+        """Quietly rebuilds the copy the shared pool closed only to make room (fresh scope check)."""
+        try:
+            item = await asyncio.to_thread(lambda: Module3Data(runtime.module1_pool().get(pid)))
+            return gen, pid, item, None
+        except PermissionError:
+            return gen, pid, None, "Your account has no data scope in the shared publication."
+        except Exception as error:  # sanitized: class name only
+            return gen, pid, None, f"Shared data could not be loaded ({type(error).__name__})."
+
+    def _held_closed():
+        with reactive.isolate():
+            item = data()
+        return bool(item is not None and item.item.closed)
+
+    @reactive.poll(_held_closed, 1)
+    def closed_tick():
+        """Changes when this session's copy is closed (checked once a second, attribute read only)."""
+        return _held_closed()
+
+    refreshing = {"pending": False}
+
+    @reactive.effect
+    def _reload_evicted():
+        """The copy closed only to make room is reloaded while the simulator is open; access or publication
+        changes still ask to sign in again."""
+        closed_tick()
+        pid = principal()
+        if pid is None or active_module() != MODULE_KEY:
+            return
+        with reactive.isolate():
+            item = data()
+            if item is not None and item.item.evicted and item.item.closed and not refreshing["pending"]:
+                refreshing["pending"] = True
+                refresh_task.invoke(pid, generation())
+
+    @reactive.effect
+    def _refreshed():
+        if refresh_task.status() != "success":
+            return
+        gen, pid, item, reason = refresh_task.result()
+        with reactive.isolate():
+            if not refreshing["pending"]:
+                return
+            refreshing["pending"] = False
+            if gen != generation() or pid != principal():
+                return
+            if item is None:
+                load_state.set(("unavailable", reason))
+            else:
+                data.set(item)
+
     @reactive.effect
     async def _on_principal():
         pid = principal()
         with reactive.isolate():
+            refreshing["pending"] = False
             generation.set(generation() + 1)
             data.set(None)
             applied["key"] = None
@@ -375,9 +430,12 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         for name in INTERACTION_INPUTS:                          # re-check on every interaction, not only
             if name in input:                                    # the selectors (proposal-only changes too)
                 input[name]()
+        closed_tick()
         try:
             item.check()
             return item, None
+        except DataEvicted:
+            return None, RELOADING
         except Exception as error:
             return None, ("Your account scope or the shared publication changed; sign out and sign in again "
                           f"({type(error).__name__}).")
@@ -428,6 +486,8 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         item, check_reason = checked()
         if kind == "signed_out" or item is not None:
             return None
+        if check_reason == RELOADING:
+            return kit.notice(RELOADING, kind="info", role="status", id="m3-reloading")
         if kind in ("idle", "loading"):
             return state("Preparing the negotiation context…", "This reads the stores your account can see. It is "
                          "instant if Business Performance has already loaded.")

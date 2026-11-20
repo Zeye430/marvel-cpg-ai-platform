@@ -701,7 +701,7 @@ Source: [The Data-Driven Newsvendor with Censored Demand Observations](https://w
 - Availability and revision timestamps for orders, schedules, promotions, receipts, and audits in production.
 - Whether real store `inventory_level` means shelf stock or total on-hand; V3's exact receipt linkage resolves the simulation, not the production physical scope.
 - The normalization universe for `shelf_share_pct` and any separate competitor-share data needed for Module 1.
-- Client confirmation of the additional `dim_guardrails.csv` changes supplied in the ZIP but omitted from the four-file replacement instruction. Keep this dimension unapproved for Module 3 rules until resolved.
+- Client confirmation of the `dim_guardrails.csv` revision with `standard_discount_pct` and of the provisional reading used by Module 3 (total = standard + additional; the maximum applies to the additional discount; Sales authority; distributor commitments). The dimension stays `Requires review` until confirmed.
 - Aggregation grain for promotion `min_volume_units`.
 - Whether later block-masking or challenger-model results justify segment-specific imputation beyond the common MVP framework.
 - Final weighting, if any, for partial-window confirmed positives in training.

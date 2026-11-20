@@ -124,6 +124,11 @@ class SharedRuntime:
         return self._split_reason(label, record)
 
     # ------------------------------------------------------------------ module services
+    def module1_pool(self):
+        """Module 1's per-principal scoped caches on the shared reader (raises SourceUnavailable)."""
+        from modules.module_1.data import Module1Pool
+        return self._service("module1", lambda: (Module1Pool(self.reader()), False))
+
     def module2_service(self):
         """(service, reason): the standalone Module 2 service bound to the shared reader."""
         def build():

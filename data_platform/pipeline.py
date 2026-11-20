@@ -166,7 +166,8 @@ def _build(config, contract, publish_silver):
         rules = connection.execute("SELECT DISTINCT rule_version FROM silver.dim_guardrails").fetchall()
         for (rule_version,) in rules:
             connection.execute("INSERT INTO meta.policy_registry VALUES ('trade_guardrails', ?, 'Requires review', NULL, NULL, ?, ?)",
-                               [rule_version, "retained dim_guardrails.csv", "Discount interpretation requires approval"])
+                               [rule_version, "dim_guardrails.csv (standard + additional discount revision)",
+                                "Owner-proposed provisional policy; client confirmation and Sales authority pending"])
         for policy in ("same_day_end_simulation_v1", "initial_schedule_known_at_order_simulation_v1",
                        "campaign_known_at_start_simulation_v1", "static_simulation_assortment_v1"):
             connection.execute("INSERT INTO meta.policy_registry VALUES (?, '1', 'Assumed for simulation', NULL, NULL, ?, ?)",

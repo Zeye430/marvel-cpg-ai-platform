@@ -1,8 +1,9 @@
 """
 modules/module_3/__init__.py
 ============================
-Module 3: Commercial Negotiation Simulator
-Scenario modeling for trade discount limits, margin floors, and execution trade-offs.
+Module 3: Negotiation Simulator (brief Scenarios A and B), hosted in the integrated workspace:
+a deal simulator that checks three proposals against the account's commercial guardrail, and a
+price-change simulator from an elasticity estimated on the user's stores.
 """
 
 from .ui import module_3_ui

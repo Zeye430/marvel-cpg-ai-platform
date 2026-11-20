@@ -15,7 +15,7 @@ The feature and isolated label schemas are deliberately not served here.
 
 - `build_id` identifies the source build; `dataset_hash` identifies all authorized input bytes. Do not mix publications or cutoffs.
 - `*_observed` / `*_reported*` mean source-reported facts. Missing values are unknown, not zeros. `inventory_data_status` / `sales_data_status` retain that distinction.
-- `*_pct` is percentage points on a 0–100 scale, except **raw** `min_target_margin_source`, whose scale is unresolved. Model `probability` and `threshold` use 0–1.
+- `*_pct` is percentage points on a 0–100 scale. `min_target_margin_source` is read as a gross margin % on net price under the provisional guardrail rules (client confirmation pending). Model `probability` and `threshold` use 0–1.
 - `*_units` / unit counts are quantities, not money. Financial amounts have no supplied currency code. Product list/cost/consumer prices are static references, not historical price histories.
 - Reported views remain default. Three separate `estimated_*` candidate views require explicit reader opt-in and UI Estimated/Unknown/Candidate labels. Daily candidate detail declares `operational_estimate_candidate`; component marts retain their source `operational_estimate` value and release metadata. This is not operational approval. Commercial views retain official `alignment_basis=event_date`.
 - `period_is_complete`, `covered_start/end`, coverage and `comparison_status` qualify period comparisons. An absent invoice is not automatically zero flow without the completeness assumption.
@@ -271,6 +271,13 @@ Grain: as_of_date × store_id × sku_id × rule_version.
 Account scoped: yes.
 Reader date column: `as_of_date`.
 
+`negotiation_context.v2` (source contract `v3.sources.2`) adds `standard_discount_pct_source`, the
+channel × category standard discount. Under the provisional rules the total discount is
+`standard_discount_pct_source` + a proposed additional discount, `max_discount_pct_source` is the maximum
+**additional** discount and `min_target_margin_source` the minimum gross margin % on net price. The
+`weighted_trade_discount_pct_28d` history is not the standard. Releases built under `v3.sources.1` do not
+have this column; their `max_discount_pct_source` comes from the earlier guardrail table.
+
 | Field | DuckDB type |
 | --- | --- |
 | `build_id` | `VARCHAR` |
@@ -306,6 +313,7 @@ Reader date column: `as_of_date`.
 | `historical_static_cost_margin_pct` | `DOUBLE` |
 | `source_violation_lines_28d` | `BIGINT` |
 | `invoice_coverage_status` | `VARCHAR` |
+| `standard_discount_pct_source` | `DECIMAL(9,4)` |
 | `max_discount_pct_source` | `DECIMAL(9,4)` |
 | `min_target_margin_source` | `DECIMAL(9,4)` |
 | `required_exec_tradeoff` | `VARCHAR` |

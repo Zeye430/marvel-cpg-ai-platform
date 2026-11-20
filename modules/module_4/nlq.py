@@ -335,6 +335,10 @@ _FILTER = re.compile(r"\b(\w+)\s*(?:=|<>|!=)\s*'([^']*)'|\b(\w+)\s+(?:NOT\s+)?IN
 _LIKE = re.compile(r"\b(\w+)\s+(?:NOT\s+)?I?LIKE\s+'([^']*)'", re.I)
 
 
+# "my stores" is the sandbox's scope, never a value: channel = 'My Stores' must not pass because the question says "stores".
+SCOPE_WORDS = {"all", "assigned", "our", "store", "stores", "territory", "your"}
+
+
 def ungrounded_filters(sql: str, question: str) -> list[str]:
     """Text filters whose values never appear in the question (e.g. delivery_status = 'On Time').
 
@@ -348,7 +352,7 @@ def ungrounded_filters(sql: str, question: str) -> list[str]:
         return token in question.lower() or any(len(w) >= 4 and token.startswith(w) for w in words)
     for column, pattern in _LIKE.findall(sql):     # every word must come from the question (no placeholders)
         tokens = [t for t in re.findall(r"[a-z0-9]+", pattern.lower()) if len(t) >= 3]
-        if tokens and not all(mentioned(t) for t in tokens):
+        if tokens and (set(tokens) <= SCOPE_WORDS or not all(mentioned(t) for t in tokens)):
             flagged.append(f"{column} LIKE '{pattern}'")
     for match in _FILTER.finditer(sql):
         column = match.group(1) or match.group(3)
@@ -357,7 +361,7 @@ def ungrounded_filters(sql: str, question: str) -> list[str]:
             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) or not value.strip():
                 continue
             tokens = [t for t in re.findall(r"[a-z0-9]+", value.lower()) if len(t) >= 3]
-            grounded = any(mentioned(t) for t in tokens)
+            grounded = any(mentioned(t) for t in tokens) and not set(tokens) <= SCOPE_WORDS
             if tokens and not grounded:
                 flagged.append(f"{column} = '{value}'")
     return flagged

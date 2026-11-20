@@ -33,12 +33,13 @@ def build_negotiation_context(con, as_of, quality):
                100.0*(p.list_price-p.unit_cost)/nullif(p.list_price,0) AS static_reference_margin_pct,
                100.0*(i.net_sales_reported_28d-i.sell_in_units_reported_28d*p.unit_cost)/nullif(i.net_sales_reported_28d,0) AS historical_static_cost_margin_pct,
                i.source_violation_lines_28d,'Reported invoice rows; extract completeness unconfirmed' AS invoice_coverage_status,
+               g.standard_discount_pct AS standard_discount_pct_source,
                g.max_discount_pct AS max_discount_pct_source,g.min_target_margin AS min_target_margin_source,
                g.required_exec_tradeoff,g.rule_version,'Requires review' AS policy_status,
-               'Total/extra composition and source margin units require approval' AS policy_limitation,
+               'Provisional: total discount = standard + additional; Sales authority, distributor commitments and client approval unconfirmed' AS policy_limitation,
                a.last_audit_id,a.last_audit_date,a.days_since_last_audit,
                a.planogram_compliance_latest,a.secondary_display_latest,a.shelf_share_pct_latest,
-               'negotiation_context.v1' AS context_version
+               'negotiation_context.v2' AS context_version
         FROM gold.mart_store_sku_daily d JOIN _products p USING(sku_id)
         LEFT JOIN _guardrails g ON g.channel=d.channel AND g.category=d.category
         LEFT JOIN sales s USING(store_id,sku_id) LEFT JOIN invoices i USING(store_id,sku_id)

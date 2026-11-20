@@ -584,6 +584,21 @@ class PredictionSemanticsTests(PredictionCase):
             self.assertIn("There is no forecast for this", out.answer)
             self.assertEqual(copilot.llm.calls, [])
 
+    def test_stockouts_on_a_named_day_get_a_clear_answer(self):
+        from modules.module_4.agent import NAMED_DAY_UNAVAILABLE, data_intent
+        for question in ("Which products may experience stockouts on Saturday?", "Will SKU X run out this weekend?",
+                         "Which stores are at risk on Friday?", "Any OOS next Monday?"):
+            self.assertEqual(data_intent(question), "named_day", question)
+        for question in ("Which SKUs were out of stock last Saturday?", "What is the out-of-stock rate on Saturdays?",
+                         "How many stockouts were reported on weekends?", "Any OOS on Monday June 29?",
+                         "Were there stockouts on Saturday 2026-06-27?", "What were sales on Saturday?"):
+            self.assertIsNone(data_intent(question), question)
+        question = "Which products may experience stockouts on Saturday?"
+        for runtime in (self.runtime(), self.unreleased()):
+            copilot = self.copilot(runtime, [fenced(HISTORY_SQL), "Stockouts are expected on Saturday."])
+            out = self.ask(copilot, question)
+            self.assertEqual((out.status, out.sql, out.answer), ("unavailable", None, NAMED_DAY_UNAVAILABLE))
+
     def test_history_answers_never_read_as_predictions(self):
         out = self.ask(self.copilot(self.runtime(), [fenced(HISTORY_SQL), PREDICTIVE_SUMMARY]),
                        "Which SKUs were out of stock last week?")

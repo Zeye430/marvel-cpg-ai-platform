@@ -1,6 +1,7 @@
 """
-Module 1: Commercial Execution Analytics Dashboard
-EDA and interactive visualization across channel, region, SKU, and user role.
+Module 1: Business Performance (Commercial Execution Analytics Dashboard)
+The five client KPIs and interactive charts across channel, region, SKU and user role, read
+from the shared account-scoped business publication (modules/module_1/data.py).
 """
 
 from .ui import module_1_ui

@@ -101,7 +101,6 @@ class PostgresServingReader:
         self.config = config
         self._pool = _Connections(config)
         self._cursors = CursorCodec()
-        contract = load_contract()
         with self._pool.transaction() as cur:
             if release_id is None:
                 cur.execute("SELECT publication_id, release_id FROM platform_meta.current_release")
@@ -117,6 +116,11 @@ class PostgresServingReader:
             if not row:
                 raise DataUnavailable("Release is not a published, validated shared data release")
         _, source_artifact_id, manifest, views, row_counts = row
+        try:                                     # the release's own columns, even under an earlier contract
+            contract = load_contract(manifest.get("contract_sha256") or "")
+        except ValueError:
+            raise DataUnavailable("The published release uses a serving contract this code does not know; "
+                                  "update the application") from None
         self.release_id = release_id
         self._schema = "platform_release_" + release_id
         self._views = frozenset(views)

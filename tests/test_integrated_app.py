@@ -1,4 +1,4 @@
-"""Integrated Module 2 + Module 4 app: one pinned shared source, demo identities, explicit failures.
+"""Integrated Module 1 + 2 + 4 app: one pinned shared source, demo identities, explicit failures.
 
 SYNTHETIC local artifacts only (tests/postgres_fixtures builds them in a temporary
 directory with a stub scoring bundle, no model fitting); no cloud connection, client
@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN_PREFIXES = ("SHARED_DATA_", "MODULE2_", "MODULE4_", "DATABASE_URL", "APP_STATE_")
-FORBIDDEN = ("modules.module_1", "modules.module_3", "shared.data", "shared.auth")
+FORBIDDEN = ("shared.data", "shared.auth", "shinywidgets")
 
 
 def clean_env(**extra):
@@ -25,7 +25,7 @@ def clean_env(**extra):
 
 
 class EntryImportTests(unittest.TestCase):
-    """The two-module entry imports neither Module 1/3 nor the legacy CSV loader, and opens nothing."""
+    """The entry imports neither the legacy CSV loader / sign-in nor shinywidgets, and opens nothing."""
 
     def run_import(self, env):
         code = ("import sys, json, integrated_app\n"
@@ -41,9 +41,9 @@ class EntryImportTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr[-2000:])
         return json.loads(done.stdout.strip().splitlines()[-1])
 
-    def test_entry_imports_only_modules_2_and_4(self):
+    def test_entry_imports_all_four_modules(self):
         result = self.run_import({})
-        self.assertEqual(result["modules"], ["module_2", "module_4"])
+        self.assertEqual(result["modules"], ["module_1", "module_2", "module_3", "module_4"])   # Business Performance opens first
         self.assertEqual(result["forbidden"], [])
         self.assertFalse(result["opened_at_import"])
         self.assertFalse(result["ready"])                     # no publication configured: unavailable, no fallback
@@ -65,8 +65,31 @@ class ShellTests(unittest.TestCase):
     def test_demo_identities_are_server_owned_and_labelled(self):
         from shared.shell import DEMO_ACCOUNTS
         self.assertEqual([a.principal_id for a in DEMO_ACCOUNTS], ["demo:manager", "demo:rep-a", "demo:rep-b"])
-        self.assertTrue(all("(demo)" in a.name for a in DEMO_ACCOUNTS))
+        self.assertTrue(all("demo account" in a.title for a in DEMO_ACCOUNTS))
         self.assertEqual({a.role for a in DEMO_ACCOUNTS}, {"Regional Manager", "Field Rep"})
+        self.assertEqual(len({a.username for a in DEMO_ACCOUNTS}), 3)
+        self.assertTrue(all(a.avatar and a.avatar.endswith(f"/avatars/{a.key}.svg") for a in DEMO_ACCOUNTS))
+
+    def test_sign_in_needs_the_account_password(self):
+        from shared.shell import DEMO_ACCOUNTS, match_account
+        rep = DEMO_ACCOUNTS[1]
+        self.assertIs(match_account(rep.username, rep.password), rep)
+        self.assertIs(match_account(" Alex.Mercer ", rep.password), rep)          # user name: case and spaces
+        self.assertIsNone(match_account(rep.username, "wrong"))
+        self.assertIsNone(match_account(rep.username, ""))
+        self.assertIsNone(match_account("demo:rep-a", rep.password))              # never a principal id
+        self.assertIsNone(match_account(None, None))
+
+    def test_sign_in_page_fills_in_the_first_account(self):
+        from shared.shell import DEMO_ACCOUNTS, _login
+        page = str(_login())
+        first = DEMO_ACCOUNTS[0]
+        self.assertIn(f'value="{first.username}"', page)
+        self.assertIn('autocomplete="current-password"', page)
+        for demo in DEMO_ACCOUNTS:
+            self.assertIn(f'id="shell-account-{demo.key}"', page)
+            self.assertIn(demo.name, page)
+        self.assertNotIn("demo:manager", page)                                   # no principal reaches the browser
 
     def test_module_specs_must_be_distinct(self):
         from shared.shell import ModuleSpec, build_app
@@ -98,6 +121,44 @@ class ShellTests(unittest.TestCase):
         self.assertEqual(html.count('id="shell_signout"'), 1)
         self.assertEqual(seen["m2"]["module_label"], "Stockout Risk")
         self.assertTrue(seen["m4"]["hosted"])
+
+    def test_integrated_build_enables_all_four_modules(self):
+        from shared.shell import _app_ui
+        sys.modules.pop("integrated_app", None)
+        import integrated_app
+        contexts = {s.key: {"runtime": integrated_app.RUNTIME, "hosted": True, "module_label": s.label}
+                    for s in integrated_app.MODULES}
+        html = str(_app_ui(integrated_app.MODULES, contexts, "t"))
+        nav = html[html.index('id="shell-nav"'):html.index("Other</p>")]
+        for key, disabled in (("module_1", False), ("module_2", False), ("module_3", False), ("module_4", False)):
+            tag = nav[nav.rindex("<button", 0, nav.index(f'data-module="{key}"')):nav.index(f'data-module="{key}"')]
+            self.assertEqual('aria-disabled="true"' in tag, disabled, key)
+        self.assertIn('id="m1_nav"', nav)                              # Module 1's pages, under it
+        self.assertIn('id="m3_nav"', nav)                              # Module 3's pages, under it
+        self.assertIn('aria-current="page"', nav[max(0, nav.index('data-module="module_1"') - 400):
+                                                 nav.index('data-module="module_1"')])   # landing: Business Performance
+        ids = [i for i in __import__("re").findall(r' id="([^"]+)"', html)]
+        self.assertEqual(len(ids), len(set(ids)), sorted({i for i in ids if ids.count(i) > 1}))
+        m1 = html[html.index('id="m1-root"'):]
+        for legacy in ("sleek-card", "badge-telemetry-live", "LIVE TELEMETRY", "ambient-glow", "user_role_state"):
+            self.assertNotIn(legacy, m1)
+        m3 = html[html.index('id="m3-root"'):html.index('id="m3-root"') + 20000]
+        for legacy in ("sleek-card", "Automated Deal Assessment", "POLICY GUARDRAIL ENGINE", "chart_m3_waterfall"):
+            self.assertNotIn(legacy, m3)
+
+    def test_module_3_without_the_shared_runtime_reads_nothing(self):
+        from modules.module_3 import module_3_server, module_3_ui
+        html = str(module_3_ui({"channels": ["x"]}))                   # the legacy root app's dataset dict
+        self.assertIn("runs in the integrated workspace", html)
+        self.assertNotIn("m3_store", html)
+        self.assertIsNone(module_3_server(None, None, None, {"channels": ["x"]}, {}))
+
+    def test_module_1_without_the_shared_runtime_reads_nothing(self):
+        from modules.module_1 import module_1_server, module_1_ui
+        html = str(module_1_ui({"channels": ["x"]}))                   # the legacy root app's dataset dict
+        self.assertIn("runs in the integrated workspace", html)
+        self.assertNotIn("m1_dates", html)
+        self.assertIsNone(module_1_server(None, None, None, {"channels": ["x"]}, {}))
 
     def test_hosted_module_2_uses_the_app_sidebar_and_both_modules_use_the_shared_design(self):
         from modules.module_2.ui import module_2_ui
@@ -137,6 +198,7 @@ class SharedSourceTests(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertIs(service.reader, reader)
         self.assertIs(copilot.reader, reader)
+        self.assertIs(runtime.module1_pool().reader, reader)
         self.assertEqual(copilot.status()["artifact_id"], service.record["artifact_id"])
         self.assertEqual(copilot.status()["as_of"], service.record["as_of"])
         self.assertEqual(status["identity"]["model_publication_kind"], "Synthetic_demo")
@@ -148,6 +210,9 @@ class SharedSourceTests(unittest.TestCase):
                 sandbox = copilot.pool.get(pid)
                 self.assertEqual(sandbox.store_count, expected)
                 self.assertEqual(sandbox.artifact_id, service.record["artifact_id"])
+                m1 = runtime.module1_pool().get(pid)
+                self.assertEqual(m1.choices()["store_count"], expected)
+                self.assertEqual(m1.record["artifact_id"], service.record["artifact_id"])
         self.assertLess(reader.principal_scope("demo:rep-a")["stores"],
                         reader.principal_scope("demo:manager")["stores"])
 
@@ -198,6 +263,8 @@ class SharedSourceTests(unittest.TestCase):
         self.assertNotIn("hunter2", str(caught.exception))
         self.assertEqual(runtime.module2_service()[0], None)
         self.assertIsNone(runtime.copilot().reader)
+        with self.assertRaises(SourceUnavailable):
+            runtime.module1_pool()                              # unavailable, never another source
         self.assertEqual(len(calls), 1)                         # within the retry window: no new attempt
         time.sleep(0.25)
         self.assertIsNotNone(runtime.reader())

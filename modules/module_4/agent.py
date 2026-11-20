@@ -32,6 +32,7 @@ OUT_OF_SCOPE = ("I can answer questions about Marvel CPG's sales, stock, shelf e
                 "Marvel's product and policy documents. This question is outside that scope.")
 MODEL_DOWN = ("The language model is not running, so I can't answer this right now. Start it with `ollama serve` "
               "(see modules/module_4/README.md) and ask again.")
+SERVICE_DOWN = "The language model service is not responding, so I can't answer this right now. Please try again shortly."
 SCOPE_CHANGED = ("Your data access changed while this question was being answered, so the answer was discarded. "
                  "Please ask again.")
 # What a data question asks for, from its words (deterministic). It only decides when the copilot must
@@ -54,6 +55,13 @@ RESTOCK = re.compile(r"\b(which|what)\b.*\b(restock|replenish|reorder)(ing)?\b|"
                      r"\b(restock|replenish|reorder)(ing)?\b.*\b(first|next|priorit\w*)\b|"
                      r"\b(skus?|products?|items?)\b.*\bpriorit\w*|\bpriorit\w*\b.*\b(skus?|products?|items?)\b", re.I)
 SALES_AT_RISK = re.compile(r"\b(sales|revenue)\s+(are\s+|is\s+)?at\s+risk\b|\bat[- ]risk\s+(sales|revenue)\b", re.I)
+# A stockout question about one named day. Predictions cover a whole window, and history cannot say what a coming
+# day holds, so it gets a clear answer instead of model-written SQL. "Saturdays" and "weekends" ask about a pattern
+# in the history, and past wording or an explicit date also stays history.
+NAMED_DAY = re.compile(r"\b((mon|tues|wednes|thurs|fri|satur|sun)day|week-?end)\b", re.I)
+PAST_OR_DATED = re.compile(r"\b(last|past|previous|ago|yesterday|was|were|did|had|has been|have been|ran out|went|"
+                           r"\d{4}-\d{2}-\d{2}|\d{1,2}(st|nd|rd|th)?( of)? (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*|"
+                           r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w* \d{1,2})\b", re.I)
 RESTRICTED_DOCUMENT = re.compile(r"\bmanager'?s?\s+guide\b|\bMCPG-09\b", re.I)
 MODEL_TABLES = frozenset(MODEL_TABLE_SQL) | {"business_priority"}
 # Fact tables: an answer whose values come from these is history, whatever else the query joins.
@@ -75,6 +83,9 @@ NO_BUSINESS_MATCH = "No store in your scope matches this in Module 2's business 
 FORECAST_UNAVAILABLE = ("There is no forecast for this. The copilot answers from reported history and, for stockouts "
                         "only, from Module 2's published predictions. Ask about a past period (for example \"last 4 "
                         "weeks\") or about predicted stockouts.")
+NAMED_DAY_UNAVAILABLE = ("Stockout predictions cover a whole window, not a single day, so the copilot cannot say what "
+                         "happens on a named day. Ask \"Which SKUs may run out next week?\" for the predictions, or give "
+                         "a past date for reported data.")
 NOT_FROM_PREDICTIONS = ("This question asks for a prediction or the visit ranking, but the generated query read only "
                         "observed history, so no answer is shown: observed stock data is not a prediction. Try asking "
                         "for the predicted stockout probability, the stockout alerts or the visit priority ranking.")
@@ -88,8 +99,11 @@ MODEL_STATUS = {"Synthetic_demo": "Synthetic demo predictions (generated test da
 
 
 def data_intent(question: str) -> str | None:
-    """'sales_at_risk' | 'business_ranking' | 'restock' | 'visit_ranking' | 'prediction' | 'forecast' (of anything
-    else) | None (history)."""
+    """'named_day' | 'sales_at_risk' | 'business_ranking' | 'restock' | 'visit_ranking' | 'prediction' | 'forecast'
+    (of anything else) | None (history)."""
+    if (STOCKOUT.search(question) or MODEL_TERMS.search(question)) and NAMED_DAY.search(question) \
+            and not PAST_OR_DATED.search(question):
+        return "named_day"
     if SALES_AT_RISK.search(question):
         return "sales_at_risk"
     if BUSINESS_RANKING_QUESTION.search(question):
@@ -196,6 +210,8 @@ class Copilot:
         self.pool = SandboxPool(reader, business_ranking=business_ranking) if reader is not None else None
         self.data_reason = data_reason
         self.nlq = NLQEngine(self.llm)
+        self.hosted = bool(getattr(getattr(self.llm, "config", None), "hosted", False))
+        self.model_down = SERVICE_DOWN if self.hosted else MODEL_DOWN
         self._knowledge = knowledge
         self.knowledge_reason = None
 
@@ -228,7 +244,7 @@ class Copilot:
     def status(self) -> dict:
         record = self.reader.record if self.reader is not None else {}
         outputs = record.get("model_outputs") or {}
-        return {"model": self.llm.name, "model_ready": self.llm.available(),
+        return {"model": self.llm.name, "model_ready": self.llm.available(), "model_hosted": self.hosted,
                 "data_ready": self.reader is not None, "data_reason": self.data_reason,
                 "as_of": record.get("as_of"), "artifact_id": record.get("artifact_id"),
                 "predictions": record.get("model_outputs_status") if self.reader is not None else None,
@@ -266,7 +282,9 @@ class Copilot:
         intent, unavailable = data_intent(question), None
         if intent == "restock" and not model["available"]:
             intent = None                            # what is out of stock now is reported data, not a prediction
-        if intent == "forecast":
+        if intent == "named_day":
+            unavailable = NAMED_DAY_UNAVAILABLE
+        elif intent == "forecast":
             unavailable = FORECAST_UNAVAILABLE
         elif intent == "sales_at_risk" and not model["business_ranking"]["available"]:
             unavailable = SALES_AT_RISK_UNAVAILABLE.format(
@@ -338,7 +356,7 @@ class Copilot:
         except LLMUnavailable:
             # Still useful: show the permitted passages without a generated summary.
             search = assistant.search(question, doc_role)
-            out.status, out.answer = "unavailable", MODEL_DOWN
+            out.status, out.answer = "unavailable", self.model_down
             out.sources = [{"marker": f"S{i}", "citation": r["citation"], "document_id": r["document_id"],
                             "version": r["version"], "section": r["section"], "title": r["title"],
                             "cited": False, "dense_score": r["dense_score"], "text": r["text"]}
@@ -380,6 +398,6 @@ class Copilot:
                 out.route = DATA
                 self._data_path(question, principal_id, out)
         except LLMUnavailable:
-            out.status, out.answer = "unavailable", MODEL_DOWN
+            out.status, out.answer = "unavailable", self.model_down
         out.elapsed_s = time.perf_counter() - started
         return out

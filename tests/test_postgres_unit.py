@@ -1,5 +1,6 @@
 """Shared PostgreSQL serving: contract, codecs, configuration and offline guarantees (no database)."""
 
+import hashlib
 import json
 import math
 import os
@@ -53,6 +54,70 @@ class ContractTests(unittest.TestCase):
                 schema.pg_type(logical)
         self.assertEqual(contract["transfer_chunk_rows"], 10000)
         self.assertNotIn("account_scope", json.dumps(contract["views"]))
+
+    def test_earlier_column_contract_is_kept_and_selected_by_its_hash(self):
+        current, previous = schema.load_contract(), schema.load_contract(schema.R1_CONTRACT_SHA256)
+        self.assertEqual(schema.load_contract(schema.contract_sha256()), current)
+        self.assertEqual(hashlib.sha256(schema.PREVIOUS_CONTRACT_PATHS[0].read_bytes()).hexdigest(),
+                         schema.R1_CONTRACT_SHA256)                     # byte-for-byte the published revision 1
+        added = [c for c in current["views"]["negotiation_context"]["columns"]
+                 if c not in previous["views"]["negotiation_context"]["columns"]]
+        self.assertEqual(added, [["standard_discount_pct_source", "DECIMAL(9,4)"]])
+        names = [c for c, _ in current["views"]["negotiation_context"]["columns"]]
+        self.assertEqual(names.index("standard_discount_pct_source") + 1, names.index("max_discount_pct_source"))
+        for name in VIEWS:                                              # nothing else changed
+            if name != "negotiation_context":
+                self.assertEqual(current["views"][name], previous["views"][name], name)
+        for unknown in ("", "0" * 64):
+            with self.assertRaises(ValueError):
+                schema.load_contract(unknown)
+
+    def test_reader_uses_the_release_contract_not_the_current_one(self):
+        from contextlib import contextmanager
+        from unittest.mock import patch
+        from data_platform import postgres_reader
+        from data_platform.access import DataUnavailable
+
+        def fake_pool(manifest):
+            class Cursor:
+                def execute(self, sql, params=None):
+                    self.row = (("p1", "rid") if "current_release" in sql else
+                                ("rid", "artifact", manifest, ["negotiation_context", "stores"], {}))
+
+                def fetchone(self):
+                    return self.row
+
+            class Pool:
+                def __init__(self, config):
+                    pass
+
+                @contextmanager
+                def transaction(self):
+                    yield Cursor()
+            return Pool
+
+        config = PostgresConfig.from_url("postgresql://reader:pw@127.0.0.1:5432/serving", local_test=True)
+        for sha, expect_standard in ((schema.R1_CONTRACT_SHA256, False), (schema.contract_sha256(), True)):
+            with self.subTest(sha=sha), patch.object(postgres_reader, "_Connections",
+                                                     fake_pool({"contract_sha256": sha})):
+                reader = postgres_reader.PostgresServingReader(config)
+                columns = [c["name"] for c in reader.schema()["negotiation_context"]["columns"]]
+                self.assertEqual("standard_discount_pct_source" in columns, expect_standard)
+        for manifest in ({"contract_sha256": "0" * 64}, {}):
+            with self.subTest(manifest=manifest), patch.object(postgres_reader, "_Connections", fake_pool(manifest)):
+                with self.assertRaisesRegex(DataUnavailable, "serving contract this code does not know"):
+                    postgres_reader.PostgresServingReader(config)
+
+    def test_stored_releases_are_verified_under_their_own_contract(self):
+        from data_platform.postgres_publisher import PublishError, _release_contract, inspect_serving_source
+        old = _release_contract({"release_id": "rold", "contract_sha256": schema.R1_CONTRACT_SHA256})
+        self.assertNotIn("standard_discount_pct_source", dict(old["views"]["negotiation_context"]["columns"]))
+        with self.assertRaisesRegex(PublishError, "does not know"):
+            _release_contract({"release_id": "rnew", "contract_sha256": "f" * 64})
+        # New loads use the current contract: the DuckDB serving view matches it column for column.
+        inspected = inspect_serving_source(fx.synthetic_sources()["model"])
+        self.assertEqual(inspected["contract_sha256"], schema.contract_sha256())
+        self.assertIn("negotiation_context", inspected["views"])
 
     def test_type_mapping_is_lossless_or_refused(self):
         self.assertEqual(schema.pg_type("VARCHAR"), 'TEXT COLLATE "C"')

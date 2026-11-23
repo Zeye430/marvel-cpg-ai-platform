@@ -15,7 +15,8 @@ from modules.module_3.server import deal_from, default_proposals
 TRADEOFFS = ("Secure +10% shelf share or place 1 secondary display",
              "Secure +15% shelf share or place 1 secondary display",
              "Commit to featured endcap placement for 4 weeks",
-             "Achieve 100% MSL compliance + planogram adherence")
+             "Achieve 100% MSL compliance + planogram adherence",
+             "Guarantee 100% MSL compliance + 1 secondary display")
 STANDARD, CAP, FLOOR = 9.64, 5.03, 22.01
 
 
@@ -180,8 +181,22 @@ class CommitmentAndPaybackTests(unittest.TestCase):
         self.assertEqual(got[TRADEOFFS[1]], [("shelf", 0.045, None), ("display", 0.08, None)])
         self.assertEqual(got[TRADEOFFS[2]], [("endcap", 0.08, 4)])
         self.assertEqual(got[TRADEOFFS[3]], [("planogram", 0.05, None)])
+        self.assertEqual(got[TRADEOFFS[4]], [("display", 0.08, None)])
         self.assertEqual([c.key for c in calc.commitments("Something new")], ["required"])
         self.assertEqual(calc.commitments(""), [])
+
+    def test_a_plus_commitment_needs_every_part(self):
+        # "+" joins parts that are all required, so the only option offered names both of them.
+        for text, label in ((TRADEOFFS[3], "100% MSL compliance + planogram adherence"),
+                            (TRADEOFFS[4], "100% MSL compliance + 1 secondary display")):
+            with self.subTest(text=text):
+                self.assertEqual([c.label for c in calc.commitments(text)], [label])
+        deal = lemon(standard=2.30, cap=3.15, floor=20.0, channel="Traditional Trade", tradeoff=TRADEOFFS[4])
+        r = calc.scenario(deal, 2.0, "display")
+        self.assertEqual(r["verdict"], calc.CONDITIONS)
+        self.assertIn("100% MSL compliance + 1 secondary display", r["reason"])
+        self.assertEqual(calc.scenario(deal, 2.0)["verdict"], calc.REJECTED)
+        self.assertEqual(calc.scenario(deal, 2.0, "shelf")["verdict"], calc.REJECTED)  # not an option here
 
     def test_break_even_volume_and_whether_the_uplift_covers_it(self):
         deal = lemon(tradeoff=TRADEOFFS[0])

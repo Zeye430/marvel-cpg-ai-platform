@@ -69,7 +69,10 @@ def commitments(tradeoff):
         weeks = int(endcap.group(1))
         found.append(Commitment("endcap", f"Featured endcap for {weeks} weeks", UPLIFT["display"], weeks))
     elif re.search(r"secondary display|endcap", text, re.I):
-        found.append(Commitment("display", "1 secondary display", UPLIFT["display"]))
+        # "MSL compliance + 1 secondary display" needs both parts, so it is one combined option.
+        label = "100% MSL compliance + 1 secondary display" if re.search(r"MSL", text, re.I) \
+            else "1 secondary display"
+        found.append(Commitment("display", label, UPLIFT["display"]))
     if re.search(r"planogram", text, re.I):
         label = "100% MSL compliance + planogram adherence" if re.search(r"MSL", text, re.I) \
             else "Planogram adherence"

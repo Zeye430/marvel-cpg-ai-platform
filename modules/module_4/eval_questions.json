@@ -37,7 +37,7 @@
     {"id": "K02", "kind": "knowledge", "source": "brief example", "role": "sales", "question": "Which SKU can I substitute for Marvel Power Clean Lemon 1L if it's out of stock?",
      "check": {"docs": ["MCPG-02"], "must": [["SKU-1002", "Power Clean Original"]]}},
     {"id": "K03", "kind": "knowledge", "source": "new", "role": "sales", "question": "What's the biggest discount I can give a Traditional Trade store on Laundry without extra approval?",
-     "check": {"docs": ["MCPG-05"], "must": [["7.16"]]}},
+     "check": {"docs": ["MCPG-05"], "must": [["3.24"], ["8.47", "5.23"]]}},
     {"id": "K04", "kind": "knowledge", "source": "new", "role": "sales", "question": "Which Dishwashing products are on the Must-Stock List?",
      "check": {"docs": ["MCPG-06"], "must": [["SKU-1009", "Citrus"], ["SKU-1010", "Original 28oz"], ["SKU-1012", "Pods 45ct"], ["SKU-1015", "Antibacterial"]]}},
     {"id": "K05", "kind": "knowledge", "source": "new", "role": "sales", "question": "How often should I visit a Tier 2 store?",

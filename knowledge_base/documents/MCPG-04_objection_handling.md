@@ -1,15 +1,15 @@
 ---
 document_id: MCPG-04
 title: Objection-Handling Guide
-version: 1.0.0
-effective_date: 2026-10-20
+version: 1.1.0
+effective_date: 2026-11-20
 document_type: sales_guide
 origin: fictional_marvel
 authorized_source: Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); evidence from the project dataset, the Team 1 V3 EDA and the public references PUB-01 to PUB-03
 permission_scope: sales, manager
 status: draft_for_team_review
 owner: Team 1 knowledge base (Sanika Najan)
-data_basis: Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out
+data_basis: Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out
 related_documents: MCPG-02, MCPG-03, MCPG-05, MCPG-07, PUB-01, PUB-02, PUB-03
 ---
 
@@ -26,7 +26,7 @@ Use the same four steps every time:
 3. **Answer with one fact the buyer can check**: a figure from this guide, the product sheet or the dashboard.
 4. **Propose a small next step** that the store can accept today, and agree when to review it.
 
-Each objection below lists what is usually behind it, a suggested response, the evidence to show, and what not to do. Figures marked *(data)* come from the project dataset, Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out.
+Each objection below lists what is usually behind it, a suggested response, the evidence to show, and what not to do. Figures marked *(data)* come from the project dataset, Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out.
 
 ## 2 Common objections
 
@@ -54,21 +54,21 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 **What is usually behind it.** The buyer compares the trade price with a competitor's, or wants a larger discount.
 
-**Response.** Separate the two prices. The trade list price is what the store pays Marvel; the reference consumer price is what shoppers pay. Show the store's margin between the two, then the value of keeping the product available. If a discount is still needed, use the guardrail process: discounts within the account's cap can be agreed, and larger ones need an execution commitment and manager review (MCPG-05).
+**Response.** Separate the two prices. The trade list price is what the store pays Marvel; the reference consumer price is what shoppers pay. Show the store's margin between the two, then the value of keeping the product available. If a discount is still needed, use the guardrail process: start from the standard discount for the channel and category; an additional discount up to the maximum needs the execution commitment named in the guardrail, and anything above the maximum goes to manager review (MCPG-05).
 
-**Evidence to show.** At the reference consumer price, a retailer buying at list price keeps 23% to 28% of the shelf price before any trade discount (MCPG-01, section 5). Discount caps by channel and category are in MCPG-05, section 4.
+**Evidence to show.** At the reference consumer price, a retailer buying at list price keeps 23% to 28% of the shelf price before any trade discount (MCPG-01, section 5). Standard discounts, maximum additional discounts and commitments by channel and category are in MCPG-05, section 4.
 
-**Do not.** Do not offer a discount above the cap as if it were approved, and do not quote a competitor's price.
+**Do not.** Do not offer a discount that needs manager review as if it were agreed, and do not quote a competitor's price.
 
 ### 2.4 "Your competitor gives me a bigger discount."
 
 **What is usually behind it.** A negotiation opening; the buyer is testing the rep's limits.
 
-**Response.** Do not match on price alone. Ask what the competitor discount is tied to, then offer what Marvel can give within policy: a discount up to the account's cap, a promotion slot from the calendar (MCPG-07), or a larger discount in exchange for the execution commitment named in the guardrail (for example +10 percentage points of shelf share or a secondary display), subject to manager review.
+**Response.** Do not match on price alone. Ask what the competitor discount is tied to, then offer what Marvel can give within policy: the standard discount, a promotion slot from the calendar (MCPG-07), or an additional discount up to the maximum in exchange for the execution commitment named in the guardrail (for example +15 percentage points of shelf share or a secondary display). Anything above the maximum goes to manager review.
 
-**Evidence to show.** Guardrail caps and required trade-offs by channel and category: MCPG-05, section 4. Promotion lift by type: MCPG-07, section 4.
+**Evidence to show.** Standard and maximum additional discounts and the required commitments by channel and category: MCPG-05, section 4. Promotion lift by type: MCPG-07, section 4.
 
-**Do not.** Do not exceed the cap without the required commitment and review. Do not combine a trade discount and a consumer promotion as if they were one discount.
+**Do not.** Do not propose an additional discount without the required commitment, or above the maximum without manager review. Do not combine a trade discount and a consumer promotion as if they were one discount.
 
 ### 2.5 "I'm overstocked / your products don't sell here."
 
@@ -124,7 +124,7 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 **What is usually behind it.** The buyer wants something back for the space.
 
-**Response.** A secondary display (endcap, island or checkout display) is one of the execution commitments that can support a larger discount under the guardrails, subject to manager review (MCPG-05). It also gives seasonal and promoted products extra visibility.
+**Response.** A secondary display (endcap, island or checkout display) is one of the execution commitments that can support an additional discount under most guardrails (MCPG-05, section 4). It also gives seasonal and promoted products extra visibility.
 
 **Evidence to show.** Required trade-offs by channel and category are listed in MCPG-05, section 4. *(data)* Secondary displays are present at 49% of audited SKU visits overall: about 59% to 69% in Tier 1 accounts and 17% to 26% in Tier 3.
 
@@ -144,9 +144,9 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 **What is usually behind it.** The distributor wants volume pricing all year.
 
-**Response.** Volume deals are planned for set windows (Q1 and Q3). Outside them, the distributor's trade discount must stay within its guardrail cap, or go through manager review with the required commitment. Offer to plan the next order into the next volume window.
+**Response.** Volume deals are planned for set windows (Q1 and Q3). Outside them, the distributor gets its standard discount, and any additional discount goes to manager review (MCPG-05, section 7). Offer to plan the next order into the next volume window.
 
-**Evidence to show.** Distributor Volume Deals: 14% off, minimum 200 units (MCPG-07). Distributor discount caps are 15.07% to 17.80% depending on category (MCPG-05).
+**Evidence to show.** Distributor Volume Deals: 14% off, minimum 200 units (MCPG-07). Distributor standard discounts are 10.81% to 11.44% depending on category (MCPG-05, section 7).
 
 **Do not.** Do not ask a distributor for shelf-execution commitments: distributors are wholesale accounts and negotiate volume, not shelf space.
 
@@ -163,23 +163,23 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 ## 3 When to escalate
 
-- The account asks for a discount above its cap and offers no execution commitment: the proposal is a policy breach (MCPG-05). Explain the limit and offer alternatives.
-- The account offers the commitment but the discount is above the cap: prepare the proposal for manager review. Do not confirm it yourself.
+- The account asks for an additional discount within the maximum but offers no execution commitment: the proposal is rejected (MCPG-05). Explain the limit and offer alternatives.
+- The additional discount is above the maximum (with or without a commitment), or a distributor asks for any additional discount: prepare the proposal for manager review. Do not confirm it yourself.
 - The account raises a safety incident or a product complaint: record it and pass it to the regional manager the same day.
 
 ## Document control
 
 | Item | Value |
 |---|---|
-| Document | MCPG-04, version 1.0.0 |
-| Effective date | 2026-10-20 |
+| Document | MCPG-04, version 1.1.0 |
+| Effective date | 2026-11-20 |
 | Owner | Team 1 knowledge base (Sanika Najan) |
 | Status | Draft for team review |
-| Source | Project dataset: Authorized V3 dataset (dataset hash f5403651d8aa...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out |
+| Source | Project dataset: Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out |
 | Source | Team 1 V3 EDA (notebook 01_v3_eda): sections 8.1, 8.2, 8.5, 8.6, 8.7 |
 | Source | Public references PUB-01 (out-of-stock shopper responses), PUB-02 (planogram compliance), PUB-03 (safe use of cleaning products) |
 
 **Open points and review notes**
 
 - Responses are suggested wording for training and the copilot, not a script that must be read verbatim.
-- Discount limits follow the retained guardrail table in MCPG-05; any change to that table must be reflected here.
+- Discount limits follow MCPG-05 (version 2.0.0: a standard discount plus an additional discount, provisional until the client confirms it); any change to that policy must be reflected here.

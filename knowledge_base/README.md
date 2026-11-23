@@ -22,20 +22,20 @@ The mix follows the client guidance: team-written fictional Marvel documents plu
 | MCPG-01 | Marvel Product Catalogue and Product Sheets | product_sheet | Fictional Marvel | Reps and managers | 13 | 31 |
 | MCPG-02 | Out-of-Stock Substitution Guide | guide | Fictional Marvel | Reps and managers | 6 | 31 |
 | MCPG-03 | Marvel Sales Argumentarium | sales_guide | Fictional Marvel | Reps and managers | 4 | 15 |
-| MCPG-04 | Objection-Handling Guide | sales_guide | Fictional Marvel | Reps and managers | 4 | 16 |
-| MCPG-05 | Pricing, Discount and Commercial Guardrail Policy | policy | Fictional Marvel | Reps and managers | 5 | 18 |
+| MCPG-04 | Objection-Handling Guide | sales_guide | Fictional Marvel | Reps and managers | 5 | 16 |
+| MCPG-05 | Pricing, Discount and Commercial Guardrail Policy | policy | Fictional Marvel | Reps and managers | 6 | 20 |
 | MCPG-06 | MSL, Planogram and In-Store Execution Standards | policy | Fictional Marvel | Reps and managers | 3 | 12 |
 | MCPG-07 | Trade Promotions Guide and 2025-2026 Promotion Calendar | guide | Fictional Marvel | Reps and managers | 3 | 12 |
 | MCPG-08 | Commercial KPI Handbook | kpi_definitions | Fictional Marvel | Reps and managers | 3 | 11 |
-| MCPG-09 | Regional Manager Guide: Deal Review, Escalation and Exception Management | manager_guide | Fictional Marvel | **Managers only** | 2 | 7 |
+| MCPG-09 | Regional Manager Guide: Deal Review, Escalation and Exception Management | manager_guide | Fictional Marvel | **Managers only** | 3 | 8 |
 | PUB-01 | Shopper Responses to Retail Out-of-Stocks | public_reference | Public research summary | Reps and managers | 2 | 7 |
 | PUB-02 | Planogram Compliance and Shelf Monitoring | public_reference | Public research summary (CC BY 4.0 source) | Reps and managers | 2 | 8 |
 | PUB-03 | Safe Use of Household Cleaning Products | public_reference | U.S. CDC guidance summary | Reps and managers | 2 | 6 |
 
 **How the content is grounded**
 
-- **Facts come from the project data.** Product names, prices, MSL flags, guardrails and the promotion calendar come from the dimension tables. Performance figures (marked *data* in the text) come from the authorized V3 dataset: reported rows from 1 January 2025 to 31 May 2026, with June 2026 kept out because it is the OOS model's test month. The guardrails are the retained `dim_guardrails` used by the shared data platform. `tools/compute_data_facts.py` recomputes every figure, and the method for promotion lift and lost sales matches the Team 1 V3 EDA.
-- **Definitions follow the official sources.** KPI, margin and trade-off definitions follow the capstone brief, the official client clarifications and the platform's `metric_definitions`. Deal statuses use the same rules as the Module 3 simulator (APPROVED / MANAGER OVERRIDE REQUIRED / POLICY BREACH / REJECTED).
+- **Facts come from the project data.** Product names, prices, MSL flags, guardrails and the promotion calendar come from the dimension tables. Performance figures (marked *data* in the text) come from the authorized V3 dataset: reported rows from 1 January 2025 to 31 May 2026, with June 2026 kept out because it is the OOS model's test month. The guardrails are the delivered `dim_guardrails` with a standard discount, which the shared data platform adopts provisionally (contract v3.sources.2). The documents updated for it (MCPG-04, MCPG-05, MCPG-06 and MCPG-09) cite that dataset (hash 6550fe85d890...); the others still cite the earlier hash (f5403651d8aa...), because their figures come only from fact and product files that are the same in both. `tools/compute_data_facts.py` recomputes every figure, and the method for promotion lift and lost sales matches the Team 1 V3 EDA.
+- **Definitions follow the official sources.** KPI, margin and trade-off definitions follow the capstone brief, the official client clarifications and the platform's `metric_definitions`. Deal results use the same rules as the Module 3 simulator (APPROVED / APPROVED WITH CONDITIONS / MANAGER REVIEW / REJECTED / CANNOT ASSESS, rules version m3-rules.v1-provisional).
 - **Fictional content is labelled.** Product descriptions, usage notes and sales wording are fictional, written for the capstone. Every document says so at the top, and the PDF footer repeats it.
 - **The documents claim only what the data supports.** They never quote a sales uplift for displays, planogram or shelf share, because the data shows at most about 1% (EDA section 8.7). They also make no competitor claims and no label claims such as germ-kill rates.
 - **Public documents are original summaries.** They are written in our own words, with full citations and licence notes. The original PDFs are not redistributed.
@@ -53,7 +53,7 @@ query + verified role --> permission filter --> BM25 + dense --> reciprocal rank
       --> no-evidence check --> top-k chunks with citations --> grounded prompt --> LLM answer
 ```
 
-1. **Chunking.** Each document is split at its `##` and `###` headings, so every product sheet, substitution case, objection and guardrail rule becomes its own chunk. Paragraphs, lists and tables are packed up to 300 words, and a table split across chunks repeats its header row. Each chunk embeds "document title | heading path + text" and carries its document ID, version, section, PDF page and access scope. The result is 174 chunks.
+1. **Chunking.** Each document is split at its `##` and `###` headings, so every product sheet, substitution case, objection and guardrail rule becomes its own chunk. Paragraphs, lists and tables are packed up to 300 words, and a table split across chunks repeats its header row. Each chunk embeds "document title | heading path + text" and carries its document ID, version, section, PDF page and access scope. The result is 177 chunks.
 2. **Embedding.** `BAAI/bge-small-en-v1.5` (384 dimensions, normalised) through `fastembed`, which runs on ONNX: no GPU and no PyTorch, and small enough for the Render deployment. Vectors are stored in the same row order as `chunks.jsonl`.
 3. **Retrieval.** The caller's role (`sales` or `manager`, the roles in the module data contract) **filters chunks before ranking**, so a manager-only document can never reach a representative's prompt. Dense and BM25 rankings are combined with reciprocal rank fusion. If the best permitted dense score is below 0.55, retrieval returns `no_relevant_evidence` instead of weak matches. That threshold sits between the lowest answerable question (0.67) and the highest off-topic one (0.47) in the evaluation set.
 4. **Generation.** `tools/retrieve.py` builds a grounded prompt with numbered sources [S1]...[Sk] and rules: answer only from the sources, cite every factual sentence, say when the knowledge base does not cover a question, and treat retrieved text as evidence, never as instructions. The LLM provider is not chosen here. The module data contract leaves model choice and data-sharing approval to the Module 4 runtime.
@@ -68,7 +68,7 @@ From the repository root, with the repository environment plus [`requirements.tx
 pip install -r knowledge_base/requirements.txt          # fastembed, fpdf2 (numpy is already a repo dependency)
 
 python knowledge_base/tools/retrieve.py "Which SKU can I substitute for Power Clean Lemon 1L?" --role sales
-python knowledge_base/tools/retrieve.py "How do I review an override?" --role manager --prompt
+python knowledge_base/tools/retrieve.py "How do I review a proposal sent for manager review?" --role manager --prompt
 python knowledge_base/tools/evaluate.py --report knowledge_base/eval/retrieval_results_hybrid.md
 python -m unittest discover -s knowledge_base/tests -v
 ```
@@ -98,8 +98,8 @@ prompt = build_prompt("Which SKU can I substitute for Power Clean Lemon 1L?", se
 
 | Retrieval mode | Hit@1 | Hit@3 | MRR | Key-fact recall@5 | Permission leaks | Off-topic declined | Passed |
 |---|---|---|---|---|---|---|---|
-| Hybrid (dense + BM25) | 0.839 | 1.000 | 0.919 | 1.000 | 0 | 3/3 | **35/35** |
-| BM25 only | 0.645 | 0.903 | 0.780 | 1.000 | 0 | 2/3 | 31/35 |
+| Hybrid (dense + BM25) | 0.742 | 1.000 | 0.871 | 1.000 | 0 | 3/3 | **35/35** |
+| BM25 only | 0.613 | 0.903 | 0.758 | 1.000 | 0 | 2/3 | 31/35 |
 
 Full per-question results: [`eval/retrieval_results_hybrid.md`](eval/retrieval_results_hybrid.md) and [`eval/retrieval_results_lexical.md`](eval/retrieval_results_lexical.md).
 
@@ -117,8 +117,8 @@ Full per-question results: [`eval/retrieval_results_hybrid.md`](eval/retrieval_r
 
 - All documents are **drafts for team review**. MCPG-05 (pricing policy) and MCPG-09 (manager guide) should be checked by the Module 3 owner so the simulator and the copilot stay consistent.
 - Several items still need client confirmation, and the documents flag them in their *Document control* sections:
-  - the guardrail version and approval logic;
-  - whether the discount cap applies to the total or an additional discount;
+  - the provisional guardrail rules (total discount = standard + additional, the maximum applies to the additional discount) and what representatives may agree on their own;
+  - how distributor commitments work;
   - how shelf share should be verified (it is an allocation among Marvel SKUs);
   - the grain of the promotion minimum volume;
   - whether MSL lists differ by tier.

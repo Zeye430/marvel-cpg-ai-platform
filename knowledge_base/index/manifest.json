@@ -1,6 +1,6 @@
 {
- "corpus_hash": "195c17962366b26bf29b7d7bb2fbb3a88221e4e18269ba57690fa6b5a3fa0551",
- "chunk_count": 174,
+ "corpus_hash": "c2e9985b5450b73bb5857e4704d63fd0d83e311da378e45d8925736e032c5228",
+ "chunk_count": 177,
  "documents": 12,
  "chunking": {
   "method": "section-aware: split at Markdown headings (##, ###), pack paragraphs/lists/tables up to a word limit, repeat table headers when a table is split",

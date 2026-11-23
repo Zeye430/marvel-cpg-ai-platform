@@ -116,9 +116,8 @@ Full per-question results: [`eval/retrieval_results_hybrid.md`](eval/retrieval_r
 ## 6 Open points
 
 - All documents are **drafts for team review**. MCPG-05 (pricing policy) and MCPG-09 (manager guide) should be checked by the Module 3 owner so the simulator and the copilot stay consistent.
-- Several items still need client confirmation, and the documents flag them in their *Document control* sections:
-  - the provisional guardrail rules (total discount = standard + additional, the maximum applies to the additional discount) and what representatives may agree on their own;
-  - how distributor commitments work;
+- The guardrail rules are confirmed by the client (MCPG-05 3.0.0): the standard discount needs no condition, an additional discount up to the maximum needs the commitment, more needs manager approval, and the margin floor always applies, for every channel including distributors.
+- A few items still need client confirmation, and the documents flag them in their *Document control* sections:
   - how shelf share should be verified (it is an allocation among Marvel SKUs);
   - the grain of the promotion minimum volume;
   - whether MSL lists differ by tier.

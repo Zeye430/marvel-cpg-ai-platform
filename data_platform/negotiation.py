@@ -35,8 +35,10 @@ def build_negotiation_context(con, as_of, quality):
                i.source_violation_lines_28d,'Reported invoice rows; extract completeness unconfirmed' AS invoice_coverage_status,
                g.standard_discount_pct AS standard_discount_pct_source,
                g.max_discount_pct AS max_discount_pct_source,g.min_target_margin AS min_target_margin_source,
-               g.required_exec_tradeoff,g.rule_version,'Requires review' AS policy_status,
-               'Provisional: total discount = standard + additional; Sales authority, distributor commitments and client approval unconfirmed' AS policy_limitation,
+               g.required_exec_tradeoff,g.rule_version,g.rule_status AS policy_status,
+               CASE WHEN g.rule_status='Approved'
+                    THEN 'Client-confirmed: total discount = standard + additional; the standard needs no condition, an additional discount up to the maximum needs the required commitment, more needs manager approval; the margin floor always applies'
+                    ELSE 'Provisional: total discount = standard + additional; Sales authority and client approval unconfirmed' END AS policy_limitation,
                a.last_audit_id,a.last_audit_date,a.days_since_last_audit,
                a.planogram_compliance_latest,a.secondary_display_latest,a.shelf_share_pct_latest,
                'negotiation_context.v2' AS context_version
@@ -46,6 +48,6 @@ def build_negotiation_context(con, as_of, quality):
         LEFT JOIN _latest_context a USING(store_id,sku_id)
         WHERE d.date=DATE {literal(as_of)}""")
     quality.query("negotiation_grain","mart_negotiation_context","SELECT store_id,sku_id FROM gold.mart_negotiation_context GROUP BY 1,2 HAVING count(*)<>1")
-    quality.query("unapproved_rules_stay_review","mart_negotiation_context","SELECT store_id,sku_id FROM gold.mart_negotiation_context WHERE policy_status<>'Requires review'")
+    quality.query("policy_status_from_source_rule","mart_negotiation_context","SELECT store_id,sku_id FROM gold.mart_negotiation_context c LEFT JOIN _guardrails g USING(channel,category) WHERE c.policy_status IS DISTINCT FROM g.rule_status OR c.policy_status NOT IN ('Approved','Requires review')")
     quality.query("zero_price_margin_na","mart_negotiation_context","SELECT store_id,sku_id FROM gold.mart_negotiation_context WHERE reference_list_price=0 AND static_reference_margin_pct IS NOT NULL")
     quality.require_pass()

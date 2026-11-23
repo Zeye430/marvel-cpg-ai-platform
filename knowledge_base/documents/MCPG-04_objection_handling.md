@@ -1,8 +1,8 @@
 ---
 document_id: MCPG-04
 title: Objection-Handling Guide
-version: 1.1.0
-effective_date: 2026-11-20
+version: 1.2.0
+effective_date: 2026-11-23
 document_type: sales_guide
 origin: fictional_marvel
 authorized_source: Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); evidence from the project dataset, the Team 1 V3 EDA and the public references PUB-01 to PUB-03
@@ -68,7 +68,7 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 **Evidence to show.** Standard and maximum additional discounts and the required commitments by channel and category: MCPG-05, section 4. Promotion lift by type: MCPG-07, section 4.
 
-**Do not.** Do not propose an additional discount without the required commitment, or above the maximum without manager review. Do not combine a trade discount and a consumer promotion as if they were one discount.
+**Do not.** Do not propose an additional discount without the required commitment, or above the maximum without manager approval. Do not combine a trade discount and a consumer promotion as if they were one discount.
 
 ### 2.5 "I'm overstocked / your products don't sell here."
 
@@ -144,11 +144,11 @@ Each objection below lists what is usually behind it, a suggested response, the 
 
 **What is usually behind it.** The distributor wants volume pricing all year.
 
-**Response.** Volume deals are planned for set windows (Q1 and Q3). Outside them, the distributor gets its standard discount, and any additional discount goes to manager review (MCPG-05, section 7). Offer to plan the next order into the next volume window.
+**Response.** Volume deals are planned for set windows (Q1 and Q3). Outside them, the distributor gets its standard discount; an additional discount up to the maximum needs the commitment in the guardrail table, and anything more needs manager approval (MCPG-05, section 7). Offer to plan the next order into the next volume window.
 
 **Evidence to show.** Distributor Volume Deals: 14% off, minimum 200 units (MCPG-07). Distributor standard discounts are 10.81% to 11.44% depending on category (MCPG-05, section 7).
 
-**Do not.** Do not ask a distributor for shelf-execution commitments: distributors are wholesale accounts and negotiate volume, not shelf space.
+**Do not.** Do not offer an additional distributor discount without the commitment named in the guardrail table (MCPG-05, section 4).
 
 ### 2.13 "Is it safe to use the degreaser or bleach with other cleaners?"
 
@@ -164,15 +164,15 @@ Each objection below lists what is usually behind it, a suggested response, the 
 ## 3 When to escalate
 
 - The account asks for an additional discount within the maximum but offers no execution commitment: the proposal is rejected (MCPG-05). Explain the limit and offer alternatives.
-- The additional discount is above the maximum (with or without a commitment), or a distributor asks for any additional discount: prepare the proposal for manager review. Do not confirm it yourself.
+- The additional discount is above the maximum (with or without a commitment): prepare the proposal for manager approval. Do not confirm it yourself.
 - The account raises a safety incident or a product complaint: record it and pass it to the regional manager the same day.
 
 ## Document control
 
 | Item | Value |
 |---|---|
-| Document | MCPG-04, version 1.1.0 |
-| Effective date | 2026-11-20 |
+| Document | MCPG-04, version 1.2.0 |
+| Effective date | 2026-11-23 |
 | Owner | Team 1 knowledge base (Sanika Najan) |
 | Status | Draft for team review |
 | Source | Project dataset: Authorized V3 dataset, contract v3.sources.2 (dataset hash 6550fe85d890...), reported sell-out rows 1 Jan 2025 - 31 May 2026; June 2026 held out |
@@ -182,4 +182,4 @@ Each objection below lists what is usually behind it, a suggested response, the 
 **Open points and review notes**
 
 - Responses are suggested wording for training and the copilot, not a script that must be read verbatim.
-- Discount limits follow MCPG-05 (version 2.0.0: a standard discount plus an additional discount, provisional until the client confirms it); any change to that policy must be reflected here.
+- Discount limits follow MCPG-05 (version 3.0.0: a standard discount plus an additional discount, confirmed by the client); any change to that policy must be reflected here.

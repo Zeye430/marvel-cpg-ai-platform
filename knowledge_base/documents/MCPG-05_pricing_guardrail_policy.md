@@ -1,11 +1,11 @@
 ---
 document_id: MCPG-05
 title: Pricing, Discount and Commercial Guardrail Policy
-version: 2.0.0
-effective_date: 2026-11-20
+version: 3.0.0
+effective_date: 2026-11-23
 document_type: policy
 origin: fictional_marvel
-authorized_source: Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the V3 `dim_guardrails` table with a standard discount, adopted provisionally by the shared data platform (contract v3.sources.2); formulas from the official client clarifications
+authorized_source: Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the V3 `dim_guardrails` table with a standard discount, rules confirmed by the client (shared data platform contract v3.sources.3); formulas from the official client clarifications
 permission_scope: sales, manager
 status: draft_for_team_review
 owner: Team 1 knowledge base (Sanika Najan)
@@ -21,12 +21,17 @@ related_documents: MCPG-01, MCPG-04, MCPG-06, MCPG-07, MCPG-09
 
 This policy explains how Marvel prices to its accounts, how a trade discount affects margin, and which discount limits (commercial guardrails) apply to each channel and category. It applies to every trade discount a field representative proposes to a Modern Trade, Traditional Trade or Distributor account. It is the reference for the negotiation simulator (Module 3) and for the copilot, and it uses the same rules as the simulator.
 
-**The rules are provisional.** The guardrail table and the way this policy reads it are the team's proposal and still need client confirmation (see Document control). Until then, every result in section 5 is a check against the guardrails, not permission to offer or agree a deal.
+**The rules are confirmed by the client** and apply to every channel, distributors included:
+
+1. A representative may give the **standard discount** on their own, with no condition or commitment.
+2. An **additional discount** up to the maximum is allowed when the account makes the required execution commitment.
+3. Anything **above standard + maximum additional** needs **manager approval**.
+4. In every case the **gross margin after the discount must be at or above the minimum margin**. A margin exactly at the minimum passes.
 
 ## 2 Price definitions
 
 - **Trade list price**: the price Marvel charges the account before any trade discount. It is the base for every discount and margin calculation. Prices for all 23 SKUs are in MCPG-01, section 5.1.
-- **Standard discount**: the discount every account in a channel gets on a category, with no commitment. It is the starting point of every proposal.
+- **Standard discount**: the discount a representative may give any account in a channel on a category, with no condition or commitment. It is the starting point of every proposal.
 - **Additional discount**: what a representative proposes on top of the standard discount, in percentage points.
 - **Total trade discount**: the standard discount plus the additional discount, taken off the list price on the invoice line. In this policy, "discount" on its own means this total.
 - **Net price**: what the account actually pays per unit after the trade discount.
@@ -57,9 +62,9 @@ The minimum margin in the guardrails is a **gross margin on net price**, not a m
 
 ## 4 Guardrails by channel and category
 
-For each channel and category the guardrails set four things: the **standard discount**; the **maximum additional discount** (also called the cap) that a representative can propose on top of it when the account makes the required execution commitment; the **minimum gross margin**; and that **commitment**. The standard discount plus the maximum additional discount is the highest total discount that does not need manager review.
+For each channel and category the guardrails set four things: the **standard discount**; the **maximum additional discount** (also called the cap) that a representative can propose on top of it when the account makes the required execution commitment; the **minimum gross margin**; and that **commitment**. The standard discount plus the maximum additional discount is the highest total discount that does not need manager approval.
 
-| Channel | Category | Standard discount | Maximum additional | Highest total without manager review | Minimum margin | Commitment for an additional discount |
+| Channel | Category | Standard discount | Maximum additional | Highest total without manager approval | Minimum margin | Commitment for an additional discount |
 |---|---|---|---|---|---|---|
 | Modern Trade | Dishwashing | 8.71% | 5.85 points | 14.56% | 22.15% | Achieve 100% MSL compliance + planogram adherence |
 | Modern Trade | Laundry | 8.28% | 4.05 points | 12.33% | 25.70% | Secure +10% shelf share or place 1 secondary display |
@@ -67,14 +72,14 @@ For each channel and category the guardrails set four things: the **standard dis
 | Traditional Trade | Dishwashing | 2.84% | 4.36 points | 7.20% | 27.60% | Secure +15% shelf share or place 1 secondary display |
 | Traditional Trade | Laundry | 3.24% | 5.23 points | 8.47% | 26.61% | Secure +15% shelf share or place 1 secondary display |
 | Traditional Trade | Surface Cleaners | 2.30% | 3.15 points | 5.45% | 28.61% | Guarantee 100% MSL compliance + 1 secondary display |
-| Distributor | Dishwashing | 10.81% | 5.51 points | 10.81% (standard only) | 22.63% | Secure +15% shelf share or place 1 secondary display |
-| Distributor | Laundry | 11.31% | 6.99 points | 11.31% (standard only) | 19.06% | Secure +10% shelf share or place 1 secondary display |
-| Distributor | Surface Cleaners | 11.44% | 5.65 points | 11.44% (standard only) | 22.06% | Achieve 100% MSL compliance + planogram adherence |
+| Distributor | Dishwashing | 10.81% | 5.51 points | 16.32% | 22.63% | Secure +15% shelf share or place 1 secondary display |
+| Distributor | Laundry | 11.31% | 6.99 points | 18.30% | 19.06% | Secure +10% shelf share or place 1 secondary display |
+| Distributor | Surface Cleaners | 11.44% | 5.65 points | 17.09% | 22.06% | Achieve 100% MSL compliance + planogram adherence |
 
 ### 4.1 Modern Trade: Dishwashing
 
 - **Standard discount:** 8.71% off list price, with no commitment needed.
-- **Additional discount:** up to 5.85 points more if the account makes the commitment below, so the highest total discount without manager review is 14.56%.
+- **Additional discount:** up to 5.85 points more if the account makes the commitment below, so the highest total discount without manager approval is 14.56%.
 - **Execution commitment required for an additional discount:** Achieve 100% MSL compliance + planogram adherence.
 - **Minimum gross margin:** 22.15% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Dishwashing SKUs is 48.5% to 49.9% at the standard discount and 44.9% to 46.5% at 14.56%. The minimum margin would only be reached at a total discount of about 40% to 41%.
@@ -82,7 +87,7 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.2 Modern Trade: Laundry
 
 - **Standard discount:** 8.28% off list price, with no commitment needed.
-- **Additional discount:** up to 4.05 points more if the account makes the commitment below, so the highest total discount without manager review is 12.33%.
+- **Additional discount:** up to 4.05 points more if the account makes the commitment below, so the highest total discount without manager approval is 12.33%.
 - **Execution commitment required for an additional discount:** Secure +10% shelf share or place 1 secondary display.
 - **Minimum gross margin:** 25.70% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Laundry SKUs is 46.7% to 48.6% at the standard discount and 44.2% to 46.2% at 12.33%. The minimum margin would only be reached at a total discount of about 34% to 37%.
@@ -90,7 +95,7 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.3 Modern Trade: Surface Cleaners
 
 - **Standard discount:** 9.64% off list price, with no commitment needed.
-- **Additional discount:** up to 5.03 points more if the account makes the commitment below, so the highest total discount without manager review is 14.67%.
+- **Additional discount:** up to 5.03 points more if the account makes the commitment below, so the highest total discount without manager approval is 14.67%.
 - **Execution commitment required for an additional discount:** Achieve 100% MSL compliance + planogram adherence.
 - **Minimum gross margin:** 22.01% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Surface Cleaners SKUs is 46.6% to 49.0% at the standard discount and 43.4% to 46.0% at 14.67%. The minimum margin would only be reached at a total discount of about 38% to 41%.
@@ -98,7 +103,7 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.4 Traditional Trade: Dishwashing
 
 - **Standard discount:** 2.84% off list price, with no commitment needed.
-- **Additional discount:** up to 4.36 points more if the account makes the commitment below, so the highest total discount without manager review is 7.20%.
+- **Additional discount:** up to 4.36 points more if the account makes the commitment below, so the highest total discount without manager approval is 7.20%.
 - **Execution commitment required for an additional discount:** Secure +15% shelf share or place 1 secondary display.
 - **Minimum gross margin:** 27.60% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Dishwashing SKUs is 51.6% to 52.9% at the standard discount and 49.3% to 50.7% at 7.20%. The minimum margin would only be reached at a total discount of about 35% to 37%.
@@ -106,7 +111,7 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.5 Traditional Trade: Laundry
 
 - **Standard discount:** 3.24% off list price, with no commitment needed.
-- **Additional discount:** up to 5.23 points more if the account makes the commitment below, so the highest total discount without manager review is 8.47%.
+- **Additional discount:** up to 5.23 points more if the account makes the commitment below, so the highest total discount without manager approval is 8.47%.
 - **Execution commitment required for an additional discount:** Secure +15% shelf share or place 1 secondary display.
 - **Minimum gross margin:** 26.61% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Laundry SKUs is 49.4% to 51.3% at the standard discount and 46.6% to 48.5% at 8.47%. The minimum margin would only be reached at a total discount of about 33% to 36%.
@@ -114,7 +119,7 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.6 Traditional Trade: Surface Cleaners
 
 - **Standard discount:** 2.30% off list price, with no commitment needed.
-- **Additional discount:** up to 3.15 points more if the account makes the commitment below, so the highest total discount without manager review is 5.45%.
+- **Additional discount:** up to 3.15 points more if the account makes the commitment below, so the highest total discount without manager approval is 5.45%.
 - **Execution commitment required for an additional discount:** Guarantee 100% MSL compliance + 1 secondary display.
 - **Minimum gross margin:** 28.61% of net price.
 - **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Surface Cleaners SKUs is 50.6% to 52.9% at the standard discount and 48.9% to 51.3% at 5.45%. The minimum margin would only be reached at a total discount of about 32% to 36%.
@@ -122,38 +127,38 @@ For each channel and category the guardrails set four things: the **standard dis
 ### 4.7 Distributor: Dishwashing
 
 - **Standard discount:** 10.81% off list price, with no commitment needed.
-- **Additional discount:** the guardrail allows up to 5.51 points more with the commitment below, but any additional discount for a distributor goes to manager review (section 7).
+- **Additional discount:** up to 5.51 points more if the account makes the commitment below, so the highest total discount without manager approval is 16.32%.
 - **Execution commitment required for an additional discount:** Secure +15% shelf share or place 1 secondary display.
 - **Minimum gross margin:** 22.63% of net price.
-- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Dishwashing SKUs is 47.2% to 48.7% at the standard discount. The minimum margin would only be reached at a total discount of about 39% to 41%.
+- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Dishwashing SKUs is 47.2% to 48.7% at the standard discount and 43.8% to 45.4% at 16.32%. The minimum margin would only be reached at a total discount of about 39% to 41%.
 
 ### 4.8 Distributor: Laundry
 
 - **Standard discount:** 11.31% off list price, with no commitment needed.
-- **Additional discount:** the guardrail allows up to 6.99 points more with the commitment below, but any additional discount for a distributor goes to manager review (section 7).
+- **Additional discount:** up to 6.99 points more if the account makes the commitment below, so the highest total discount without manager approval is 18.30%.
 - **Execution commitment required for an additional discount:** Secure +10% shelf share or place 1 secondary display.
 - **Minimum gross margin:** 19.06% of net price.
-- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Laundry SKUs is 44.8% to 46.8% at the standard discount. The minimum margin would only be reached at a total discount of about 40% to 42%.
+- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Laundry SKUs is 44.8% to 46.8% at the standard discount and 40.1% to 42.3% at 18.30%. The minimum margin would only be reached at a total discount of about 40% to 42%.
 
 ### 4.9 Distributor: Surface Cleaners
 
 - **Standard discount:** 11.44% off list price, with no commitment needed.
-- **Additional discount:** the guardrail allows up to 5.65 points more with the commitment below, but any additional discount for a distributor goes to manager review (section 7).
+- **Additional discount:** up to 5.65 points more if the account makes the commitment below, so the highest total discount without manager approval is 17.09%.
 - **Execution commitment required for an additional discount:** Achieve 100% MSL compliance + planogram adherence.
 - **Minimum gross margin:** 22.06% of net price.
-- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Surface Cleaners SKUs is 45.5% to 48.0% at the standard discount. The minimum margin would only be reached at a total discount of about 38% to 41%.
+- **Headroom** *(calculated from list prices and unit costs)*: Marvel's gross margin on Surface Cleaners SKUs is 45.5% to 48.0% at the standard discount and 41.8% to 44.5% at 17.09%. The minimum margin would only be reached at a total discount of about 38% to 41%.
 
 **What the headroom means.** In every channel and category, the highest total discount is reached long before the margin floor. In practice the **maximum additional discount is the rule that limits a proposal**. The margin floor protects against very deep discounts and against errors.
 
 ## 5 How a proposal is assessed
 
-Every proposal gets one of five results. These are the same rules, checked in the same order, as the negotiation simulator (rules version m3-rules.v1-provisional).
+Every proposal gets one of five results. These are the same rules, checked in the same order, as the negotiation simulator (rules version m3-rules.v2).
 
 | Result | When it applies | What happens next |
 |---|---|---|
-| **APPROVED** | No additional discount (standard discount only) and the gross margin is at or above the minimum | Within the guardrail, with no commitment needed |
-| **APPROVED WITH CONDITIONS** | An additional discount up to and including the maximum, the account offers the required commitment, and the gross margin is at or above the minimum | Within the guardrail on condition the account delivers the commitment. Record it so a later audit can verify it |
-| **MANAGER REVIEW** | An additional discount above the maximum with the gross margin still at or above the minimum, with or without a commitment; or any additional discount for a distributor | Prepare the proposal with its evidence for the regional manager (MCPG-09). Do not confirm it to the account |
+| **APPROVED** | No additional discount (standard discount only) and the gross margin is at or above the minimum | The representative may agree it, with no commitment needed |
+| **APPROVED WITH CONDITIONS** | An additional discount up to and including the maximum, the account offers the required commitment, and the gross margin is at or above the minimum | The representative may agree it on condition the account delivers the commitment. Record it so a later audit can verify it |
+| **MANAGER REVIEW** | An additional discount above the maximum with the gross margin still at or above the minimum, with or without a commitment (a secondary display or any other commitment does not lift the maximum) | Prepare the proposal with its evidence for the regional manager (MCPG-09). It needs manager approval before you confirm it to the account |
 | **REJECTED** | The gross margin is below the minimum; or the total discount is 100% or more; or an additional discount within the maximum comes without the required commitment | Do not offer it. Explain the limit and propose an alternative within policy |
 | **CANNOT ASSESS** | A price, cost, standard discount, maximum, minimum margin or commitment is missing, or the additional discount is empty or negative | Fix the input or check the data. A missing value is never treated as zero |
 
@@ -182,15 +187,15 @@ A commitment must be verifiable from a later field audit (planogram compliance, 
 Distributors are wholesale accounts that resell to smaller stores. They negotiate **volume** discounts, not shelf execution:
 
 - Their standard discounts are higher than the retail ones: Dishwashing 10.81%, Laundry 11.31%, Surface Cleaners 11.44%.
-- The guardrail table also names a maximum additional discount and a shelf commitment for distributors. Shelf commitments have little meaning for a depot and are not confirmed for distributors, so **any additional discount for a distributor goes to manager review**, whatever commitment is offered.
+- **The same rules apply as for every other channel** (confirmed by the client): the standard discount needs no condition; an additional discount up to the maximum needs the commitment named in the guardrail table; anything above standard + maximum needs manager approval; the margin must stay at or above the minimum.
 - Planned Distributor Volume Deals give 14% off with a minimum order of 200 units in set windows (MCPG-07).
 
 ## 8 What a representative may and may not do
 
-- **May** propose the standard discount when the margin stays at or above the minimum.
+- **May** give the standard discount on their own, with no condition, when the margin stays at or above the minimum.
 - **May** propose an additional discount up to the maximum when the account offers the required commitment, and must record that commitment so an audit can check it.
-- **May** prepare a proposal above the maximum, or any additional discount for a distributor, for manager review.
-- **May not** confirm a proposal that needs manager review to the account before the review.
+- **May** prepare a proposal above standard + maximum additional for manager approval.
+- **May not** confirm a proposal that needs manager approval to the account before the manager approves it.
 - **May not** add the account's recent invoiced discount to the standard discount, or combine a trade discount with a consumer promotion discount into one larger discount.
 - **May not** treat a past invoice that exceeded a limit as a precedent. Past invoices are history, not approval.
 
@@ -198,17 +203,17 @@ Distributors are wholesale accounts that resell to smaller stores. They negotiat
 
 | Item | Value |
 |---|---|
-| Document | MCPG-05, version 2.0.0 |
-| Effective date | 2026-11-20 |
+| Document | MCPG-05, version 3.0.0 |
+| Effective date | 2026-11-23 |
 | Owner | Team 1 knowledge base (Sanika Najan) |
 | Status | Draft for team review |
-| Source | Guardrail table `dim_guardrails` with a standard discount (delivered 16 October 2026), adopted provisionally by the shared V3 data platform (contract v3.sources.2; 9 channel x category rules) |
+| Source | Guardrail table `dim_guardrails` with a standard discount (delivered 16 October 2026); rules confirmed by the client and recorded by the shared V3 data platform (contract v3.sources.3; 9 channel x category rules) |
 | Source | Margin formula and trade-off definitions: capstone brief and official client clarifications |
-| Source | Decision rules: negotiation simulator (Module 3), rules version m3-rules.v1-provisional |
-| Change | Version 2.0.0 replaces the earlier table (one maximum total discount per channel and category) with a standard discount plus an additional discount, the new minimum margins and commitments, and the simulator's five results |
+| Source | Decision rules: negotiation simulator (Module 3), rules version m3-rules.v2 |
+| Change | Version 2.0.0 replaces the earlier table (one maximum total discount per channel and category) with a standard discount plus an additional discount, the new minimum margins and commitments, and the simulator's five results. Version 3.0.0 records the client's confirmation of the rules and applies them to distributors like every other channel |
 
 **Open points and review notes**
 
-- The platform marks the guardrails 'Requires review'. The client still has to confirm that the total discount is the standard plus the additional discount, that the maximum applies to the additional discount, that the minimum margin is a gross margin on net price, what representatives may agree on their own (Sales authority), and how distributor commitments work.
+- The client confirmed the rules (recorded 23 November 2026): the standard discount is the representative's own allowance, an additional discount up to the maximum needs the commitment, more needs manager approval, and the margin floor always applies, for every channel including distributors. The platform marks the guardrails 'Approved'.
 - The earlier guardrail table (one maximum total discount, contract v3.sources.1) is kept by the data platform as history only. It is not used here.
 - In the V3 audits, shelf share is the allocation among Marvel's audited SKUs in a category visit (it sums to 100%). How a '+10/+15 points of shelf share' commitment is verified needs confirmation (MCPG-06, section 5).

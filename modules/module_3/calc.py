@@ -4,22 +4,21 @@ modules/module_3/calc.py
 Pure calculations for Module 3 (no data access): deal economics and the guardrail verdict for
 Scenario A, and the price response for Scenario B.
 
-The guardrail rules (``RULES_VERSION``) are the Owner's provisional policy, pending client confirmation
-and confirmation of Sales authority:
+The guardrail rules (``RULES_VERSION``) were confirmed by the client and apply to every channel,
+distributors included:
 
-- the channel × category **standard discount** is the starting allowance; the total discount on the
-  invoice is ``standard + proposed additional`` (percentage points; the account's recent invoiced
-  discount is history, never the standard and never added to it);
-- no additional discount needs no extra commitment; a positive additional discount up to and including
-  the maximum needs the guardrail's execution commitment; above the maximum, with the margin still at or
-  above the minimum, it needs manager review (a status, not a saved workflow); a margin below the
-  minimum is rejected;
-- distributors: their execution commitments are not confirmed, so any additional discount goes to
-  manager review.
+- the channel × category **standard discount** is the rep's own allowance and needs no condition; the
+  total discount on the invoice is ``standard + proposed additional`` (percentage points; the account's
+  recent invoiced discount is history, never the standard and never added to it);
+- a positive additional discount up to and including the maximum needs the guardrail's execution
+  commitment; above the maximum, with the margin still at or above the minimum, it needs manager
+  approval (a status here, not a saved workflow);
+- in every case the gross margin on net price must be at or above the minimum, otherwise the proposal
+  is rejected.
 
 Margin = (list price × (1 − total/100) − unit cost) / net price. A verdict is a guardrail check result,
-not an approval or an offer; while the source policy is not confirmed every verdict is a provisional
-simulation. Unknown inputs (price, cost, standard, maximum, minimum, commitment text, or an invalid
+not an offer. When the data release still marks the guardrail as not confirmed (releases built before the
+client confirmed the rules), every verdict is labelled a provisional simulation. Unknown inputs (price, cost, standard, maximum, minimum, commitment text, or an invalid
 proposal) give CANNOT ASSESS; they are never replaced by zero.
 """
 
@@ -29,9 +28,9 @@ import math
 import re
 from dataclasses import dataclass
 
-RULES_VERSION = "m3-rules.v1-provisional"
-# Source policy states under which a verdict may be described as within the rep's authority.
-# The shared negotiation context currently publishes only "Requires review".
+RULES_VERSION = "m3-rules.v2"
+# Source policy states under which a verdict is within the confirmed rules (not a provisional simulation).
+# Releases built before the client confirmed the rules publish "Requires review".
 CONFIRMED_POLICY = frozenset({"Approved"})
 
 APPROVED = "APPROVED"
@@ -88,11 +87,11 @@ class Deal:
     channel: str
     list_price: float | None
     unit_cost: float | None
-    standard: float | None             # standard_discount_pct_source: the starting allowance (points)
+    standard: float | None             # standard_discount_pct_source: given without conditions (points)
     cap: float | None                  # max_discount_pct_source: maximum additional discount (points)
     floor: float | None                # min_target_margin_source (gross margin on net price, %)
     tradeoff: str = ""
-    policy_status: str | None = None   # the source guardrail's status ("Requires review" today)
+    policy_status: str | None = None   # the source guardrail's status ("Approved" once confirmed)
 
     @property
     def distributor(self):
@@ -142,7 +141,7 @@ def scenario(deal, additional, commitment=None, quantity=None, uplift_source="cl
     total = None if extra is None or deal.standard is None else deal.standard + extra
     net, margin, unit_gp = unit_economics(deal.list_price, deal.unit_cost, total)
     _, _, base_gp = unit_economics(deal.list_price, deal.unit_cost, deal.standard)
-    options = {} if deal.distributor else {c.key: c for c in commitments(deal.tradeoff)}
+    options = {c.key: c for c in commitments(deal.tradeoff)}
     offered = options.get(commitment)
     result = {"additional": extra, "standard": deal.standard, "total": total, "net": net, "margin": margin,
               "unit_gp": unit_gp, "commitment": offered,
@@ -167,7 +166,7 @@ def scenario(deal, additional, commitment=None, quantity=None, uplift_source="cl
     return result
 
 
-PROVISIONAL = (" Provisional simulation: the policy and Sales authority await client confirmation, so this "
+PROVISIONAL = (" Provisional simulation: this data release predates the client's confirmation of the rules, so this "
                "result does not authorise offering or agreeing anything.")
 
 
@@ -192,12 +191,9 @@ def verdict(deal, result, offered):
                           "margin is at or above the minimum." + suffix)
     if deal.cap is None:
         return NOT_ASSESSED, "The maximum additional discount is missing, so this proposal cannot be checked." + suffix
-    if deal.distributor:
-        return REVIEW, (f"An additional {extra:.2f} pts for a distributor goes to manager review: distributor "
-                        "commitments are not confirmed. Do not confirm it to the account." + suffix)
     if not result["cap_ok"]:
         return REVIEW, (f"An additional {extra:.2f} pts is above the {deal.cap:.2f} pts maximum, with the margin at "
-                        "or above the minimum: it needs manager review. Do not confirm it to the account." + suffix)
+                        "or above the minimum: it needs manager approval before you confirm it to the account." + suffix)
     if not commitments(deal.tradeoff):
         return NOT_ASSESSED, "The guardrail's required commitment is missing, so this proposal cannot be checked." + suffix
     if offered is not None:

@@ -47,8 +47,9 @@ class Module3DataTests(unittest.TestCase):
         store = rep.accounts()["store_id"].iloc[0]
         sku = rep.products_for(store)["sku_id"].iloc[0]
         row = rep.context(store, sku)
-        self.assertEqual(row["policy_status"], "Requires review")
+        self.assertEqual(row["policy_status"], "Approved")
         deal = deal_from(row)
+        self.assertFalse(deal.provisional)
         self.assertIsNotNone(deal.cap)
         self.assertIsNotNone(deal.standard)
         self.assertEqual(row["context_version"], "negotiation_context.v2")

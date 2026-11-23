@@ -121,7 +121,7 @@ dim_guardrails.csv         fact_execution_audits.csv
 ```
 
 Use four corrected facts, three retained dimensions and the delivered `dim_guardrails.csv`
-revision with `standard_discount_pct` (source contract `v3.sources.2`). Do not substitute
+revision with `standard_discount_pct` (source contract `v3.sources.3`, client-confirmed rules). Do not substitute
 legacy `new_marvel_data/` facts. The earlier five-column guardrail file is rejected by this
 contract; builds made from it keep their own recorded identity.
 

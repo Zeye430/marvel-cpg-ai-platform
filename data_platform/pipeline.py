@@ -163,11 +163,14 @@ def _build(config, contract, publish_silver):
         if config.include_kpi_marts:
             result["kpi_marts"] = build_kpi_marts(connection, quality,
                                                   invoice_extract_complete=config.invoice_extract_complete)
+        guardrails = next(s for s in contract["sources"] if s["name"] == "dim_guardrails")
         rules = connection.execute("SELECT DISTINCT rule_version FROM silver.dim_guardrails").fetchall()
         for (rule_version,) in rules:
-            connection.execute("INSERT INTO meta.policy_registry VALUES ('trade_guardrails', ?, 'Requires review', NULL, NULL, ?, ?)",
-                               [rule_version, "dim_guardrails.csv (standard + additional discount revision)",
-                                "Owner-proposed provisional policy; client confirmation and Sales authority pending"])
+            connection.execute("INSERT INTO meta.policy_registry VALUES ('trade_guardrails', ?, ?, NULL, NULL, ?, ?)",
+                               [rule_version, guardrails["policy_status"],
+                                "dim_guardrails.csv (standard + additional discount revision)",
+                                guardrails.get("policy_confirmation")
+                                or "Provisional policy; client confirmation and Sales authority pending"])
         for policy in ("same_day_end_simulation_v1", "initial_schedule_known_at_order_simulation_v1",
                        "campaign_known_at_start_simulation_v1", "static_simulation_assortment_v1"):
             connection.execute("INSERT INTO meta.policy_registry VALUES (?, '1', 'Assumed for simulation', NULL, NULL, ?, ?)",

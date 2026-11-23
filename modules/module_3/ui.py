@@ -14,7 +14,7 @@ Hosted in the workspace shell, the app sidebar lists its two pages (``pages_nav_
 
 The store, product and quantity (and the price change's target) are filter pills like Module 1's;
 each chart's "?" explains how to read it. Every number is rendered by the server from the signed-in
-user's scoped shared publication. The rules are an Owner proposal the client has not confirmed; the
+user's scoped shared publication. The rules were confirmed by the client; the
 execution uplift is a switchable assumption in the page.
 
 Without the shared runtime (the legacy root ``app.py``) the module shows where it runs instead.
@@ -66,10 +66,12 @@ def _scenario(key):
 def rules_panel():
     """The rules and assumptions in words (static; no data)."""
     return ui.tags.div(
-        ui.tags.p(f"Rule version {RULES_VERSION}: the Owner's proposed policy, pending client confirmation and "
-                  "confirmation of Sales authority. While the source guardrail is \"Requires review\", every verdict "
-                  "is a provisional simulation: it does not authorise offering or agreeing a deal. Manager review is a "
-                  "status shown here; nothing is sent or saved.", class_="ws-muted"),
+        ui.tags.p(f"Rule version {RULES_VERSION}: confirmed by the client for every channel, distributors included. "
+                  "A rep may give the standard discount without conditions; an additional discount up to the maximum "
+                  "needs the execution commitment; anything above that needs manager approval; the gross margin must "
+                  "stay at or above the minimum in every case. Manager approval is a status shown here; nothing is "
+                  "sent or saved. A data release built before the confirmation labels every verdict provisional.",
+                  class_="ws-muted"),
         ui.tags.p("Total discount = standard discount + proposed additional discount (percentage points). The "
                   "account's recent invoiced discount is history only: it is not the standard and is not added to "
                   "it.", class_="ws-muted"),
@@ -79,8 +81,7 @@ def rules_panel():
                               "maximum, with the guardrail's execution commitment offered (any one of the listed "
                               "options) and the margin at or above the minimum."),
                    ui.tags.li(ui.tags.b("MANAGER REVIEW: "), "an additional discount above the maximum with the margin "
-                              "still at or above the minimum. Distributors: any additional discount, because "
-                              "distributor commitments are not confirmed."),
+                              "still at or above the minimum: it needs manager approval."),
                    ui.tags.li(ui.tags.b("REJECTED: "), "a margin below the minimum, a total discount of 100% or more, "
                               "or an additional discount within the maximum without the commitment."),
                    ui.tags.li(ui.tags.b("CANNOT ASSESS: "), "a price, cost, standard, maximum, minimum or commitment "
@@ -124,7 +125,7 @@ def _deal_page():
                              class_="ws-title-row"), class_="ws-card-head"),
                ui.output_ui("m3_chart"), class_="ws-card m3-chart-card"),
         ui.tags.details(
-            ui.tags.summary("Assumptions and rules (pending client confirmation)"),
+            ui.tags.summary("Assumptions and rules"),
             ui.div(ui.input_radio_buttons("m3_uplift", "Execution uplift on volume", UPLIFT_SOURCES,
                                           selected="client"),
                    class_="m3-assume"),

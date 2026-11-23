@@ -1,5 +1,5 @@
 {
-  "contract_version": "v3.sources.2",
+  "contract_version": "v3.sources.3",
   "data_version": "v3",
   "status": "shared_data_foundation_implemented_separate_model_release",
   "source_directory": "data/raw",
@@ -82,14 +82,15 @@
         {"name": "min_target_margin", "type": "DECIMAL(9,4)"},
         {"name": "required_exec_tradeoff", "type": "VARCHAR"}
       ],
-      "policy_status": "Requires review",
+      "policy_status": "Approved",
+      "policy_confirmation": "Client confirmed (recorded 2026-11-23) for every channel, Distributor included: a rep may give the standard discount without conditions; an additional discount up to the maximum needs the required execution commitment; anything above standard + maximum needs manager approval; the gross margin on net price must stay at or above the minimum in every case",
       "column_semantics": {
-        "standard_discount_pct": "Standard discount percentage points: the starting allowance (Sales authority unconfirmed)",
-        "max_discount_pct": "Maximum additional discount percentage points above the standard",
+        "standard_discount_pct": "Standard discount percentage points: a rep may give it without conditions",
+        "max_discount_pct": "Maximum additional discount percentage points above the standard, allowed with the required execution commitment",
         "min_target_margin": "Minimum gross margin % on net price",
         "required_exec_tradeoff": "Execution commitment required for a positive additional discount up to the maximum"
       },
-      "version_policy": "v3.sources.2 adopts the delivered standard_discount_pct revision as an Owner-proposed provisional policy; client confirmation pending. Earlier five-column files belong to v3.sources.1 and are rejected here; artifacts built from them remain valid under their own recorded contract hash",
+      "version_policy": "v3.sources.3 keeps the v3.sources.2 columns and records the client-confirmed rules (policy_status Approved). v3.sources.2 adopted the same standard_discount_pct revision as a provisional proposal. Earlier five-column files belong to v3.sources.1 and are rejected here; artifacts built under earlier contracts remain valid under their own recorded contract hash",
       "percent_columns": ["standard_discount_pct", "max_discount_pct", "min_target_margin"]
     },
     {

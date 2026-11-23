@@ -78,7 +78,7 @@ def default_proposals(deal):
     """Three starting proposals that show the rules: the standard discount only; an additional discount
     within the maximum with the commitment; one above the maximum. (Additional points, 0.5-point grid.)"""
     first = calc.commitments(deal.tradeoff)
-    offered = first[0].key if first and not deal.distributor else "none"
+    offered = first[0].key if first else "none"
     cap = deal.cap if deal.cap is not None and deal.cap > 0 else 1.0
     within = min(cap, max(0.5, math.floor(cap) / 2))
     beyond = math.floor(cap) + 1.0
@@ -110,18 +110,16 @@ def context_panel(context, deal):
         tags.div(tags.span("Guardrail", class_="m3-fact-label"),
                  tags.span(f"{context.get('channel')} · {context.get('category')}", class_="m3-fact-value"),
                  class_="m3-rule-head"),
-        tags.ul(tags.li("Standard discount (starting allowance): ", tags.b(_pct(deal.standard, "{:.2f}%"))),
-                tags.li("Additional discount: ", tags.b("manager review (distributor commitments not confirmed)"))
-                if deal.distributor else
+        tags.ul(tags.li("Standard discount (no condition needed): ", tags.b(_pct(deal.standard, "{:.2f}%"))),
                 tags.li("Additional discount up to ", tags.b(_pct(deal.cap, pts)), " with the commitment: ",
                         tags.b(deal.tradeoff or "not supplied")),
-                tags.li("Above ", tags.b(_pct(deal.ceiling, "{:.2f}%")), " in total: manager review")
-                if not deal.distributor else None,
+                tags.li("Above ", tags.b(_pct(deal.ceiling, "{:.2f}%")), " in total: manager approval"),
                 tags.li("Minimum gross margin on net price: ", tags.b(_pct(deal.floor, "{:.2f}%"))),
                 class_="m3-rule-list"),
+        tags.p(kit.pill("Client-confirmed", "outline", dot="ok"), " Rules confirmed by the client for every channel.",
+               class_="m3-rule-note") if not deal.provisional else
         tags.p(kit.pill(context.get("policy_status") or "Requires review", "outline"),
-               " Owner-proposed provisional policy; client confirmation and Sales authority pending.",
-               class_="m3-rule-note"),
+               " This data release predates the client's confirmation of the rules.", class_="m3-rule-note"),
         class_="m3-rule")
     return tags.section(
         tags.div(tags.div(tags.h2(f"{context.get('product_name')} at {context.get('store_name')}", class_="ws-h"),
@@ -134,7 +132,7 @@ def context_panel(context, deal):
                 fact("List price", _money(deal.list_price), "static reference; currency not supplied"),
                 fact("Unit cost", _money(deal.unit_cost), context.get("cost_basis") or "static reference"),
                 fact("Margin at list", _pct(ref_margin), "before any discount"),
-                fact("Standard discount", _pct(deal.standard, "{:.2f}%"), "starting allowance, no commitment needed"),
+                fact("Standard discount", _pct(deal.standard, "{:.2f}%"), "no condition or commitment needed"),
                 fact("Recent invoiced discount", _pct(recent) if recent is not None else "Unknown",
                      "28-day weighted history; not the standard, not used in the check" if recent is not None
                      else "no invoice in 28 days"),
@@ -166,10 +164,8 @@ def result_panel(deal, result, quantity):
         commitment = None, "commitment: enter an additional discount first"
     elif extra <= calc.TOLERANCE:
         commitment = None, "commitment not needed at the standard discount"
-    elif deal.distributor:
-        commitment = None, "commitment: distributors go to manager review instead"
     elif result["cap_ok"] is False:
-        commitment = None, "commitment: above the maximum, manager review instead"
+        commitment = None, "commitment: above the maximum, manager approval instead"
     else:
         commitment = (result["commitment"] is not None,
                       "commitment " + (result["commitment"].label if result["commitment"] else "not offered"))
@@ -478,7 +474,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         role = "Regional manager view" if item.manager else "Field sales rep view"
         return kit.page_head(title, tags.span(tags.b(role), f" · {item.scope['stores']} stores in your demo scope"),
                              tags.span("Data through ", tags.b(str(item.record.get("as_of")))),
-                             kit.pill("Rules pending client confirmation", "outline"), sub=sub)
+                             kit.pill("Rules confirmed by the client", "outline"), sub=sub)
 
     @render.ui
     def m3_status():
@@ -531,8 +527,7 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         applied["key"] = key
         with reactive.isolate():
             options = {"none": "None offered"}
-            if not deal.distributor:
-                options.update({c.key: c.label for c in calc.commitments(deal.tradeoff)})
+            options.update({c.key: c.label for c in calc.commitments(deal.tradeoff)})
             for key, (additional, commitment) in zip(SCENARIOS, default_proposals(deal)):
                 ui.update_numeric(f"m3_add_{key}", value=additional)
                 ui.update_select(f"m3_commit_{key}", choices=options, selected=commitment)
@@ -590,10 +585,9 @@ def module_3_server(input, output, session, context: dict, auth_state: dict):
         if not deal.provisional:
             return None
         return kit.notice(tags.strong("Provisional simulation. "),
-                          f"The rules ({calc.RULES_VERSION}: standard discount plus an additional discount) are an "
-                          f"Owner proposal; the guardrail is \"{deal.policy_status or 'not confirmed'}\" and the client "
-                          "has not confirmed the rules or Sales authority. A verdict does not authorise offering or "
-                          "agreeing a deal; manager review is a status here, nothing is sent or saved.",
+                          f"This data release marks the guardrail as \"{deal.policy_status or 'not confirmed'}\": it was "
+                          f"built before the client confirmed the rules ({calc.RULES_VERSION}). Verdicts are labelled "
+                          "provisional until the confirmed release is in use; nothing is sent or saved.",
                           kind="warn", id="m3-provisional", role="note")
 
     @render.ui

@@ -244,8 +244,8 @@ uv run --extra app --extra module4 --extra postgres \
 
 - The data is synthetic demo data; store-to-rep assignments are demo assignments.
 - Module 2 predictions come from a review-candidate model until one passes the release gate; the page labels them.
-- Module 3's guardrail rules are a proposal awaiting client confirmation. Only the volume-uplift assumption can be
-  switched, and nothing is approved or sent anywhere automatically.
+- Module 3's guardrail rules are confirmed by the client. Only the volume-uplift assumption can be switched, and
+  nothing is approved or sent anywhere automatically.
 
 <details>
 <summary><b>Legacy app</b></summary>

@@ -76,7 +76,7 @@ do not bypass scope to obtain the full dataset.
 | Sales, invoice amounts, trade discounts | commercial_period, sell_in_events | Pick one period_type; commercial date filters use period_start, not interval overlap |
 | Deliveries | delivery_events | Realized deliveries only; do not infer a one-to-one invoice link |
 | Planogram/display/shelf allocation | execution_visits | Select one scope_label; shelf allocation is not market share |
-| Negotiation background | negotiation_context, products | Static price/cost reference and Requires review guardrails |
+| Negotiation background | negotiation_context, products | Static price/cost reference and the guardrails with their `policy_status` |
 | OOS risk or visits | oos_predictions, visit_priority | Typed interfaces are empty/unreleased; return unavailable rather than 0% risk |
 | Product claims or objection handling | Authorized document corpus, not a business view | Requires separately sourced/citable RAG documents |
 
@@ -151,7 +151,7 @@ wall-clock "today". For a document answer, cite document version and location.
 - Permission failure: deny access; do not retry with a broader identity.
 - Missing model release: say the prediction is unavailable, not that risk is zero.
 - Missing source report: say Unknown; do not estimate it within the LLM.
-- Requires review rule: explain the limitation without approving a scenario.
+- A guardrail whose `policy_status` is Requires review (an older release): explain that verdicts are provisional.
 - Scope/date/row limit insufficient for the question: ask to narrow it or route
   to an approved aggregate operation; do not present a sample as a full result.
 - Changed publication: invalidate version-dependent caches; do not combine

@@ -74,7 +74,7 @@ class VerdictTests(unittest.TestCase):
                 self.assertEqual(self.verdict(lemon(), additional, commitment), expected)
         self.assertIn("no extra commitment", calc.scenario(lemon(), 0)["reason"])
         self.assertIn("needs the required commitment", calc.scenario(lemon(), 1)["reason"])
-        self.assertIn("manager review", calc.scenario(lemon(), 6)["reason"])
+        self.assertIn("manager approval", calc.scenario(lemon(), 6)["reason"])
         self.assertIn("below the 22.01% minimum", calc.scenario(lemon(), 40)["reason"])
         self.assertIn("no net price", calc.scenario(lemon(), 100 - STANDARD)["reason"])
 
@@ -126,26 +126,37 @@ class VerdictTests(unittest.TestCase):
         r = calc.scenario(deal_from(old), 0)
         self.assertEqual((r["total"], r["verdict"]), (None, calc.NOT_ASSESSED))
 
-    def test_distributor_additional_discount_goes_to_manager_review(self):
+    def test_distributors_follow_the_same_rules(self):
+        # Client-confirmed: distributors are treated like every other channel.
         deal = lemon(standard=11.31, cap=6.99, floor=19.06, channel="Distributor",
-                     tradeoff="Secure +10% shelf share or place 1 secondary display")
-        self.assertEqual(self.verdict(deal, 0), calc.APPROVED)
-        for additional in (0.5, 6.99, 7.0, 20):
-            for commitment in (None, "shelf", "display"):
-                with self.subTest(additional=additional, commitment=commitment):
-                    r = calc.scenario(deal, additional, commitment)
-                    self.assertEqual(r["verdict"], calc.REVIEW)
-                    self.assertIsNone(r["commitment"])                  # no shelf commitment for wholesale
-                    self.assertIn("distributor commitments are not confirmed", r["reason"])
-        self.assertEqual(self.verdict(deal, 60), calc.REJECTED)         # below the minimum still rejected
-        self.assertEqual(self.verdict(deal, 100 - 11.31), calc.REJECTED)
+                     tradeoff="Secure +10% shelf share or place 1 secondary display", status="Approved")
+        cases = [(0, None, calc.APPROVED), (0.5, None, calc.REJECTED), (0.5, "shelf", calc.CONDITIONS),
+                 (6.99, "display", calc.CONDITIONS), (7.0, None, calc.REVIEW), (7.0, "shelf", calc.REVIEW),
+                 (20, None, calc.REVIEW), (60, None, calc.REJECTED), (100 - 11.31, None, calc.REJECTED)]
+        for additional, commitment, expected in cases:
+            with self.subTest(additional=additional, commitment=commitment):
+                r = calc.scenario(deal, additional, commitment)
+                self.assertEqual(r["verdict"], expected)
+                self.assertNotIn("distributor", r["reason"].lower())
+        self.assertEqual(calc.scenario(deal, 2, "shelf")["commitment"].key, "shelf")
 
-    def test_distributor_card_offers_manager_review_not_a_shelf_commitment(self):
+    def test_margin_exactly_at_the_minimum_passes(self):
+        deal = lemon(status="Approved")
+        exact = floor_total(FLOOR) - STANDARD                          # additional points that land on the floor
+        r = calc.scenario(deal, exact)
+        self.assertAlmostEqual(r["margin"], FLOOR, places=9)
+        self.assertTrue(r["floor_ok"])
+        self.assertEqual(r["verdict"], calc.REVIEW)                    # equal to the minimum passes the floor
+        self.assertEqual(calc.scenario(deal, exact + 0.01)["verdict"], calc.REJECTED)
+
+    def test_distributor_card_shows_the_same_rules(self):
         from modules.module_3.server import context_panel
-        deal = lemon(standard=11.31, cap=6.99, floor=19.06, channel="Distributor", tradeoff=TRADEOFFS[0])
+        deal = lemon(standard=11.31, cap=6.99, floor=19.06, channel="Distributor", tradeoff=TRADEOFFS[0],
+                     status="Approved")
         text = str(context_panel({"channel": "Distributor", "category": "Laundry"}, deal))
-        self.assertIn("manager review", text)
-        self.assertNotIn("shelf share or place", text)
+        self.assertIn("shelf share or place", text)
+        self.assertIn("manager approval", text)
+        self.assertIn("Client-confirmed", text)
         retail = str(context_panel({"channel": "Modern Trade", "category": "Laundry"}, lemon(tradeoff=TRADEOFFS[0])))
         self.assertIn("shelf share or place", retail)
         self.assertIn("9.64%", retail)                                  # the standard is shown
@@ -165,7 +176,7 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual((ok["verdict"], ok["provisional"]), (calc.APPROVED, False))
         self.assertNotIn("Provisional", ok["reason"])
         above = calc.scenario(confirmed, 6)
-        self.assertIn("Do not confirm it to the account", above["reason"])  # review is never permission
+        self.assertIn("needs manager approval before you confirm it", above["reason"])  # review is not permission
 
     def test_unknown_rule_option_is_refused(self):
         with self.assertRaises(ValueError):
@@ -223,10 +234,10 @@ class CommitmentAndPaybackTests(unittest.TestCase):
             proposals = default_proposals(lemon(cap=cap))
             self.assertLessEqual(proposals[1][0], cap)
             self.assertGreater(proposals[2][0], cap)
-        distributor = lemon(channel="Distributor", cap=6.99)
+        distributor = lemon(channel="Distributor", cap=6.99, tradeoff=TRADEOFFS[0])
         verdicts = [calc.scenario(distributor, a, None if c == "none" else c)["verdict"]
                     for a, c in default_proposals(distributor)]
-        self.assertEqual(verdicts, [calc.APPROVED, calc.REVIEW, calc.REVIEW])
+        self.assertEqual(verdicts, [calc.APPROVED, calc.CONDITIONS, calc.REVIEW])
 
 
 class PriceResponseTests(unittest.TestCase):

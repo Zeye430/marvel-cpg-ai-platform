@@ -1,7 +1,7 @@
 {
  "knowledge_base": "Marvel CPG RAG knowledge base (Module 4)",
  "contract": "data_platform/contracts/v3/module-data-contract.json -> module_4.knowledge_contract",
- "corpus_hash": "c2e9985b5450b73bb5857e4704d63fd0d83e311da378e45d8925736e032c5228",
+ "corpus_hash": "11453b31c5f07004b59f889f1c47ca8e05459878d68cdd81a4e4b6a10da0ce49",
  "document_count": 12,
  "documents": [
   {
@@ -89,15 +89,15 @@
   },
   {
    "document_id": "MCPG-04",
-   "version": "1.1.0",
-   "content_hash": "53ceb96ff211871e07a796b58100a5b46718f41505a9944c706d1605a0507507",
+   "version": "1.2.0",
+   "content_hash": "b195ff39cf8bafd699f1b31fc686e4c1d47705a692ebce734d6f0652dbba2615",
    "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); evidence from the project dataset, the Team 1 V3 EDA and the public references PUB-01 to PUB-03",
-   "effective_date": "2026-11-20",
+   "effective_date": "2026-11-23",
    "permission_scope": [
     "sales",
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-04_objection_handling.pdf; cite as 'MCPG-04 v1.1.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-04_objection_handling.pdf; cite as 'MCPG-04 v1.2.0, \u00a7<section>, PDF p. <page>'",
    "title": "Objection-Handling Guide",
    "document_type": "sales_guide",
    "origin": "fictional_marvel",
@@ -120,15 +120,15 @@
   },
   {
    "document_id": "MCPG-05",
-   "version": "2.0.0",
-   "content_hash": "6a2be0c33cbd9d209ccace8e7d75f2169e23e1270eb5eaa18969bea1bbc5284d",
-   "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the V3 `dim_guardrails` table with a standard discount, adopted provisionally by the shared data platform (contract v3.sources.2); formulas from the official client clarifications",
-   "effective_date": "2026-11-20",
+   "version": "3.0.0",
+   "content_hash": "6d4fc7a7e8a884103baa5013c266376c8df93aabfa8392a7ba1dcb36fe02cd8b",
+   "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); guardrail values from the V3 `dim_guardrails` table with a standard discount, rules confirmed by the client (shared data platform contract v3.sources.3); formulas from the official client clarifications",
+   "effective_date": "2026-11-23",
    "permission_scope": [
     "sales",
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-05_pricing_guardrail_policy.pdf; cite as 'MCPG-05 v2.0.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-05_pricing_guardrail_policy.pdf; cite as 'MCPG-05 v3.0.0, \u00a7<section>, PDF p. <page>'",
    "title": "Pricing, Discount and Commercial Guardrail Policy",
    "document_type": "policy",
    "origin": "fictional_marvel",
@@ -230,14 +230,14 @@
   },
   {
    "document_id": "MCPG-09",
-   "version": "1.1.0",
-   "content_hash": "01847900f1090fc2795ff369840fa238adac7e0344cce0bee376f51c5b7c8730",
+   "version": "1.2.0",
+   "content_hash": "bf1a02787e1f84a231469cf53753f2fcc2ea190fef66bd2077eadd6569eaf18b",
    "authorized_source": "Team 1 authored fictional Marvel CPG document (fictional company documents are permitted by the capstone brief and the official client clarifications); review rules aligned with the negotiation simulator and the shared data platform; findings from the Team 1 V3 EDA",
-   "effective_date": "2026-11-20",
+   "effective_date": "2026-11-23",
    "permission_scope": [
     "manager"
    ],
-   "citation_location": "knowledge_base/pdf/MCPG-09_manager_deal_review.pdf; cite as 'MCPG-09 v1.1.0, \u00a7<section>, PDF p. <page>'",
+   "citation_location": "knowledge_base/pdf/MCPG-09_manager_deal_review.pdf; cite as 'MCPG-09 v1.2.0, \u00a7<section>, PDF p. <page>'",
    "title": "Regional Manager Guide: Deal Review, Escalation and Exception Management",
    "document_type": "manager_guide",
    "origin": "fictional_marvel",

@@ -90,7 +90,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(connection.execute("SELECT count(*) FROM silver.fact_deliveries WHERE delivery_id='D-FUTURE'").fetchone()[0], 0)
         self.assertEqual(connection.execute("SELECT sum(abs(residual_units)) FROM silver.inventory_reconciliation").fetchone()[0], 0)
         self.assertEqual(connection.execute("SELECT count(*) FROM silver.promotion_calendar WHERE date='2025-01-02' AND has_overlap").fetchone()[0], 2)
-        self.assertEqual(connection.execute("SELECT DISTINCT rule_status FROM silver.dim_guardrails").fetchone()[0], "Requires review")
+        self.assertEqual(connection.execute("SELECT DISTINCT rule_status FROM silver.dim_guardrails").fetchone()[0], "Approved")
         self.assertEqual(connection.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='gold'").fetchone()[0], 0)
 
     def test_repeat_load_is_idempotent_and_old_build_immutable(self):
@@ -166,12 +166,12 @@ class PlatformTests(unittest.TestCase):
         row = connection.execute("""SELECT standard_discount_pct, max_discount_pct, min_target_margin, rule_status,
             rule_version, source_file_hash FROM silver.dim_guardrails""").fetchone()
         self.assertEqual([float(v) for v in row[:3]], [8.0, 25.0, 20.0])
-        self.assertEqual(row[3], "Requires review")
+        self.assertEqual(row[3], "Approved")                           # client-confirmed rules (v3.sources.3)
         self.assertEqual(row[4], row[5])                               # the rule version is the source file hash
         self.assertEqual(connection.execute("DESCRIBE silver.dim_guardrails").fetchall()[2][:2],
                          ("standard_discount_pct", "DECIMAL(9,4)"))
         self.assertEqual(connection.execute("SELECT contract_version FROM meta.source_files WHERE filename = "
-                                            "'dim_guardrails.csv'").fetchone()[0], "v3.sources.2")
+                                            "'dim_guardrails.csv'").fetchone()[0], "v3.sources.3")
         self.rows["dim_guardrails"][0]["standard_discount_pct"] = 0             # zero is a value, not missing
         self.write_sources()
         zero = self.open_build(build(self.config))

@@ -637,7 +637,7 @@ class Module1Data:
     def references(self):
         """Source guardrail references per channel x category; inconsistent versions are not resolved.
 
-        ``discount_ceiling_pct`` is the provisional total discount without manager review: standard plus
+        ``discount_ceiling_pct`` is the highest total discount without manager approval: standard plus
         maximum additional discount. A release without the standard (an earlier guardrail table) has no
         ceiling, so no store is placed above or below it."""
         columns = set(self._df("SELECT column_name FROM information_schema.columns "

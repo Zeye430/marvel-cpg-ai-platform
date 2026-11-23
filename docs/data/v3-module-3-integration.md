@@ -88,14 +88,14 @@ scenario net unit price = reference list price × (1 − total discount pct / 10
 scenario margin pct = 100 × (net unit price − reference cost) / net unit price
 ```
 
-Provisional rules (pending client confirmation and confirmation of Sales authority):
+Client-confirmed rules (source contract `v3.sources.3`, the same for every channel):
 total discount = `standard_discount_pct_source` + proposed additional discount
-(percentage points). No additional discount needs no commitment; a positive
+(percentage points). A rep may give the standard discount without any condition; a positive
 additional discount up to and including `max_discount_pct_source` needs
 `required_exec_tradeoff`; above it, with the margin at or above
-`min_target_margin_source`, it needs manager review (a status, not a saved
-workflow); a margin below the minimum is rejected. Distributor commitments are
-not confirmed, so any distributor additional discount goes to manager review.
+`min_target_margin_source`, it needs manager approval (a status, not a saved
+workflow); a margin below the minimum is rejected (a margin equal to the minimum
+passes). Distributors follow the same rules.
 Missing inputs give cannot-assess. In the source invoices, `discount_pct` equals
 the standard plus `extra_discount_pct` on every row, consistent with this reading;
 the source `guardrail_violation` flag does not follow from these rules.
@@ -118,7 +118,8 @@ versioned formulas without overwriting historical reported facts.
   the negotiation context itself remains reported-only.
 - Static reference cost/list price basis and unspecified currency.
 - Audit date/age rather than an unsupported "execution currently compliant" claim.
-- `policy_status=Requires review` until the client confirms the rules and Sales authority.
+- `policy_status`: `Approved` in releases built under `v3.sources.3` (client-confirmed rules);
+  `Requires review` in earlier releases, whose verdicts are labelled provisional.
 - OOS predictions and visit ranking are unavailable until a Module 2 release;
   do not replace them with zeros or retrain a model inside Module 3.
 

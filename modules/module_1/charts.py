@@ -291,8 +291,9 @@ def chart_discount(item, f, option, colors):
     fig.update_traces(marker=dict(size=9, line=dict(width=1, color="#ffffff"), opacity=0.85))
     refs = frame["discount_ceiling_pct"].dropna().unique()
     if len(refs) == 1:
+        confirmed = "policy_status" in frame and frame["policy_status"].eq("Approved").all()
         fig.add_vline(x=float(refs[0]), line_dash="dash", line_color="#65595a", line_width=1.5,
-                      annotation_text=f"Standard + maximum additional {refs[0]:.1f}% (provisional)",
+                      annotation_text=f"Standard + maximum additional {refs[0]:.1f}%" + ("" if confirmed else " (provisional)"),
                       annotation_position="top right", annotation_font=dict(size=11, color="#4a3f40"))
     fig.update_xaxes(ticksuffix="%")
     fig.update_yaxes(ticksuffix="%")

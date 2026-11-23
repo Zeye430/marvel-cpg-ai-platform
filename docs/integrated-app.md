@@ -118,20 +118,22 @@ identity's scoped copy that Business Performance builds, so they open at once af
   reference list price and cost (static; currency not supplied), the channel × category standard discount,
   the recent 28-day invoiced discount (history only, not the standard), reported stock, sell-out, the last
   audit, and the guardrail (standard, maximum additional discount and its commitment, minimum margin)
-  marked *Requires review*. Three proposals side by side each take an additional discount on top of the
+  marked *Client-confirmed*. Three proposals side by side each take an additional discount on top of the
   standard and an execution commitment, and show total discount (standard + additional), net price, gross
-  margin, money for the order quantity, the checks and a verdict under the Owner's provisional rules
-  (`m3-rules.v1-provisional`, pending client confirmation and confirmation of Sales authority):
-  - **APPROVED**: no additional discount, margin at or above the minimum;
+  margin, money for the order quantity, the checks and a verdict under the client-confirmed rules
+  (`m3-rules.v2`, the same for every channel, distributors included):
+  - **APPROVED**: no additional discount (a rep may give the standard on their own), margin at or above
+    the minimum;
   - **APPROVED WITH CONDITIONS**: an additional discount up to and including the maximum, with the
     required commitment (any listed option), margin at or above the minimum;
-  - **MANAGER REVIEW**: above the maximum with the margin at or above the minimum; for distributors any
-    additional discount (their commitments are not confirmed). A status only: nothing is sent or saved;
+  - **MANAGER REVIEW**: above the maximum with the margin at or above the minimum: it needs manager
+    approval. A status only: nothing is sent or saved;
   - **REJECTED**: below the minimum margin, a total of 100% or more, or an additional discount within the
     maximum without the commitment;
   - **CANNOT ASSESS**: a price, cost, standard, maximum, minimum or commitment is missing, or the
     additional discount is empty or negative. A data release from before the standard discount existed
-    shows this for every proposal, with a note.
+    shows this for every proposal, with a note. A release built before the client confirmed the rules
+    (guardrail status *Requires review*) labels every verdict provisional.
 
   Each proposal also shows the volume uplift needed to keep the gross profit at the standard discount and
   whether the commitment's assumed uplift covers it. Under *Assumptions and rules* you can switch the
@@ -213,7 +215,7 @@ identity's scoped copy that Business Performance builds, so they open at once af
   Switching modules from the sidebar carries no context.
 - Copilot conversations last for the browser session; they are not saved.
 - The Negotiation Simulator does not save proposals: there is no submission or manager approval workflow
-  yet, and its guardrail rules are a proposal pending client confirmation (switchable in the page).
+  yet. Its guardrail rules are confirmed by the client; the volume-uplift assumption is switchable in the page.
 - Business Performance keeps one copy of the scoped data per recently signed-in identity (at most three)
   in the app process; it is rebuilt after a restart or an account-scope change.
 

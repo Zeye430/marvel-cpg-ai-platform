@@ -92,7 +92,7 @@ class ReaderExampleTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-m", "examples.read_shared_data", "--artifact-dir", str(copied),
                                  "--view", "negotiation_context", "--principal-id", "example-sales"],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(json.loads(result.stdout)["rows"][0]["policy_status"], "Requires review")
+        self.assertEqual(json.loads(result.stdout)["rows"][0]["policy_status"], "Approved")
         self.assertEqual(digest(serving / "business.duckdb"), before)
         changed = json.loads(publication.read_text())
         changed["dataset_hash"] = "not-the-published-dataset"

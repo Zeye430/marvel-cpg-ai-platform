@@ -230,7 +230,7 @@ async function moduleThreeChecks(p, tag, stores, full) {
   await waitFor(p, "!!document.querySelector('#m3-context') || !!document.querySelector('#m3-unavailable')", 120000, "module 3 content");
   await idle(p);
   const head = await txt(p, "#shell-panel-module_3 .ws-pagehead");
-  check(`${tag}: Negotiation Simulator reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Rules pending client confirmation/.test(head), head);
+  check(`${tag}: Negotiation Simulator reads the shared source in the signed-in scope`, (stores === null || head.includes(`${stores} stores in your demo scope`)) && head.includes(`Data through ${EXPECT.asOf}`) && /Rules confirmed by the client/.test(head), head);
   check(`${tag}: Module 3 pages listed under Negotiation Simulator`, (await evaluate(p, "[...document.querySelectorAll(\"#shell-nav .ws-subnav[data-module='module_3'] button[data-page]\")].map(b => b.dataset.page).join(',')")) === "deal,price");
   const accounts = await evaluate(p, "Object.keys(document.querySelector('#m3_store').selectize.options).length");
   check(`${tag}: store, product and quantity are pills showing the current choice`, await evaluate(p, "['store', 'sku', 'qty'].every(k => { const v = document.querySelector(`#m3-pill-${k} .ws-fpill-val`); return !!v && v.textContent.trim() !== '' && v.textContent !== 'Choose'; }) && /units$/.test(document.querySelector('#m3-pill-qty .ws-fpill-val').textContent)"), await txt(p, "#m3-root .m3-fbar"));
@@ -240,7 +240,7 @@ async function moduleThreeChecks(p, tag, stores, full) {
   await idle(p);
   const verdicts = await evaluate(p, `[${verdict("a")}, ${verdict("b")}, ${verdict("c")}]`);
   check(`${tag}: three proposals side by side, each with a guardrail verdict`, verdicts.every((v) => ["APPROVED", "APPROVED WITH CONDITIONS", "MANAGER REVIEW", "REJECTED", "CANNOT ASSESS"].includes(v)) && (await evaluate(p, "document.querySelectorAll('#m3-scenarios .m3-scn').length")) === 3, JSON.stringify(verdicts));
-  check(`${tag}: the context shows the standard discount and the guardrail as Requires review`, /Requires review/.test(await txt(p, "#m3-context")) && /Standard discount \(starting allowance\)/.test(await txt(p, "#m3-context")) && /not the standard/.test(await txt(p, "#m3-context")));
+  check(`${tag}: the context shows the standard discount and the client-confirmed guardrail`, /Client-confirmed/.test(await txt(p, "#m3-context")) && /Standard discount \(no condition needed\)/.test(await txt(p, "#m3-context")) && /not the standard/.test(await txt(p, "#m3-context")));
   check(`${tag}: no Module 3 error and the session stays connected`, (await evaluate(p, "document.querySelectorAll('#m3-root .shiny-output-error, #m3-root .ws-state.bad').length")) === 0 && (await evaluate(p, "Shiny.shinyapp.isConnected()")));
   if (!full) return;
   check("deal: the starting proposals show the rules (standard only, within the maximum with the commitment, above it)", verdicts[0] === "APPROVED" && ["APPROVED WITH CONDITIONS", "MANAGER REVIEW"].includes(verdicts[1]) && verdicts[2] === "MANAGER REVIEW", JSON.stringify(verdicts));
@@ -252,7 +252,7 @@ async function moduleThreeChecks(p, tag, stores, full) {
   }
   await click(p, "#m3-assumptions > summary");
   await soft(p, "/m3-rules/.test(document.querySelector('#m3-rules')?.innerText || '')", 10000, "rules text");
-  check("deal: rules and assumptions are stated and the uplift is switchable", /m3-rules\.v1-provisional/.test(await txt(p, "#m3-rules")) && /standard discount \+ proposed additional discount/.test(await txt(p, "#m3-rules")) && (await evaluate(p, "document.querySelectorAll('#m3_basis input').length")) === 0 && (await evaluate(p, "document.querySelectorAll('#m3_uplift input').length")) === 2);
+  check("deal: rules and assumptions are stated and the uplift is switchable", /m3-rules\.v2/.test(await txt(p, "#m3-rules")) && /confirmed by the client/.test(await txt(p, "#m3-rules")) && /standard discount \+ proposed additional discount/.test(await txt(p, "#m3-rules")) && (await evaluate(p, "document.querySelectorAll('#m3_basis input').length")) === 0 && (await evaluate(p, "document.querySelectorAll('#m3_uplift input').length")) === 2);
   await shot(p, "9-module3-deal");
   await click(p, "#shell-nav .ws-subnav[data-module='module_3'] button[data-page='price']");
   await waitFor(p, "!!document.querySelector('#m3-b-cards') || /No observed sales|No elasticity/.test(document.querySelector('#m3_b_results')?.innerText || '')", 60000, "price page");

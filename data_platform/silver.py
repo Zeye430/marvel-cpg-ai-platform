@@ -55,7 +55,7 @@ def typed_sources(connection, config, contract, quality, build_id):
         if name == "dim_stores":
             extra += ", channel = 'Distributor' AS is_distributor"
         elif name == "dim_guardrails":
-            extra += ", 'Requires review' AS rule_status, source_file_hash AS rule_version"
+            extra += f", {literal(source['policy_status'])} AS rule_status, source_file_hash AS rule_version"
         connection.execute(f"CREATE TABLE silver.{ident(name)} AS SELECT *{extra} FROM _typed_{name}{restriction}")
         if name == "fact_sell_out":
             rows = connection.execute("SELECT count(*) FROM silver.fact_sell_out").fetchone()[0]
@@ -160,9 +160,11 @@ def source_business_checks(connection, contract, quality):
     quality.query("guardrail_ceiling", "dim_guardrails", """
         SELECT channel, category FROM silver.dim_guardrails WHERE standard_discount_pct + max_discount_pct >= 100
     """)
-    quality.record("policy_approval", "dim_guardrails", 1, checked_count=1, severity="warning",
-                   note="Provisional standard/additional discount rules require client confirmation; "
-                        "inventory analytics may proceed.")
+    guardrails = next(s for s in contract["sources"] if s["name"] == "dim_guardrails")
+    approved = guardrails["policy_status"] == "Approved"
+    quality.record("policy_approval", "dim_guardrails", int(not approved), checked_count=1, severity="warning",
+                   note=guardrails.get("policy_confirmation") if approved else
+                   "Standard/additional discount rules are not confirmed by the client; inventory analytics may proceed.")
     quality.require_pass()
 
 

@@ -128,8 +128,8 @@ pr['margin_at_list'] = (pr.list_price - pr.unit_cost) / pr.list_price * 100
 pr['retailer_margin_ref'] = (pr.consumer_price - pr.list_price) / pr.consumer_price * 100
 pr['consumer_to_list'] = pr.consumer_price / pr.list_price
 
-# 2. discount headroom per SKU x channel (provisional v3 rules, as in the Module 3 simulator): total discount =
-# standard + additional; the ceiling without manager review is standard + maximum additional. Margin at the
+# 2. discount headroom per SKU x channel (client-confirmed v3 rules, as in the Module 3 simulator): total discount =
+# standard + additional; the ceiling without manager approval is standard + maximum additional. Margin at the
 # standard and at the ceiling, and the total discount at which the margin reaches the minimum.
 def margin_at(p, total):
     net = p.list_price * (1 - total / 100)

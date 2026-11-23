@@ -115,7 +115,7 @@ class DeliveryTests(unittest.TestCase):
         serving=build_serving(parent,features["directory"],self.root/"serving",access_policy=self.policy(),memory_limit="256MB",threads=1)
         reader=ServingReader(serving["directory"])
         self.assertEqual(len(reader.read("store_sku_daily","alice")),7)
-        self.assertEqual(reader.read("negotiation_context","alice")[0]["policy_status"],"Requires review")
+        self.assertEqual(reader.read("negotiation_context","alice")[0]["policy_status"],"Approved")
         self.assertAlmostEqual(reader.read("negotiation_context","alice")[0]["static_reference_margin_pct"],50)
         with self.assertRaises(PermissionError):reader.read("store_day","unknown")
         with self.assertRaises(ValueError):reader.read("store_day; DROP TABLE gold.dim_stores","alice")
